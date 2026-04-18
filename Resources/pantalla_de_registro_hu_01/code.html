@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+
+<html lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Crea tu cuenta - Reservio</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary-container": "#1a365d",
+                        "on-tertiary-fixed": "#2b1700",
+                        "on-tertiary-fixed-variant": "#633f0f",
+                        "surface-variant": "#dfe3e7",
+                        "surface-dim": "#d6dade",
+                        "secondary-container": "#a5c8ff",
+                        "surface-container-low": "#f0f4f8",
+                        "surface-container-highest": "#dfe3e7",
+                        "surface-tint": "#455f88",
+                        "tertiary": "#321b00",
+                        "surface-container-lowest": "#ffffff",
+                        "error": "#ba1a1a",
+                        "error-container": "#ffdad6",
+                        "primary-fixed-dim": "#adc7f7",
+                        "on-tertiary-container": "#c6955e",
+                        "on-primary": "#ffffff",
+                        "on-primary-fixed": "#001b3c",
+                        "inverse-surface": "#2c3134",
+                        "on-surface-variant": "#43474e",
+                        "on-tertiary": "#ffffff",
+                        "on-primary-fixed-variant": "#2d476f",
+                        "surface": "#f6fafe",
+                        "outline": "#74777f",
+                        "outline-variant": "#c4c6cf",
+                        "inverse-primary": "#adc7f7",
+                        "on-surface": "#171c1f",
+                        "inverse-on-surface": "#edf1f5",
+                        "tertiary-container": "#4f2e00",
+                        "surface-container": "#eaeef2",
+                        "secondary-fixed": "#d4e3ff",
+                        "on-secondary-fixed": "#001c3a",
+                        "background": "#f6fafe",
+                        "tertiary-fixed": "#ffddba",
+                        "primary-fixed": "#d6e3ff",
+                        "surface-bright": "#f6fafe",
+                        "secondary": "#3b6090",
+                        "surface-container-high": "#e4e9ed",
+                        "on-error": "#ffffff",
+                        "tertiary-fixed-dim": "#f2bc82",
+                        "on-secondary": "#ffffff",
+                        "secondary-fixed-dim": "#a5c8ff",
+                        "on-secondary-container": "#2e5484",
+                        "on-error-container": "#93000a",
+                        "on-secondary-fixed-variant": "#204877",
+                        "on-background": "#171c1f",
+                        "on-primary-container": "#86a0cd",
+                        "primary": "#002045"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "fontFamily": {
+                        "headline": ["Inter", "sans-serif"],
+                        "body": ["Inter", "sans-serif"],
+                        "label": ["Inter", "sans-serif"]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+</head>
+<body class="bg-surface font-body text-on-surface antialiased min-h-screen flex">
+<!-- Split Screen Layout -->
+<!-- Left Pane: Image (Hidden on mobile) -->
+<div class="hidden lg:block lg:w-1/2 relative bg-surface-container-low" data-alt="Modern corporate office interior with glass walls, soft natural sunlight entering through large windows, ergonomic minimalist furniture, and a sophisticated deep blue and warm neutral color palette." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDt1a5CmegsmJsVLjUwcvm1d6TMgBN4b-QpTtFQMUovbEh31d05n5kFL0HWBInB1_Gs2kPD_6OjwVJ-IZjrQeO3zS7DhAF40gPfSVdOPjANJFPrC_copDfY1vNj7c5ZX6dwG5aRZ7CCVrRODtlXGXpPqvgMXqByhEMkL_Gx8SyzywnRqgpOAKgQMUbqoOEZ2LM8GvFUCBuW6waBdEEEtHTyr3ddyFq8j28gBI3ad-6yTG_QpQHKgEyicOmXAR00LYK2l79Hi7SJidQ'); background-size: cover; background-position: center;">
+<!-- Subtle gradient overlay to match brand tone -->
+<div class="absolute inset-0 bg-gradient-to-br from-primary/80 to-primary-container/40 mix-blend-multiply"></div>
+<!-- Optional decorative element -->
+<div class="absolute bottom-12 left-12 max-w-md text-surface-container-lowest">
+<h2 class="font-headline text-3xl font-bold mb-4 leading-tight">Excelencia en la Gestión de Recursos.</h2>
+<p class="font-body text-lg text-surface-container-lowest/80">Plataforma integral para optimizar espacios y capital humano en entornos corporativos modernos.</p>
+</div>
+</div>
+<!-- Right Pane: Registration Form Container -->
+<div class="w-full lg:w-1/2 flex items-center justify-center p-6 sm:p-12 bg-surface">
+<!-- Tonal Lift Card (Surface Container Lowest on Surface) -->
+<div class="w-full max-w-md bg-surface-container-lowest rounded-xl p-8 sm:p-10 shadow-[0_24px_32px_-4px_rgba(23,28,31,0.06)]">
+<!-- Header Group -->
+<div class="mb-10 text-center">
+<div class="inline-flex items-center justify-center w-12 h-12 rounded-lg bg-surface-container mb-6">
+<span class="material-symbols-outlined text-primary text-3xl" data-icon="domain">domain</span>
+</div>
+<!-- Brand Anchor Style -->
+<h1 class="font-headline text-xl font-black text-primary tracking-widest uppercase mb-2">Reservio</h1>
+<h2 class="font-headline text-2xl font-bold text-on-surface mt-2">Crea tu cuenta</h2>
+<p class="font-body text-on-surface-variant mt-2">Ingresa tus datos para comenzar</p>
+</div>
+<!-- Form -->
+<form action="#" class="space-y-6" method="POST">
+<!-- Full Name Input -->
+<div class="space-y-2">
+<label class="block font-label text-sm font-medium text-on-surface" for="fullName">Nombre Completo</label>
+<div class="relative">
+<!-- Surface well effect with Ghost Border fallback -->
+<input class="w-full bg-surface-container-highest border border-outline-variant/15 text-on-surface rounded-lg px-4 py-3 placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors" id="fullName" name="fullName" placeholder="Ej. Ana García" type="text"/>
+</div>
+</div>
+<!-- Email Input (Error State) -->
+<div class="space-y-2">
+<label class="block font-label text-sm font-medium text-on-surface" for="email">Correo Electrónico</label>
+<div class="relative">
+<!-- Error state border and background tint -->
+<input class="w-full bg-error-container/10 border border-error text-on-surface rounded-lg px-4 py-3 focus:outline-none focus:ring-1 focus:ring-error transition-colors" id="email" name="email" placeholder="ejemplo@empresa.com" type="email" value="ana.garcia@dominio"/>
+<div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-error text-xl" data-icon="error">error</span>
+</div>
+</div>
+<!-- Error Message -->
+<p class="font-label text-sm text-error mt-1 flex items-center gap-1">
+                        Formato de correo inválido
+                    </p>
+</div>
+<!-- Password Input -->
+<div class="space-y-2">
+<label class="block font-label text-sm font-medium text-on-surface" for="password">Contraseña</label>
+<div class="relative">
+<input class="w-full bg-surface-container-highest border border-outline-variant/15 text-on-surface rounded-lg px-4 py-3 placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors" id="password" name="password" placeholder="••••••••" type="password"/>
+<button class="absolute inset-y-0 right-0 pr-3 flex items-center text-on-surface-variant hover:text-on-surface transition-colors" type="button">
+<span class="material-symbols-outlined text-xl" data-icon="visibility_off">visibility_off</span>
+</button>
+</div>
+<p class="font-label text-xs text-on-surface-variant mt-1">Debe contener al menos 8 caracteres.</p>
+</div>
+<!-- Action Button -->
+<div class="pt-4">
+<!-- Primary Button Style -->
+<button class="w-full flex justify-center items-center py-3.5 px-4 border border-transparent rounded-lg text-base font-medium text-on-primary bg-primary hover:bg-primary-container transition-colors duration-300 shadow-sm" type="submit">
+                        Registrarme en Reservio
+                    </button>
+</div>
+</form>
+<!-- Footer Link -->
+<div class="mt-8 text-center">
+<p class="font-body text-sm text-on-surface-variant">
+                    ¿Ya tienes cuenta? 
+                    <a class="font-medium text-primary hover:text-primary-container hover:underline transition-colors ml-1" href="#">
+                        Inicia sesión aquí
+                    </a>
+</p>
+</div>
+</div>
+</div>
+</body></html>
