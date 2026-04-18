@@ -46,7 +46,7 @@ export default function LoginPage() {
 
     setIsSuccess(true)
     setTimeout(() => {
-      router.push('/dashboard')
+      router.push('/main-menu')
     }, 2000)
   }
 
