@@ -9,8 +9,7 @@ import { signUp, checkEmailExists } from '@/lib/auth/authService'
 // VALIDACIÓN SIMPLIFICADA - Reglas más flexibles y amigables
 // ═══════════════════════════════════════════════════════════════════════════════
 const VALIDATION_RULES = {
-  // Email: Regex estándar simple - solo verifica estructura básica
-  correo: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+  correo: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/,
 } as const
 
 // Constantes de validación
