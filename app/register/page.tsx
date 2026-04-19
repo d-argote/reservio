@@ -3,7 +3,8 @@
 import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { signUp, checkEmailExists } from '@/lib/auth/authService'
+import { signUp } from '@/lib/auth/authService'
+import { checkEmailExists } from '@/lib/auth/serverActions'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // VALIDACIÓN SIMPLIFICADA - Reglas más flexibles y amigables

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { signInWithVerification } from '@/lib/auth/authService'
+import { signInWithVerification } from '@/lib/auth/serverActions'
 
 export default function LoginPage() {
   const router = useRouter()

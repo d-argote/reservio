@@ -1,34 +1,9 @@
-import { supabase, supabaseAdmin } from '../supabase/client'
+import { supabase } from '../supabase/client'
 
 export interface SignUpData {
   nombre: string
   correo: string
   password: string
-}
-
-/**
- * Verifica si un correo electrónico ya está registrado usando Admin API
- * Retorna true si el usuario ya existe, false en caso contrario
- */
-export async function checkEmailExists(email: string): Promise<boolean> {
-  try {
-    // Usamos supabaseAdmin que tiene permisos de admin para listar usuarios
-    const { data, error } = await supabaseAdmin.auth.admin.listUsers()
-    
-    if (error) {
-      console.error('Error verificando email:', error)
-      return false
-    }
-    
-    // Busca si existe algún usuario con ese email
-    const users = data?.users || []
-    const emailLower = email.trim().toLowerCase()
-    
-    return users.some(user => user.email?.toLowerCase() === emailLower)
-  } catch (err) {
-    console.error('Excepción verificando email:', err)
-    return false
-  }
 }
 
 export async function signUp({ nombre, correo, password }: SignUpData) {
@@ -51,85 +26,6 @@ export async function signIn(correo: string, password: string) {
     password,
   })
   return { data, error }
-}
-
-/**
- * Tipos de error de login específicos
- */
-export type LoginErrorType = 
-  | 'USER_NOT_FOUND'
-  | 'INVALID_PASSWORD'
-  | 'INVALID_EMAIL'
-  | 'RATE_LIMIT'
-  | 'UNKNOWN'
-
-/**
- * Resultado de login con información detallada del error
- */
-export interface LoginResult {
-  data: any
-  error: any
-  errorType?: LoginErrorType
-}
-
-/**
- * Inicia sesión con verificación previa del email
- * Retorna el tipo de error específico para mostrar mensajes adecuados
- */
-export async function signInWithVerification(correo: string, password: string): Promise<LoginResult> {
-  const email = correo.trim().toLowerCase()
-  
-  try {
-    // Paso 1: Verificar si el email existe usando Admin API
-    const emailExists = await checkEmailExists(email)
-    
-    // Paso 2: Intentar el login
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
-    
-    // Si no hay error, el login fue exitoso
-    if (!error) {
-      return { data, error: null, errorType: undefined }
-    }
-    
-    // Paso 3: Determinar el tipo de error basado en la verificación previa
-    const errorMessage = error.message.toLowerCase()
-    
-    // Error de credenciales inválidas
-    if (errorMessage.includes('invalid login credentials') || 
-        errorMessage.includes('invalid credentials')) {
-      
-      if (emailExists) {
-        // El email existe pero la contraseña es incorrecta
-        return { data: null, error, errorType: 'INVALID_PASSWORD' }
-      } else {
-        // El email NO existe en la base de datos
-        return { data: null, error, errorType: 'USER_NOT_FOUND' }
-      }
-    }
-    
-    // Otros errores específicos
-    if (errorMessage.includes('rate limit') || errorMessage.includes('too many')) {
-      return { data: null, error, errorType: 'RATE_LIMIT' }
-    }
-    
-    if (errorMessage.includes('invalid email') || errorMessage.includes('valid email')) {
-      return { data: null, error, errorType: 'INVALID_EMAIL' }
-    }
-    
-    // Error desconocido
-    return { data: null, error, errorType: 'UNKNOWN' }
-    
-  } catch (err) {
-    console.error('Error en signInWithVerification:', err)
-    return { 
-      data: null, 
-      error: { message: 'Ocurrió un error inesperado. Por favor, intenta nuevamente.' },
-      errorType: 'UNKNOWN' 
-    }
-  }
 }
 
 /**
