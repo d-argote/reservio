@@ -38,15 +38,23 @@ const ERROR_MESSAGES = {
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAPEO DE ERRORES DE SUPABASE - Traduce errores técnicos a mensajes amigables
 // ═══════════════════════════════════════════════════════════════════════════════
-const AUTH_ERROR_MAP: Record<string, string> = {
-  'already registered': 'Este correo ya está registrado. Intenta iniciar sesión.',
-  'already exists': 'Este correo ya está registrado. Intenta iniciar sesión.',
-  'user already registered': 'Este correo ya está registrado. Intenta iniciar sesión.',
-  'password': 'La contraseña no cumple los requisitos mínimos de seguridad.',
-  'email': 'El formato del correo electrónico es inválido.',
-  'invalid email': 'El correo electrónico ingresado no es válido.',
-  'signup': 'No se pudo completar el registro. Intenta nuevamente.',
-}
+// Patrones de error de email ya registrado (se detectan antes que cualquier otro)
+const EMAIL_EXISTS_PATTERNS = [
+  'already registered',
+  'already exists',
+  'user already registered',
+  'email address is already',
+  'duplicate',
+]
+
+// Patrones de error de formato de email inválido (explícitos, no la palabra "email" genérica)
+const INVALID_EMAIL_PATTERNS = [
+  'invalid email',
+  'invalid email format',
+  'email format',
+  'not a valid email',
+  'malformed email',
+]
 
 // Código especial para identificar error de email ya registrado
 export const EMAIL_EXISTS_CODE = 'EMAIL_EXISTS'
@@ -129,19 +137,34 @@ function validateForm(form: FormState): FieldErrors {
  * Traduce mensajes de error técnicos de Supabase a mensajes amigables
  */
 function translateAuthError(message: string): string {
-  const lowerMessage = message.toLowerCase()
-  
-  for (const [key, value] of Object.entries(AUTH_ERROR_MAP)) {
-    if (lowerMessage.includes(key.toLowerCase())) {
-      // Si es un error de email ya registrado, retorna el código especial
-      if (key === 'already registered' || key === 'already exists') {
-        return EMAIL_EXISTS_CODE
-      }
-      return value
-    }
+  const m = message.toLowerCase()
+
+  // 1. Email ya registrado → código especial para mostrar banner
+  if (EMAIL_EXISTS_PATTERNS.some(p => m.includes(p))) {
+    return EMAIL_EXISTS_CODE
   }
-  
-  // Fallback: mensaje genérico pero descriptivo
+
+  // 2. Contraseña débil
+  if (m.includes('password') && (m.includes('weak') || m.includes('minimum') || m.includes('characters'))) {
+    return 'La contraseña no cumple los requisitos mínimos de seguridad.'
+  }
+
+  // 3. Formato de email inválido (patrones específicos, NO la palabra genérica "email")
+  if (INVALID_EMAIL_PATTERNS.some(p => m.includes(p))) {
+    return 'El correo electrónico ingresado no es válido.'
+  }
+
+  // 4. Rate limit de signup / email sending — no revelar detalles técnicos
+  if (m.includes('rate limit') || m.includes('too many') || m.includes('sending')) {
+    return 'Demasiados intentos. Espera unos minutos e intenta de nuevo.'
+  }
+
+  // 5. Signup deshabilitado o error general de Supabase
+  if (m.includes('signup') || m.includes('sign up') || m.includes('not allowed')) {
+    return 'El registro no está disponible en este momento. Intenta más tarde.'
+  }
+
+  // Fallback genérico
   return 'Ocurrió un error inesperado. Por favor, intenta nuevamente.'
 }
 
