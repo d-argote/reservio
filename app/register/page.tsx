@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { signUp } from '@/lib/auth/authService'
-import { checkEmailExists, ensureUserProfile } from '@/lib/auth/serverActions'
+import { checkEmailExists, ensureUserProfile, registerUser } from '@/lib/auth/serverActions'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // VALIDACIÓN SIMPLIFICADA - Reglas más flexibles y amigables
@@ -329,7 +329,7 @@ export default function RegisterPage() {
     setGlobalError(null)
     setEmailAlreadyExists(false)
 
-    // ── 1. Validación local del formulario ──────────────────────────
+    // ── 1. Validación local ────────────────────────────────────────────
     const allErrors = validateForm(form)
     setErrors(allErrors)
     setTouched({ nombre: true, correo: true, password: true })
@@ -343,69 +343,28 @@ export default function RegisterPage() {
 
     setIsLoading(true)
 
-    const correoNorm = form.correo.trim().toLowerCase()
-    const nombreNorm = form.nombre.trim()
-
     try {
-      // ── 2. Verificar si el email ya existe (Server Action) ──────────
-      const emailExists = await checkEmailExists(correoNorm)
-      if (emailExists) {
-        setEmailAlreadyExists(true)
-        setIsLoading(false)
-        return
-      }
+      // ── 2. Crear usuario + perfil en un solo Server Action ──────────
+      //    registerUser usa supabaseAdmin (service role):
+      //    · No envía emails (email_confirm: true)
+      //    · Crea en auth.users e inserta en public.usuarios
+      //    · Solo devuelve ok:true cuando ambos pasos confirmaron
+      const result = await registerUser(
+        form.nombre.trim(),
+        form.correo.trim(),
+        form.password,
+      )
 
-      // ── 3. Crear usuario en Supabase Auth ───────────────────────────
-      const { data: signUpData, error: authError } = await signUp({
-        nombre: nombreNorm,
-        correo: correoNorm,
-        password: form.password,
-      })
-
-      if (authError) {
-        const errorMsg = translateAuthError(authError.message)
-        if (errorMsg === EMAIL_EXISTS_CODE) {
+      if (!result.ok) {
+        if (result.error === 'EMAIL_EXISTS') {
           setEmailAlreadyExists(true)
-        } else if (errorMsg === 'SMTP_ERROR') {
-          // El email de confirmación falló pero el usuario pudo haberse creado
-          // Verificamos directamente si el user existe
-          if (signUpData?.user?.id) {
-            const profileResult = await ensureUserProfile(signUpData.user.id, nombreNorm, correoNorm)
-            if (profileResult.ok) {
-              setIsSuccess(true)
-              resetForm()
-              setTimeout(() => router.push('/login'), 3000)
-              return
-            }
-          }
-          setGlobalError('Ocurrió un error al completar el registro. Por favor, intenta nuevamente.')
         } else {
-          setGlobalError(errorMsg)
+          setGlobalError(result.error ?? 'Ocurrió un error. Por favor, intenta nuevamente.')
         }
-        setIsLoading(false)
         return
       }
 
-      // authError es null — auth.signUp fue exitoso
-      if (!signUpData?.user?.id) {
-        setGlobalError('No se pudo completar el registro. Por favor, intenta nuevamente.')
-        setIsLoading(false)
-        return
-      }
-
-      // ── 4. Insertar en public.usuarios (Server Action con service role) ──
-      //    Este paso es obligatorio — el éxito solo se muestra si la DB confirma
-      const profileResult = await ensureUserProfile(signUpData.user.id, nombreNorm, correoNorm)
-
-      if (!profileResult.ok) {
-        // El usuario quedó en auth.users pero no en public.usuarios
-        // Intentar eliminar el usuario de auth para no dejar datos inconsistentes
-        setGlobalError('Error al guardar el perfil. Por favor, intenta registrarte de nuevo.')
-        setIsLoading(false)
-        return
-      }
-
-      // ── 5. ÉXITO confirmado: usuario en auth Y en public.usuarios ───
+      // ── 3. Éxito confirmado ────────────────────────────────────────
       setIsSuccess(true)
       resetForm()
       setTimeout(() => router.push('/login'), 3000)

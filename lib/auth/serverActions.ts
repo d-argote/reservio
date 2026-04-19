@@ -8,10 +8,71 @@ export interface EnsureUserResult {
   error?: string
 }
 
+export interface RegisterResult {
+  ok: boolean
+  error?: string
+}
+
+/**
+ * Crea un usuario nuevo usando el cliente admin (service role).
+ * - Bypasa toda la lógica de envío de email (email_confirm: true).
+ * - Inserta el perfil en public.usuarios en el mismo paso.
+ * - Es la única fuente de verdad para el registro.
+ */
+export async function registerUser(
+  nombre: string,
+  correo: string,
+  password: string,
+): Promise<RegisterResult> {
+  const email = correo.trim().toLowerCase()
+  const name  = nombre.trim()
+
+  // 1. Crear usuario en auth.users (sin enviar ningún email)
+  const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,          // usuario confirmado de inmediato, sin email
+    user_metadata: { nombre: name },
+  })
+
+  if (authError) {
+    console.error('Error creando usuario en auth:', authError)
+    // Detectar email duplicado
+    if (
+      authError.message.includes('already registered') ||
+      authError.message.includes('already exists') ||
+      authError.message.includes('duplicate')
+    ) {
+      return { ok: false, error: 'EMAIL_EXISTS' }
+    }
+    return { ok: false, error: authError.message }
+  }
+
+  if (!authData?.user?.id) {
+    return { ok: false, error: 'No se obtuvo el ID del usuario creado.' }
+  }
+
+  // 2. Insertar en public.usuarios (service role bypasa RLS)
+  const { error: dbError } = await supabaseAdmin
+    .from('usuarios')
+    .upsert(
+      { id: authData.user.id, nombre: name, correo: email, rol: 'usuario' },
+      { onConflict: 'id' },
+    )
+
+  if (dbError) {
+    console.error('Error insertando en public.usuarios:', dbError)
+    // Limpiar el usuario de auth para no dejar datos huérfanos
+    await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
+    return { ok: false, error: 'Error al guardar el perfil. Intenta de nuevo.' }
+  }
+
+  return { ok: true }
+}
+
 /**
  * Inserta o actualiza el perfil del usuario en public.usuarios.
  * Usa service role key para bypass de RLS — solo se llama desde Server Actions.
- * Es la fuente de verdad: el éxito del registro depende de que esto funcione.
  */
 export async function ensureUserProfile(
   id: string,
