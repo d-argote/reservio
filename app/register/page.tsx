@@ -154,12 +154,18 @@ function translateAuthError(message: string): string {
     return 'El correo electrónico ingresado no es válido.'
   }
 
-  // 4. Rate limit de signup / email sending — no revelar detalles técnicos
-  if (m.includes('rate limit') || m.includes('too many') || m.includes('sending')) {
+  // 4. Rate limit explícito (solo patrones específicos de throttle, NO "sending")
+  if (m.includes('rate limit') || m.includes('too many requests') || m.includes('too many attempts')) {
     return 'Demasiados intentos. Espera unos minutos e intenta de nuevo.'
   }
 
-  // 5. Signup deshabilitado o error general de Supabase
+  // 5. Error de entrega de correo / SMTP — el usuario SÍ se creó, el email falló
+  //    Supabase devuelve este error pero GoTrue ya insertó el usuario en auth.users
+  if (m.includes('sending') || m.includes('smtp') || m.includes('could not send') || m.includes('email delivery')) {
+    return 'SMTP_ERROR'
+  }
+
+  // 6. Signup deshabilitado o error general de Supabase
   if (m.includes('signup') || m.includes('sign up') || m.includes('not allowed')) {
     return 'El registro no está disponible en este momento. Intenta más tarde.'
   }
@@ -353,7 +359,7 @@ export default function RegisterPage() {
         }
 
         // ── Llamada a Supabase (sin errores de validación) ─────────────
-        const { error: authError } = await signUp({
+        const { data: signUpData, error: authError } = await signUp({
           nombre: form.nombre.trim(),
           correo: form.correo.trim(),
           password: form.password,
@@ -363,18 +369,35 @@ export default function RegisterPage() {
 
         // ── Manejo de errores de Supabase ───────────────────────────────
         if (authError) {
-              const errorMsg = translateAuthError(authError.message)
-      
-              // Verificar si es un error de email ya registrado
-              if (errorMsg === EMAIL_EXISTS_CODE) {
-                setEmailAlreadyExists(true)
-                setGlobalError(null)
-              } else {
-                setGlobalError(errorMsg)
-                setEmailAlreadyExists(false)
-              }
-              return
-            }
+          const errorMsg = translateAuthError(authError.message)
+
+          // Si el usuario SÍ fue creado pero solo falló el envío del correo
+          // (error SMTP/MailerSend), tratar como éxito — el usuario existe en auth.users
+          if (errorMsg === 'SMTP_ERROR' || (errorMsg === 'SMTP_ERROR' && signUpData?.user)) {
+            setIsSuccess(true)
+            resetForm()
+            setTimeout(() => router.push('/login'), 3000)
+            return
+          }
+
+          // Si el usuario fue creado a pesar del error (GoTrue crea primero, luego envía)
+          if (signUpData?.user) {
+            setIsSuccess(true)
+            resetForm()
+            setTimeout(() => router.push('/login'), 3000)
+            return
+          }
+
+          // Verificar si es un error de email ya registrado
+          if (errorMsg === EMAIL_EXISTS_CODE) {
+            setEmailAlreadyExists(true)
+            setGlobalError(null)
+          } else {
+            setGlobalError(errorMsg)
+            setEmailAlreadyExists(false)
+          }
+          return
+        }
 
     // ── ÉXITO ───────────────────────────────────────────────────────
     setIsSuccess(true)
