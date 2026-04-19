@@ -3,6 +3,36 @@
 import { supabaseAdmin } from '../supabase/serverClient'
 import { supabase } from '../supabase/client'
 
+export interface EnsureUserResult {
+  ok: boolean
+  error?: string
+}
+
+/**
+ * Inserta o actualiza el perfil del usuario en public.usuarios.
+ * Usa service role key para bypass de RLS — solo se llama desde Server Actions.
+ * Es la fuente de verdad: el éxito del registro depende de que esto funcione.
+ */
+export async function ensureUserProfile(
+  id: string,
+  nombre: string,
+  correo: string
+): Promise<EnsureUserResult> {
+  const { error } = await supabaseAdmin
+    .from('usuarios')
+    .upsert(
+      { id, nombre: nombre.trim(), correo: correo.trim().toLowerCase(), rol: 'usuario' },
+      { onConflict: 'id' }
+    )
+
+  if (error) {
+    console.error('Error insertando perfil en public.usuarios:', error)
+    return { ok: false, error: error.message }
+  }
+
+  return { ok: true }
+}
+
 export type LoginErrorType =
   | 'USER_NOT_FOUND'
   | 'INVALID_PASSWORD'

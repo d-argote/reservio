@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { signUp } from '@/lib/auth/authService'
-import { checkEmailExists } from '@/lib/auth/serverActions'
+import { checkEmailExists, ensureUserProfile } from '@/lib/auth/serverActions'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // VALIDACIÓN SIMPLIFICADA - Reglas más flexibles y amigables
@@ -327,86 +327,95 @@ export default function RegisterPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setGlobalError(null)
+    setEmailAlreadyExists(false)
 
-    // ── Validación completa del formulario ──────────────────────────
+    // ── 1. Validación local del formulario ──────────────────────────
     const allErrors = validateForm(form)
     setErrors(allErrors)
     setTouched({ nombre: true, correo: true, password: true })
 
-    // Si hay errores, NO ejecutar el submit
     if (Object.keys(allErrors).length > 0) {
-      // Scroll al primer error para mejor UX
       const firstErrorField = Object.keys(allErrors)[0]
-      const fieldIds: Record<string, string> = {
-        nombre: 'fullName',
-        correo: 'email',
-        password: 'password',
-      }
+      const fieldIds: Record<string, string> = { nombre: 'fullName', correo: 'email', password: 'password' }
       document.getElementById(fieldIds[firstErrorField])?.focus()
       return
     }
 
-    // ── VERIFICACIÓN PREVIA: ¿El email ya existe? ───────────────────
-        setIsLoading(true)
-    
-        const emailExists = await checkEmailExists(form.correo.trim())
-    
-        if (emailExists) {
-          setIsLoading(false)
-          setEmailAlreadyExists(true)
-          setErrors({}) // Limpiar errores del formulario
-          return
-        }
+    setIsLoading(true)
 
-        // ── Llamada a Supabase (sin errores de validación) ─────────────
-        const { data: signUpData, error: authError } = await signUp({
-          nombre: form.nombre.trim(),
-          correo: form.correo.trim(),
-          password: form.password,
-        })
+    const correoNorm = form.correo.trim().toLowerCase()
+    const nombreNorm = form.nombre.trim()
 
+    try {
+      // ── 2. Verificar si el email ya existe (Server Action) ──────────
+      const emailExists = await checkEmailExists(correoNorm)
+      if (emailExists) {
+        setEmailAlreadyExists(true)
         setIsLoading(false)
+        return
+      }
 
-        // ── Manejo de errores de Supabase ───────────────────────────────
-        if (authError) {
-          const errorMsg = translateAuthError(authError.message)
+      // ── 3. Crear usuario en Supabase Auth ───────────────────────────
+      const { data: signUpData, error: authError } = await signUp({
+        nombre: nombreNorm,
+        correo: correoNorm,
+        password: form.password,
+      })
 
-          // Si el usuario SÍ fue creado pero solo falló el envío del correo
-          // (error SMTP/MailerSend), tratar como éxito — el usuario existe en auth.users
-          if (errorMsg === 'SMTP_ERROR' || (errorMsg === 'SMTP_ERROR' && signUpData?.user)) {
-            setIsSuccess(true)
-            resetForm()
-            setTimeout(() => router.push('/login'), 3000)
-            return
+      if (authError) {
+        const errorMsg = translateAuthError(authError.message)
+        if (errorMsg === EMAIL_EXISTS_CODE) {
+          setEmailAlreadyExists(true)
+        } else if (errorMsg === 'SMTP_ERROR') {
+          // El email de confirmación falló pero el usuario pudo haberse creado
+          // Verificamos directamente si el user existe
+          if (signUpData?.user?.id) {
+            const profileResult = await ensureUserProfile(signUpData.user.id, nombreNorm, correoNorm)
+            if (profileResult.ok) {
+              setIsSuccess(true)
+              resetForm()
+              setTimeout(() => router.push('/login'), 3000)
+              return
+            }
           }
-
-          // Si el usuario fue creado a pesar del error (GoTrue crea primero, luego envía)
-          if (signUpData?.user) {
-            setIsSuccess(true)
-            resetForm()
-            setTimeout(() => router.push('/login'), 3000)
-            return
-          }
-
-          // Verificar si es un error de email ya registrado
-          if (errorMsg === EMAIL_EXISTS_CODE) {
-            setEmailAlreadyExists(true)
-            setGlobalError(null)
-          } else {
-            setGlobalError(errorMsg)
-            setEmailAlreadyExists(false)
-          }
-          return
+          setGlobalError('Ocurrió un error al completar el registro. Por favor, intenta nuevamente.')
+        } else {
+          setGlobalError(errorMsg)
         }
+        setIsLoading(false)
+        return
+      }
 
-    // ── ÉXITO ───────────────────────────────────────────────────────
-    setIsSuccess(true)
-    resetForm()
+      // authError es null — auth.signUp fue exitoso
+      if (!signUpData?.user?.id) {
+        setGlobalError('No se pudo completar el registro. Por favor, intenta nuevamente.')
+        setIsLoading(false)
+        return
+      }
 
-    // Redirección automática después de 3 segundos
-    setTimeout(() => {
-      router.push('/login')
-    }, 3000)
+      // ── 4. Insertar en public.usuarios (Server Action con service role) ──
+      //    Este paso es obligatorio — el éxito solo se muestra si la DB confirma
+      const profileResult = await ensureUserProfile(signUpData.user.id, nombreNorm, correoNorm)
+
+      if (!profileResult.ok) {
+        // El usuario quedó en auth.users pero no en public.usuarios
+        // Intentar eliminar el usuario de auth para no dejar datos inconsistentes
+        setGlobalError('Error al guardar el perfil. Por favor, intenta registrarte de nuevo.')
+        setIsLoading(false)
+        return
+      }
+
+      // ── 5. ÉXITO confirmado: usuario en auth Y en public.usuarios ───
+      setIsSuccess(true)
+      resetForm()
+      setTimeout(() => router.push('/login'), 3000)
+
+    } catch (err) {
+      console.error('Error inesperado en registro:', err)
+      setGlobalError('Ocurrió un error inesperado. Por favor, intenta nuevamente.')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   /**
