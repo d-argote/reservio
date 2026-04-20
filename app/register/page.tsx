@@ -3,8 +3,7 @@
 import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { signUp } from '@/lib/auth/authService'
-import { checkEmailExists, ensureUserProfile, registerUser } from '@/lib/auth/serverActions'
+import { signUpUser } from '@/lib/auth/serverActions'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // VALIDACIÓN SIMPLIFICADA - Reglas más flexibles y amigables
@@ -15,7 +14,7 @@ const VALIDATION_RULES = {
 
 // Constantes de validación
 const MIN_NOMBRE_LENGTH = 2
-const MIN_PASSWORD_LENGTH = 6
+const MIN_PASSWORD_LENGTH = 8
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MENSAJES DE ERROR - Texto amigable y claro para cada validación
@@ -105,12 +104,16 @@ function validateCorreo(value: string): string | undefined {
 /**
  * Valida el campo contraseña:
  * - No vacía
- * - Mínimo 6 caracteres (estándar de Supabase)
- * - Sin requisito de carácter especial
+ * - Mínimo 8 caracteres
+ * - Mayúscula, minúscula, número y símbolo
  */
 function validatePassword(value: string): string | undefined {
   if (!value) return ERROR_MESSAGES.password.required
   if (value.length < MIN_PASSWORD_LENGTH) return ERROR_MESSAGES.password.minLength
+  if (!/[A-Z]/.test(value)) return 'La contraseña debe tener al menos una letra mayúscula.'
+  if (!/[a-z]/.test(value)) return 'La contraseña debe tener al menos una letra minúscula.'
+  if (!/[0-9]/.test(value)) return 'La contraseña debe tener al menos un número.'
+  if (!/[!@#$%^&*(),.?":{}|<>]/.test(value)) return 'La contraseña debe tener al menos un carácter especial.'
   return undefined
 }
 
@@ -219,23 +222,31 @@ function FieldError({ message }: { message: string }) {
 
 /**
  * Indicador de requisitos de contraseña
- * Solo muestra el requisito de longitud mínima (6 caracteres)
  */
 function PasswordRequirements({ password }: { password: string }) {
-  const met = password.length >= MIN_PASSWORD_LENGTH
+  const requirements = [
+    { label: `Mínimo ${MIN_PASSWORD_LENGTH} caracteres`, met: password.length >= MIN_PASSWORD_LENGTH },
+    { label: 'Una letra mayúscula', met: /[A-Z]/.test(password) },
+    { label: 'Una letra minúscula', met: /[a-z]/.test(password) },
+    { label: 'Un número', met: /[0-9]/.test(password) },
+    { label: 'Un carácter especial', met: /[!@#$%^&*(),.?":{}|<>]/.test(password) },
+  ]
 
   return (
-    <div className="mt-2">
-      <div
-        className={`flex items-center gap-2 text-xs transition-colors ${
-          met ? 'text-green-600' : 'text-on-surface-variant/60'
-        }`}
-      >
-        <span className={`material-symbols-outlined text-sm ${met ? 'text-green-500' : ''}`}>
-          {met ? 'check_circle' : 'radio_button_unchecked'}
-        </span>
-        Mínimo {MIN_PASSWORD_LENGTH} caracteres
-      </div>
+    <div className="mt-2 space-y-1">
+      {requirements.map((req, index) => (
+        <div
+          key={index}
+          className={`flex items-center gap-2 text-xs transition-colors ${
+            req.met ? 'text-green-600' : 'text-on-surface-variant/60'
+          }`}
+        >
+          <span className={`material-symbols-outlined text-sm ${req.met ? 'text-green-500' : ''}`}>
+            {req.met ? 'check_circle' : 'radio_button_unchecked'}
+          </span>
+          {req.label}
+        </div>
+      ))}
     </div>
   )
 }
@@ -344,18 +355,14 @@ export default function RegisterPage() {
     setIsLoading(true)
 
     try {
-      // ── 2. Crear usuario + perfil en un solo Server Action ──────────
-      //    registerUser usa supabaseAdmin (service role):
-      //    · No envía emails (email_confirm: true)
-      //    · Crea en auth.users e inserta en public.usuarios
-      //    · Solo devuelve ok:true cuando ambos pasos confirmaron
-      const result = await registerUser(
+      // ── 2. Crear usuario con el Server Action ──────────
+      const result = await signUpUser(
         form.nombre.trim(),
         form.correo.trim(),
         form.password,
       )
 
-      if (!result.ok) {
+      if (result.error) {
         if (result.error === 'EMAIL_EXISTS') {
           setEmailAlreadyExists(true)
         } else {
