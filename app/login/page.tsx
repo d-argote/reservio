@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { signInWithVerification } from '@/lib/auth/serverActions'
+import { loginUser } from '@/lib/auth/serverActions'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -24,22 +24,25 @@ export default function LoginPage() {
     }
 
     setIsLoading(true)
-    const { error, errorType } = await signInWithVerification(correo.trim(), password)
+    const result = await loginUser(correo.trim(), password)
     setIsLoading(false)
 
-    if (error) {
-      switch (errorType) {
+    if (result.error) {
+      switch (result.error) {
         case 'USER_NOT_FOUND':
-          setGlobalError('Este usuario no esta registrado. Por favor, crea una cuenta primero.')
+          setGlobalError('Este usuario no está registrado. Por favor, crea una cuenta primero.')
           break
         case 'INVALID_PASSWORD':
-          setGlobalError('Contrasena incorrecta. Intentalo de nuevo.')
+          setGlobalError('Contraseña incorrecta. Inténtalo de nuevo.')
           break
         case 'RATE_LIMIT':
           setGlobalError('Demasiados intentos fallidos. Por favor, espera unos minutos.')
           break
+        case 'INVALID_EMAIL':
+          setGlobalError('Formato de correo electrónico inválido.')
+          break
         default:
-          setGlobalError('Ocurrio un error. Verifica tus credenciales e intenta de nuevo.')
+          setGlobalError('Ocurrió un error. Verifica tus credenciales e intenta de nuevo.')
       }
       return
     }
