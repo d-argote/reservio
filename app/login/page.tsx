@@ -55,25 +55,25 @@ export default function LoginPage() {
 
   return (
     <div className="bg-surface font-body text-on-surface antialiased min-h-screen flex w-full">
-      <div
-        className="hidden lg:block lg:w-1/2 relative bg-surface-container-low"
-        style={{
-          backgroundImage: "url('https://images.unsplash.com/photo-1497366216548-37526070297c?w=1200&q=80')",
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-        }}
-      >
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/85 via-primary/70 to-primary-container/50" />
-        <div className="absolute inset-0 flex flex-col justify-end p-12">
+      <div className="hidden lg:block lg:w-1/2 relative bg-[#002045] isolate overflow-hidden">
+        <img 
+          src="/rooms/photo-1495576775051-8af0d10f19b1.jpg" 
+          alt="Office background" 
+          className="absolute inset-0 w-full h-full object-cover opacity-50 mix-blend-luminosity saturate-50"
+        />
+        <div className="absolute inset-0 bg-gradient-to-br from-[#002045] via-[#002045]/60 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+        
+        <div className="absolute inset-0 flex flex-col justify-end p-14 z-10">
           <div className="max-w-md text-white drop-shadow-lg">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                <span className="material-symbols-outlined text-white text-2xl">domain</span>
+            <div className="flex items-center gap-4 mb-8">
+              <div className="w-16 h-16 rounded-2xl bg-black/30 backdrop-blur-md flex items-center justify-center border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)]">
+                <img src="/logo.png" alt="Reservio Logo" className="w-9 h-9 object-contain drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]" />
               </div>
-              <span className="font-headline text-2xl font-bold tracking-wide">Reservio</span>
+              <span className="font-headline text-4xl font-black tracking-wide text-white drop-shadow-md">Reservio</span>
             </div>
-            <h2 className="font-headline text-4xl font-bold mb-4 leading-tight">
-              Excelencia en la Gestion de Recursos.
+            <h2 className="font-headline text-5xl font-black mb-5 leading-[1.15] tracking-tight text-white drop-shadow-md">
+              Excelencia en la<br/>Gestión de Recursos.
             </h2>
             <p className="font-body text-lg text-white/90 leading-relaxed">
               Plataforma integral para optimizar espacios y capital humano en entornos corporativos modernos.
@@ -85,6 +85,11 @@ export default function LoginPage() {
       <div className="w-full lg:w-1/2 flex items-center justify-center p-6 sm:p-12 bg-surface">
         <div className="w-full max-w-md bg-surface-container-lowest rounded-2xl p-8 sm:p-10 shadow-2xl shadow-on-surface/5">
           <div className="text-center mb-8">
+            <div className="flex justify-center md:hidden mb-6">
+              <div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20">
+                <img src="/logo.png" alt="Reservio" className="w-9 h-9 object-contain drop-shadow-sm" />
+              </div>
+            </div>
             <h2 className="font-headline text-2xl font-bold text-on-surface">
               Bienvenido a Reservio
             </h2>
@@ -168,9 +173,9 @@ export default function LoginPage() {
             </div>
 
             <div className="flex justify-end -mt-2">
-              <button type="button" className="text-sm font-medium text-secondary hover:text-primary transition-colors">
+              <Link href="/forgot-password" className="text-sm font-medium text-secondary hover:text-primary transition-colors">
                 Olvidaste tu contrasena?
-              </button>
+              </Link>
             </div>
 
             <div className="pt-4">
