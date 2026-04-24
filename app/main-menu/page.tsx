@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
+import { FEATURES } from '@/config/features'
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -164,6 +165,13 @@ export default function MainMenuPage() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('reservations')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
+  // ── Coming-soon toast ─────────────────────────────────────────────
+  const [comingSoon, setComingSoon] = useState(false)
+  const showComingSoon = useCallback(() => {
+    setComingSoon(true)
+    setTimeout(() => setComingSoon(false), 2800)
+  }, [])
+
   // ── Modal state ───────────────────────────────────────────────────
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState<ReservaForm>(EMPTY_FORM)
@@ -245,9 +253,15 @@ export default function MainMenuPage() {
     setModalOpen(true)
   }
 
-  const handleNuevaReserva = () => openModal()
+  const handleNuevaReserva = () => {
+    if (!FEATURES.reservations) { showComingSoon(); return }
+    openModal()
+  }
 
-  const handleReservarRapido = (salaId: string) => openModal(salaId)
+  const handleReservarRapido = (salaId: string) => {
+    if (!FEATURES.roomBooking) { showComingSoon(); return }
+    openModal(salaId)
+  }
 
   const handleSubmitReserva = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -333,6 +347,14 @@ export default function MainMenuPage() {
 
   return (
     <div className="bg-surface text-on-surface flex h-screen overflow-hidden">
+
+      {/* ── Coming Soon toast ────────────────────────────────── */}
+      {comingSoon && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 bg-[#001529] text-white px-5 py-3 rounded-xl shadow-2xl border border-white/10 animate-fadeIn">
+          <span className="material-symbols-outlined text-[20px] text-yellow-400" style={{ fontVariationSettings: "'FILL' 1" }}>rocket_launch</span>
+          <span className="font-label text-sm font-medium">Próximamente — disponible en el siguiente Sprint</span>
+        </div>
+      )}
       {/* ── Sidebar (desktop) ─────────────────────────────────── */}
       <nav className="bg-surface text-primary font-body hidden h-screen w-72 flex-col border-r border-outline-variant/20 fixed left-0 top-0 z-50 md:flex">
         {/* Brand */}
@@ -855,6 +877,7 @@ export default function MainMenuPage() {
                     
                     <div className="mt-6 pt-4 border-t border-outline-variant/15 mt-auto">
                       <button
+                        onClick={() => { if (!FEATURES.techRequests) { showComingSoon(); return } }}
                         disabled={!item.disponible}
                         className="w-full bg-surface-container-high text-on-surface font-label text-sm font-bold py-3 rounded-xl hover:bg-secondary hover:text-on-secondary hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-40 disabled:hover:translate-y-0 disabled:shadow-none disabled:cursor-not-allowed flex items-center justify-center gap-2"
                       >

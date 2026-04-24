@@ -3,7 +3,10 @@
 import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { signUpUser } from '@/lib/auth/serverActions'
+import dynamic from 'next/dynamic'
+import { signUpUser } from '@/features/auth/actions'
+
+const SimpleParallax = dynamic(() => import('simple-parallax-js'), { ssr: false })
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // VALIDACIÓN SIMPLIFICADA - Reglas más flexibles y amigables
@@ -413,58 +416,82 @@ export default function RegisterPage() {
   const showFieldError = (field: keyof FieldErrors) => touched[field] && errors[field]
 
   return (
-    <div className="bg-surface font-body text-on-surface antialiased min-h-screen flex w-full">
+    /* ─── Root: flex row, full viewport height on desktop ─── */
+    <div className="font-body text-on-surface antialiased flex min-h-screen bg-surface">
 
-      {/* ── Left Pane - Branding ─────────────────────────────────── */}
-      <div className="hidden lg:block lg:w-1/2 relative bg-[#002045] isolate overflow-hidden">
-        <img 
-          src="/rooms/fondo.jpg" 
-          alt="Office background" 
-          className="absolute inset-0 w-full h-full object-cover opacity-50 mix-blend-luminosity saturate-50"
+      {/* ════════════════════════════════════════════════════
+          LEFT PANEL — Branding
+          sticky + h-screen keeps it locked regardless of how
+          tall the right panel grows (keyboard, errors, etc.)
+          ════════════════════════════════════════════════════ */}
+      <aside className="hidden lg:flex lg:w-1/2 flex-col h-screen sticky top-0 relative bg-[#001529] overflow-hidden">
+
+        {/* ── Background image — plain img, absolutely fills the panel ── */}
+        <img
+          src="/fondo1.avif"
+          alt=""
+          aria-hidden="true"
+          className="absolute inset-0 w-full h-full object-cover"
         />
-        <div className="absolute inset-0 bg-gradient-to-br from-[#002045] via-[#002045]/60 to-transparent" />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-        
-        {/* Content */}
-        <div className="absolute inset-0 flex flex-col justify-between p-10 xl:p-14 z-10">
-          {/* Logo centrado y adaptable */}
-          <div className="flex-1 flex items-center justify-center overflow-visible -mt-24">
-            <img
-              src="/logo.png"
-              alt="Reservio Logo"
-              className="w-full h-full object-contain scale-[1.35] drop-shadow-[0_8px_40px_rgba(255,255,255,0.35)]"
-            />
+
+        {/* ── Layered overlays ─────────────────────────────────── */}
+        <div className="absolute inset-0 bg-[#001529]/65 pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#001529]/95 via-[#001529]/20 to-transparent pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-r from-transparent to-[#001529]/30 pointer-events-none" />
+
+        {/* ── Inner content ────────────────────────────────────── */}
+        <div className="relative z-10 flex flex-col h-full p-10 xl:p-14">
+
+          {/* Logo inside frosted-glass card */}
+          <div className="flex-1 flex items-center justify-center">
+            <div className="bg-white/[0.18] backdrop-blur-md rounded-2xl px-8 py-6 border border-white/[0.28] shadow-2xl shadow-black/40">
+              <SimpleParallax scale={1.08} delay={0.4} orientation="up" overflow={false}>
+                <img
+                  src="/Reservi1.png?v=3"
+                  alt="Reservio"
+                  className="w-auto h-auto max-w-[320px] xl:max-w-[370px] object-contain drop-shadow-[0_2px_20px_rgba(255,255,255,0.18)]"
+                />
+              </SimpleParallax>
+            </div>
           </div>
-          {/* Texto anclado abajo */}
-          <div className="max-w-md text-white">
-            <h2 className="font-headline text-4xl xl:text-5xl font-black mb-3 leading-[1.15] tracking-tight drop-shadow-md">
-              Tu espacio,<br/>tu control.
+
+          {/* Tagline anchored to the bottom */}
+          <div className="max-w-sm">
+            <h2 className="font-headline text-4xl xl:text-5xl font-black text-white mb-3 leading-[1.15] tracking-tight">
+              Tu espacio,<br />tu control.
             </h2>
-            <p className="font-body text-base xl:text-lg text-white/80 leading-relaxed">
+            <p className="font-body text-base xl:text-lg text-white/65 leading-relaxed">
               Crea tu cuenta y empieza a gestionar salas, recursos y equipos desde un solo lugar.
             </p>
           </div>
         </div>
-      </div>
+      </aside>
 
-      {/* ── Right Pane - Form ────────────────────────────────────── */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-6 sm:p-12 bg-surface">
-        <div className="w-full max-w-md bg-surface-container-lowest rounded-2xl p-8 sm:p-10 shadow-2xl shadow-on-surface/5">
+      {/* ════════════════════════════════════════════════════
+          RIGHT PANEL — Form
+          ════════════════════════════════════════════════════ */}
+      <main className="flex-1 flex items-center justify-center p-6 sm:p-10 min-h-screen bg-surface">
+        <div className="w-full max-w-md">
 
-          {/* Header */}
-                    <div className="mb-8 text-center">
-                      <div className="flex justify-center md:hidden mb-6">
-                        <div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20">
-                          <img src="/logo.png" alt="Reservio" className="w-9 h-9 object-contain drop-shadow-sm" />
-                        </div>
-                      </div>
-                      <h2 className="font-headline text-2xl font-bold text-on-surface">
-                        Crea tu cuenta
-                      </h2>
-                      <p className="font-body text-on-surface-variant mt-2">
-                        Ingresa tus datos para comenzar
-                      </p>
-                    </div>
+          {/* Mobile logo */}
+          <div className="flex justify-center lg:hidden mb-8">
+            <div className="w-14 h-14 rounded-2xl bg-primary flex items-center justify-center shadow-lg shadow-primary/25">
+              <img src="/logo.png" alt="Reservio" className="w-8 h-8 object-contain" />
+            </div>
+          </div>
+
+          {/* Card */}
+          <div className="bg-surface-container-lowest rounded-2xl p-8 sm:p-10 shadow-xl shadow-black/[0.06] border border-outline-variant/10">
+
+            {/* Card header */}
+            <div className="mb-8">
+              <h1 className="font-headline text-2xl font-bold text-on-surface tracking-tight">
+                Crea tu cuenta
+              </h1>
+              <p className="font-body text-on-surface-variant mt-1.5 text-sm">
+                Ingresa tus datos para comenzar
+              </p>
+            </div>
 
                     {/* ══════════════════════════════════════════════════════ */}
                     {/* EMAIL YA REGISTRADO - Banner prominente */}
@@ -690,14 +717,14 @@ export default function RegisterPage() {
             </div>
           </form>
 
-          {/* ── Footer - Link a Login ──────────────────────────────── */}
+          {/* Footer link inside card */}
           {!isSuccess && (
-            <div className="mt-8 pt-6 border-t border-outline-variant/20 text-center">
+            <div className="mt-8 pt-6 border-t border-outline-variant/15 text-center">
               <p className="font-body text-sm text-on-surface-variant">
                 ¿Ya tienes cuenta?{' '}
                 <Link
                   href="/login"
-                  className="font-semibold text-primary hover:text-primary-container hover:underline transition-colors"
+                  className="font-semibold text-primary hover:underline transition-colors"
                 >
                   Inicia sesión aquí
                 </Link>
@@ -705,26 +732,9 @@ export default function RegisterPage() {
             </div>
           )}
 
-        </div>
-      </div>
-
-      {/* ── Animaciones CSS Inline ─────────────────────────────── */}
-      <style jsx>{`
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(-8px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fadeIn {
-          animation: fadeIn 0.3s ease-out;
-        }
-        @keyframes shrink {
-          from { width: 100%; }
-          to { width: 0%; }
-        }
-        .animate-shrink {
-          animation: shrink 3s linear forwards;
-        }
-      `}</style>
+          </div>{/* /card */}
+        </div>{/* /max-w-md */}
+      </main>
     </div>
   )
 }
