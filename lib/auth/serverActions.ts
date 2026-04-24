@@ -72,3 +72,49 @@ export async function checkEmailExists(email: string): Promise<boolean> {
     return false
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// RECUPERACIÓN DE CONTRASEÑA
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export async function resetPasswordForEmail(correo: string) {
+  const supabase = await createClient()
+  const email = correo.trim().toLowerCase()
+
+  // Verificamos si el usuario existe para evitar correos fantasma
+  const emailExists = await checkEmailExists(email)
+  if (!emailExists) {
+    return { error: 'USER_NOT_FOUND' }
+  }
+
+  // Obtenemos la URL base desde el entorno
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
+
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${siteUrl}/reset-password`,
+  })
+
+  if (error) {
+    console.error('Error enviando correo de recuperación:', error)
+    if (error.message.includes('rate limit')) return { error: 'RATE_LIMIT' }
+    return { error: error.message }
+  }
+
+  return { success: true }
+}
+
+export async function updatePassword(newPassword: string) {
+  const supabase = await createClient()
+
+  // Actualiza la contraseña del usuario actualmente autenticado (la sesión se establece vía el link de recuperación)
+  const { error } = await supabase.auth.updateUser({
+    password: newPassword
+  })
+
+  if (error) {
+    console.error('Error actualizando contraseña:', error)
+    return { error: error.message }
+  }
+
+  return { success: true }
+}

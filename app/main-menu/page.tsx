@@ -31,7 +31,7 @@ interface Reserva {
   salas: Pick<Sala, 'id' | 'nombre' | 'capacidad' | 'ubicacion'> | null
 }
 
-type ActiveTab = 'reservations' | 'rooms' | 'profile'
+type ActiveTab = 'reservations' | 'rooms' | 'tech' | 'profile'
 
 interface ReservaForm {
   titulo: string
@@ -74,6 +74,32 @@ const CARD_STYLES = [
   { bg: 'bg-tertiary-fixed',      text: 'text-on-tertiary-fixed',         icon: 'laptop_mac' },
 ]
 
+// ── Images Helpers ──────────────────────────────────────────────────
+
+const ROOM_IMAGES = [
+  '/rooms/photo-1495576775051-8af0d10f19b1.jpg',
+  '/rooms/photo-1605797491749-0c6989a44356.jpg',
+  '/rooms/photo-1676477605752-224a26e6ec71.jpg',
+  '/rooms/photo-1677078610072-7f11ebc4d4d7.jpg',
+  '/rooms/photo-1760611656160-7c7bf7e6da9f.jpg',
+  '/rooms/photo-1765371512992-843e6a92d7e6.jpg',
+  '/rooms/photo-1767648718260-572abd64b81e.jpg',
+  '/rooms/photo-1771054244002-4445dc1da2eb.jpg'
+];
+
+function getRoomImage(index: number) {
+  return ROOM_IMAGES[index % ROOM_IMAGES.length];
+}
+
+const MOCK_TECH = [
+  { id: 't1', nombre: 'Proyector Laser 4K', tipo: 'Audiovisual', disponible: true, imagen: '/tech/photo-1552320640-6e01a5f1c1e9.jpg' },
+  { id: 't2', nombre: 'MacBook Pro M3 Max', tipo: 'Laptop', disponible: false, imagen: '/tech/photo-1610641563856-4ec0223d7084.jpg' },
+  { id: 't3', nombre: 'Kit VR Meta Quest 3', tipo: 'Realidad Virtual', disponible: true, imagen: '/tech/photo-1598187079701-01513e580415.jpg' },
+  { id: 't4', nombre: 'Micrófono Podcast Shure', tipo: 'Audio', disponible: true, imagen: '/tech/photo-1601919263076-4a6a8514c461.jpg' },
+  { id: 't5', nombre: 'Cámara 360 Institucional', tipo: 'Video', disponible: true, imagen: '/tech/photo-1646154034833-d10291080448.jpg' },
+  { id: 't6', nombre: 'iPad Pro Setup', tipo: 'Tablet', disponible: true, imagen: '/tech/photo-1648912869366-b89a51f52d44.jpg' },
+];
+
 // ── Skeleton Components ────────────────────────────────────────────
 
 function SkeletonSummaryCard() {
@@ -108,15 +134,15 @@ function SkeletonReservationCard() {
 
 function SkeletonRoomCard() {
   return (
-    <div className="bg-surface-container-lowest rounded-lg p-4 border border-outline-variant/15 shadow-sm animate-pulse">
-      <div className="flex justify-between mb-3">
-        <div className="space-y-1.5">
-          <div className="h-4 bg-surface-container rounded w-32" />
-          <div className="h-3 bg-surface-container rounded w-20" />
+    <div className="bg-surface-container-lowest rounded-2xl overflow-hidden shadow-md animate-pulse border border-outline-variant/10">
+      <div className="h-48 bg-surface-container w-full" />
+      <div className="p-5 space-y-3">
+        <div className="h-5 bg-surface-container rounded w-3/4" />
+        <div className="h-4 bg-surface-container rounded w-1/2" />
+        <div className="pt-2">
+          <div className="h-10 bg-surface-container rounded w-full" />
         </div>
-        <div className="w-2.5 h-2.5 rounded-full bg-surface-container mt-1" />
       </div>
-      <div className="h-8 bg-surface-container rounded" />
     </div>
   )
 }
@@ -301,6 +327,7 @@ export default function MainMenuPage() {
   const navItems = [
     { id: 'reservations' as ActiveTab, label: 'Reservas', icon: 'event_available' },
     { id: 'rooms' as ActiveTab, label: 'Salas', icon: 'meeting_room' },
+    { id: 'tech' as ActiveTab, label: 'Equipos', icon: 'devices' },
     { id: 'profile' as ActiveTab, label: 'Perfil', icon: 'account_circle' },
   ]
 
@@ -309,9 +336,12 @@ export default function MainMenuPage() {
       {/* ── Sidebar (desktop) ─────────────────────────────────── */}
       <nav className="bg-surface text-primary font-body hidden h-screen w-72 flex-col border-r border-outline-variant/20 fixed left-0 top-0 z-50 md:flex">
         {/* Brand */}
-        <div className="px-8 py-8">
-          <h1 className="font-headline text-2xl font-black text-primary mb-1">Reservio</h1>
-          <p className="font-body text-secondary text-sm">Resource Management</p>
+        <div className="px-8 py-8 flex items-center gap-3">
+          <img src="/logo.png" alt="Reservio Logo" className="w-10 h-10 object-contain drop-shadow-sm" />
+          <div>
+            <h1 className="font-headline text-2xl font-black text-primary mb-0 leading-none">Reservio</h1>
+            <p className="font-body text-secondary text-[11px] font-semibold tracking-wider uppercase mt-1">Workspace</p>
+          </div>
         </div>
 
         {/* Nav items */}
@@ -380,8 +410,11 @@ export default function MainMenuPage() {
       </nav>
 
       {/* ── Top app bar (mobile) ───────────────────────────────── */}
-      <header className="md:hidden bg-surface-container-low fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-6 h-16 shadow-sm">
-        <span className="font-headline text-xl font-black text-primary tracking-wide">Reservio</span>
+      <header className="md:hidden bg-surface-container-lowest fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-6 h-16 border-b border-outline-variant/15">
+        <div className="flex items-center gap-2">
+          <img src="/logo.png" alt="Logo" className="w-7 h-7 object-contain" />
+          <span className="font-headline text-xl font-black text-primary tracking-wide">Reservio</span>
+        </div>
         <div className="flex items-center gap-2">
           <button className="p-2 rounded-full hover:bg-surface-container transition-colors">
             <span className="material-symbols-outlined text-on-surface-variant">notifications</span>
@@ -404,10 +437,13 @@ export default function MainMenuPage() {
             className="absolute inset-0 bg-black/40"
             onClick={() => setMobileMenuOpen(false)}
           />
-          <div className="absolute left-0 top-0 bottom-0 w-72 bg-surface flex flex-col shadow-xl">
-            <div className="px-8 py-8 pt-20">
-              <h1 className="font-headline text-2xl font-black text-primary mb-1">Reservio</h1>
-              <p className="font-body text-secondary text-sm">Resource Management</p>
+          <div className="absolute left-0 top-0 bottom-0 w-72 bg-surface flex flex-col shadow-2xl">
+            <div className="px-8 py-8 pt-16 flex items-center gap-3">
+              <img src="/logo.png" alt="Reservio Logo" className="w-10 h-10 object-contain drop-shadow-sm" />
+              <div>
+                <h1 className="font-headline text-2xl font-black text-primary mb-0 leading-none">Reservio</h1>
+                <p className="font-body text-secondary text-[11px] font-semibold tracking-wider uppercase mt-1">Workspace</p>
+              </div>
             </div>
             <div className="flex flex-col gap-y-1 flex-grow overflow-y-auto pb-4 px-2">
               {navItems.map((item) => (
@@ -476,12 +512,14 @@ export default function MainMenuPage() {
               <h2 className="font-headline text-3xl md:text-4xl font-bold text-on-surface tracking-tight mb-2">
                 {activeTab === 'reservations' && <>Hola, {profile?.nombre} 👋</>}
                 {activeTab === 'rooms'        && 'Salas disponibles'}
+                {activeTab === 'tech'         && 'Equipamiento Tecnológico'}
                 {activeTab === 'profile'      && 'Mi Perfil'}
               </h2>
               <p className="font-body text-lg text-secondary">
-                {activeTab === 'reservations' && '¿Qué espacio necesitas hoy?'}
-                {activeTab === 'rooms'        && 'Consulta disponibilidad y reserva en tiempo real.'}
-                {activeTab === 'profile'      && 'Gestiona tus datos personales y preferencias.'}
+                {activeTab === 'reservations' && '¿Qué espacio necesitas hoy para brillar?'}
+                {activeTab === 'rooms'        && 'Encuentra el ambiente perfecto para tu próxima reunión.'}
+                {activeTab === 'tech'         && 'Herramientas de última generación para potenciar tu trabajo.'}
+                {activeTab === 'profile'      && 'Gestiona tus datos personales y preferencias de cuenta.'}
               </p>
             </div>
             {activeTab === 'reservations' && (
@@ -677,21 +715,22 @@ export default function MainMenuPage() {
                   </div>
                 ) : (
                   <>
-                    {salas.slice(0, 3).map((sala) => (
-                      <div key={sala.id} className="bg-surface-container-lowest rounded-lg p-4 border border-outline-variant/15 shadow-sm">
-                        <div className="flex justify-between items-start mb-3">
-                          <div>
-                            <h4 className="font-body font-bold text-on-surface text-sm">{sala.nombre}</h4>
-                            <p className="font-body text-xs text-secondary mt-0.5">Capacidad: {sala.capacidad} personas</p>
+                    {salas.slice(0, 3).map((sala, idx) => (
+                      <div key={sala.id} className="bg-surface-container-lowest rounded-xl overflow-hidden border border-outline-variant/15 shadow-sm hover:shadow-md transition-all group cursor-pointer flex items-center gap-4 pr-4">
+                        <img src={sala.imagen_url || getRoomImage(idx)} alt={sala.nombre} className="w-20 h-24 object-cover" />
+                        <div className="flex-1 py-3">
+                          <div className="flex justify-between items-start mb-1">
+                            <h4 className="font-headline font-bold text-on-surface text-sm">{sala.nombre}</h4>
+                            <div className={`w-2.5 h-2.5 rounded-full ${sala.estado === 'disponible' ? 'bg-[#10b981] shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-red-500'}`} />
                           </div>
-                          <div className="w-2.5 h-2.5 rounded-full bg-[#10b981] shadow-[0_0_8px_rgba(16,185,129,0.5)] mt-1" />
+                          <p className="font-body text-xs text-secondary mb-2 flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">group</span> {sala.capacidad} pers.</p>
+                          <button
+                            onClick={() => handleReservarRapido(sala.id)}
+                            className="font-label text-xs font-bold text-primary hover:underline"
+                          >
+                            Reservar Rápido
+                          </button>
                         </div>
-                        <button
-                          onClick={() => handleReservarRapido(sala.id)}
-                          className="w-full bg-surface-container text-on-surface font-label text-xs font-medium py-2 rounded hover:bg-surface-container-high transition-colors"
-                        >
-                          Reservar Rápido
-                        </button>
                       </div>
                     ))}
                     <div className="pt-1 text-center">
@@ -719,53 +758,117 @@ export default function MainMenuPage() {
                   <p className="font-body font-semibold text-on-surface">No hay salas disponibles en este momento</p>
                 </div>
               ) : (
-                salas.map((sala) => (
-                  <div key={sala.id} className="bg-surface-container-lowest rounded-xl p-5 border border-outline-variant/20 shadow-sm flex flex-col gap-4">
-                    <div className="flex justify-between items-start">
-                      <div className="bg-secondary-container text-on-secondary-container w-12 h-12 rounded-lg flex items-center justify-center shrink-0">
-                        <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>meeting_room</span>
-                      </div>
-                      <span className={`inline-flex items-center gap-1 text-xs font-label font-bold px-2 py-1 rounded uppercase tracking-wider ${
-                        sala.estado === 'disponible'    ? 'bg-green-100 text-green-700'  :
-                        sala.estado === 'ocupada'       ? 'bg-red-100 text-red-700'      :
-                        'bg-yellow-100 text-yellow-700'
-                      }`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${
-                          sala.estado === 'disponible' ? 'bg-green-500' :
-                          sala.estado === 'ocupada'    ? 'bg-red-500'   : 'bg-yellow-500'
-                        }`} />
-                        {sala.estado === 'disponible'    ? 'Disponible'    :
-                         sala.estado === 'ocupada'       ? 'Ocupada'       : 'Mantenimiento'}
-                      </span>
-                    </div>
-                    <div>
-                      <h4 className="font-headline font-bold text-on-surface text-base">{sala.nombre}</h4>
-                      {sala.descripcion && (
-                        <p className="font-body text-xs text-on-surface-variant mt-1 leading-relaxed">{sala.descripcion}</p>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap gap-3 text-xs font-label text-secondary">
-                      <span className="flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[14px]">group</span>
-                        {sala.capacidad} personas
-                      </span>
-                      {sala.ubicacion && (
-                        <span className="flex items-center gap-1">
-                          <span className="material-symbols-outlined text-[14px]">location_on</span>
-                          {sala.ubicacion}
+                salas.map((sala, idx) => (
+                  <div key={sala.id} className="bg-surface-container-lowest rounded-2xl overflow-hidden border border-outline-variant/20 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] transition-all duration-300 group flex flex-col">
+                    <div className="relative h-48 overflow-hidden bg-surface-container">
+                      <img 
+                        src={sala.imagen_url || getRoomImage(idx)} 
+                        alt={sala.nombre} 
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out" 
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-80" />
+                      <div className="absolute bottom-4 left-4 right-4 flex justify-between items-end">
+                        <span className={`inline-flex items-center gap-1.5 text-xs font-label font-bold px-2.5 py-1 rounded-md uppercase tracking-wider backdrop-blur-md ${
+                          sala.estado === 'disponible'    ? 'bg-green-500/20 text-green-50 border border-green-500/30'  :
+                          sala.estado === 'ocupada'       ? 'bg-red-500/20 text-red-50 border border-red-500/30'      :
+                          'bg-yellow-500/20 text-yellow-50 border border-yellow-500/30'
+                        }`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${
+                            sala.estado === 'disponible' ? 'bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.8)]' :
+                            sala.estado === 'ocupada'    ? 'bg-red-400'   : 'bg-yellow-400'
+                          }`} />
+                          {sala.estado === 'disponible'    ? 'Disponible'    :
+                           sala.estado === 'ocupada'       ? 'Ocupada'       : 'Mantenimiento'}
                         </span>
-                      )}
+                      </div>
                     </div>
-                    <button
-                      onClick={() => handleReservarRapido(sala.id)}
-                      disabled={sala.estado !== 'disponible'}
-                      className="mt-auto w-full bg-primary text-on-primary font-label text-sm font-medium py-2.5 rounded-lg hover:bg-primary-container transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      {sala.estado === 'disponible' ? 'Reservar Rápido' : 'No disponible'}
-                    </button>
+                    
+                    <div className="p-5 flex-1 flex flex-col">
+                      <div>
+                        <h4 className="font-headline font-bold text-on-surface text-lg">{sala.nombre}</h4>
+                        {sala.descripcion && (
+                          <p className="font-body text-sm text-on-surface-variant mt-1.5 leading-relaxed line-clamp-2">{sala.descripcion}</p>
+                        )}
+                      </div>
+                      
+                      <div className="flex flex-wrap gap-4 mt-4 text-sm font-label text-secondary">
+                        <span className="flex items-center gap-1.5 bg-surface-container px-2 py-1 rounded-md">
+                          <span className="material-symbols-outlined text-[16px]">group</span>
+                          {sala.capacidad} cap.
+                        </span>
+                        {sala.ubicacion && (
+                          <span className="flex items-center gap-1.5 bg-surface-container px-2 py-1 rounded-md">
+                            <span className="material-symbols-outlined text-[16px]">location_on</span>
+                            {sala.ubicacion}
+                          </span>
+                        )}
+                      </div>
+                      
+                      <div className="mt-6 pt-4 border-t border-outline-variant/15 mt-auto">
+                        <button
+                          onClick={() => handleReservarRapido(sala.id)}
+                          disabled={sala.estado !== 'disponible'}
+                          className="w-full bg-primary text-on-primary font-label text-sm font-bold py-3 rounded-xl hover:bg-primary-container hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-40 disabled:hover:translate-y-0 disabled:shadow-none disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        >
+                          {sala.estado === 'disponible' ? (
+                            <>
+                              <span className="material-symbols-outlined text-[18px]">calendar_add_on</span>
+                              Reservar Sala
+                            </>
+                          ) : 'No disponible'}
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 ))
               )}
+            </div>
+          )}
+
+          {/* ══ TAB: TECH (EQUIPOS) ═════════════════════════════════════════ */}
+          {activeTab === 'tech' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {MOCK_TECH.map((item) => (
+                <div key={item.id} className="bg-surface-container-lowest rounded-2xl overflow-hidden border border-outline-variant/20 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] transition-all duration-300 group flex flex-col">
+                  <div className="relative h-48 overflow-hidden bg-surface-container">
+                    <img 
+                      src={item.imagen} 
+                      alt={item.nombre} 
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out" 
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-80" />
+                    <div className="absolute bottom-4 left-4 right-4 flex justify-between items-end">
+                      <span className={`inline-flex items-center gap-1.5 text-xs font-label font-bold px-2.5 py-1 rounded-md uppercase tracking-wider backdrop-blur-md ${
+                        item.disponible ? 'bg-green-500/20 text-green-50 border border-green-500/30' : 'bg-red-500/20 text-red-50 border border-red-500/30'
+                      }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${item.disponible ? 'bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.8)]' : 'bg-red-400'}`} />
+                        {item.disponible ? 'Disponible' : 'En Uso'}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <div className="p-5 flex-1 flex flex-col">
+                    <div>
+                      <h4 className="font-headline font-bold text-on-surface text-lg">{item.nombre}</h4>
+                      <p className="font-label text-xs uppercase tracking-wider text-primary mt-1">{item.tipo}</p>
+                    </div>
+                    
+                    <div className="mt-6 pt-4 border-t border-outline-variant/15 mt-auto">
+                      <button
+                        disabled={!item.disponible}
+                        className="w-full bg-surface-container-high text-on-surface font-label text-sm font-bold py-3 rounded-xl hover:bg-secondary hover:text-on-secondary hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-40 disabled:hover:translate-y-0 disabled:shadow-none disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      >
+                        {item.disponible ? (
+                          <>
+                            <span className="material-symbols-outlined text-[18px]">add_shopping_cart</span>
+                            Solicitar Equipo
+                          </>
+                        ) : 'No disponible'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 
