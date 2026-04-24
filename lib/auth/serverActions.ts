@@ -18,7 +18,7 @@ export async function signUpUser(nombre: string, correo: string, password: strin
     const supabase = await createClient()
     const email = correo.trim().toLowerCase()
 
-    // ── 1. Verificar si el email ya existe ─────────────────────────────
+    // ── 1. Verificar si el email ya existe (solo si admin disponible) ──
     const emailExists = await checkEmailExists(email)
     if (emailExists) {
       return { error: 'EMAIL_EXISTS' }
@@ -34,10 +34,17 @@ export async function signUpUser(nombre: string, correo: string, password: strin
     })
 
     if (error) {
-      console.error('[signUpUser] Error de Supabase:', error.message, '| Status:', error.status)
+      console.error('[signUpUser] Error de Supabase:', error.message, '| Status:', error.status, '| Code:', (error as any).code)
       // Detectar email ya existente por respuesta de Supabase
       const msg = error.message.toLowerCase()
-      if (msg.includes('already registered') || msg.includes('already exists') || msg.includes('duplicate')) {
+      const code = ((error as any).code ?? '').toLowerCase()
+      if (
+        msg.includes('already registered') ||
+        msg.includes('already exists') ||
+        msg.includes('duplicate') ||
+        code === 'email_exists' ||
+        code === 'user_already_exists'
+      ) {
         return { error: 'EMAIL_EXISTS' }
       }
       if (msg.includes('rate limit') || msg.includes('too many')) {
@@ -54,9 +61,14 @@ export async function signUpUser(nombre: string, correo: string, password: strin
     console.log('[signUpUser] Usuario registrado exitosamente:', email)
     return { success: true }
 
-  } catch (err) {
-    // Este catch solo debería activarse por errores de red o sistema
-    console.error('[signUpUser] Excepción no controlada:', err)
+  } catch (err: unknown) {
+    // Este catch atrapa todos los errores incluyendo red, CORS, timeouts
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[signUpUser] Excepción no controlada:', message, err)
+    // Traducir errores de red a un código manejable
+    if (message.includes('fetch') || message.includes('network') || message.includes('ENOTFOUND') || message.includes('ECONNREFUSED')) {
+      return { error: 'NETWORK_ERROR' }
+    }
     return { error: 'UNEXPECTED_ERROR' }
   }
 }
