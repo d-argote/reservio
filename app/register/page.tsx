@@ -368,8 +368,14 @@ export default function RegisterPage() {
       if (result.error) {
         if (result.error === 'EMAIL_EXISTS') {
           setEmailAlreadyExists(true)
+        } else if (result.error === 'RATE_LIMIT') {
+          setGlobalError('Demasiados intentos. Por favor espera unos minutos e intenta de nuevo.')
+        } else if (result.error === 'CONFIG_ERROR') {
+          setGlobalError('Error de configuración del servidor. Por favor contacta al administrador.')
+        } else if (result.error === 'UNEXPECTED_ERROR') {
+          setGlobalError('Error inesperado en el servidor. Por favor intenta nuevamente en unos minutos.')
         } else {
-          setGlobalError(result.error ?? 'Ocurrió un error. Por favor, intenta nuevamente.')
+          setGlobalError(result.error)
         }
         return
       }

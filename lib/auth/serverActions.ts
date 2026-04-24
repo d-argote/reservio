@@ -4,30 +4,61 @@ import { createClient } from '../supabase/server'
 import { supabaseAdmin } from '../supabase/admin'
 
 export async function signUpUser(nombre: string, correo: string, password: string) {
-  const supabase = await createClient()
-  const email = correo.trim().toLowerCase()
+  try {
+    // ── Validación de variables de entorno ─────────────────────────────
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+      console.error('[signUpUser] CRÍTICO: NEXT_PUBLIC_SUPABASE_URL no está configurada')
+      return { error: 'CONFIG_ERROR' }
+    }
+    if (!process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) {
+      console.error('[signUpUser] CRÍTICO: NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY no está configurada')
+      return { error: 'CONFIG_ERROR' }
+    }
 
-  // 1. Verificar si el email ya existe
-  const emailExists = await checkEmailExists(email)
-  if (emailExists) {
-    return { error: 'EMAIL_EXISTS' }
+    const supabase = await createClient()
+    const email = correo.trim().toLowerCase()
+
+    // ── 1. Verificar si el email ya existe ─────────────────────────────
+    const emailExists = await checkEmailExists(email)
+    if (emailExists) {
+      return { error: 'EMAIL_EXISTS' }
+    }
+
+    // ── 2. Registrar usuario ───────────────────────────────────────────
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { nombre },
+      },
+    })
+
+    if (error) {
+      console.error('[signUpUser] Error de Supabase:', error.message, '| Status:', error.status)
+      // Detectar email ya existente por respuesta de Supabase
+      const msg = error.message.toLowerCase()
+      if (msg.includes('already registered') || msg.includes('already exists') || msg.includes('duplicate')) {
+        return { error: 'EMAIL_EXISTS' }
+      }
+      if (msg.includes('rate limit') || msg.includes('too many')) {
+        return { error: 'RATE_LIMIT' }
+      }
+      if (msg.includes('sending') || msg.includes('smtp') || msg.includes('email delivery')) {
+        // Usuario creado pero fallo en el correo — éxito parcial
+        console.warn('[signUpUser] Fallo SMTP pero usuario creado:', email)
+        return { success: true }
+      }
+      return { error: error.message }
+    }
+
+    console.log('[signUpUser] Usuario registrado exitosamente:', email)
+    return { success: true }
+
+  } catch (err) {
+    // Este catch solo debería activarse por errores de red o sistema
+    console.error('[signUpUser] Excepción no controlada:', err)
+    return { error: 'UNEXPECTED_ERROR' }
   }
-
-  // 2. Registrar usuario (esto enviará el email de confirmación si está activado en Supabase)
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: { nombre },
-    },
-  })
-
-  if (error) {
-    console.error('Error en signUp:', error)
-    return { error: error.message }
-  }
-
-  return { success: true }
 }
 
 export async function loginUser(correo: string, password: string) {
