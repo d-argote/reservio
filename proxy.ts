@@ -1,11 +1,11 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
-import { updateSession } from '@/lib/supabase/middleware'
+import { updateSession } from '@/lib/supabase/session'
 
 // Rutas públicas que no requieren autenticación
 const PUBLIC_ROUTES = ['/login', '/register', '/forgot-password', '/reset-password', '/auth/callback']
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   // 1. Primero refrescamos la sesión (siempre)
   const response = await updateSession(request)
 
@@ -47,6 +47,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp|avif|ico|woff|woff2|ttf|otf)$).*)',
   ],
 }

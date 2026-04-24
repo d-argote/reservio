@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { resetPasswordForEmail } from '@/lib/auth/serverActions'
+import { resetPasswordForEmail } from '@/features/auth/actions'
 
 export default function ForgotPasswordPage() {
   const [correo, setCorreo] = useState('')

@@ -1,7 +1,7 @@
 'use server'
 
-import { createClient } from '../supabase/server'
-import { getSupabaseAdmin } from '../supabase/admin'
+import { createClient } from '@/lib/supabase/server'
+import { getSupabaseAdmin } from '@/lib/supabase/admin'
 
 export async function signUpUser(nombre: string, correo: string, password: string) {
   try {

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { updatePassword } from '@/lib/auth/serverActions'
+import { updatePassword } from '@/features/auth/actions'
 
 export default function ResetPasswordPage() {
   const router = useRouter()
