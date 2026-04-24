@@ -1,7 +1,7 @@
 'use server'
 
 import { createClient } from '../supabase/server'
-import { supabaseAdmin } from '../supabase/admin'
+import { getSupabaseAdmin } from '../supabase/admin'
 
 export async function signUpUser(nombre: string, correo: string, password: string) {
   try {
@@ -91,20 +91,22 @@ export async function loginUser(correo: string, password: string) {
 
 export async function checkEmailExists(email: string): Promise<boolean> {
   try {
-    // Requires SUPABASE_SERVICE_ROLE_KEY — if not set, skip gracefully
-    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      console.warn('SUPABASE_SERVICE_ROLE_KEY no configurada, omitiendo checkEmailExists')
+    const admin = getSupabaseAdmin()
+    if (!admin) {
+      console.warn('[checkEmailExists] Cliente Admin no disponible, omitiendo verificación.')
       return false
     }
-    const { data, error } = await supabaseAdmin.auth.admin.listUsers()
+
+    const { data, error } = await admin.auth.admin.listUsers()
     if (error) {
-      console.error('Error verificando email:', error)
+      console.error('[checkEmailExists] Error al listar usuarios:', error.message)
       return false
     }
+
     const emailLower = email.trim().toLowerCase()
     return (data?.users ?? []).some(u => u.email?.toLowerCase() === emailLower)
   } catch (err) {
-    console.error('Excepción verificando email:', err)
+    console.error('[checkEmailExists] Excepción inesperada:', err)
     return false
   }
 }
