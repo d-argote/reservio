@@ -418,7 +418,7 @@ export default function RegisterPage() {
       {/* ── Left Pane - Branding ─────────────────────────────────── */}
       <div className="hidden lg:block lg:w-1/2 relative bg-[#002045] isolate overflow-hidden">
         <img 
-          src="/rooms/photo-1605797491749-0c6989a44356.jpg" 
+          src="/rooms/fondo.jpg" 
           alt="Office background" 
           className="absolute inset-0 w-full h-full object-cover opacity-50 mix-blend-luminosity saturate-50"
         />
@@ -426,19 +426,22 @@ export default function RegisterPage() {
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
         
         {/* Content */}
-        <div className="absolute inset-0 flex flex-col justify-end p-12">
-          <div className="max-w-md text-white drop-shadow-lg">
-            <div className="flex items-center gap-4 mb-8">
-              <div className="w-16 h-16 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20 shadow-[0_8px_30px_rgb(0,0,0,0.12)]">
-                <img src="/logo.png" alt="Reservio Logo" className="w-9 h-9 object-contain drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]" />
-              </div>
-              <span className="font-headline text-4xl font-black tracking-wide text-white drop-shadow-md">Reservio</span>
-            </div>
-            <h2 className="font-headline text-5xl font-black mb-5 leading-[1.15] tracking-tight text-white drop-shadow-md">
-              Excelencia en la<br/>Gestión de Recursos.
+        <div className="absolute inset-0 flex flex-col justify-between p-10 xl:p-14 z-10">
+          {/* Logo centrado y adaptable */}
+          <div className="flex-1 flex items-center justify-center overflow-visible -mt-36">
+            <img
+              src="/logo.png"
+              alt="Reservio Logo"
+              className="w-full h-full object-contain scale-[1.35] drop-shadow-[0_8px_40px_rgba(255,255,255,0.35)]"
+            />
+          </div>
+          {/* Texto anclado abajo */}
+          <div className="max-w-md text-white">
+            <h2 className="font-headline text-4xl xl:text-5xl font-black mb-3 leading-[1.15] tracking-tight drop-shadow-md">
+              Tu espacio,<br/>tu control.
             </h2>
-            <p className="font-body text-lg text-white/90 leading-relaxed">
-              Plataforma integral para optimizar espacios y capital humano en entornos corporativos modernos.
+            <p className="font-body text-base xl:text-lg text-white/80 leading-relaxed">
+              Crea tu cuenta y empieza a gestionar salas, recursos y equipos desde un solo lugar.
             </p>
           </div>
         </div>
