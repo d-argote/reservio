@@ -60,6 +60,11 @@ export async function loginUser(correo: string, password: string) {
 
 export async function checkEmailExists(email: string): Promise<boolean> {
   try {
+    // Requires SUPABASE_SERVICE_ROLE_KEY — if not set, skip gracefully
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      console.warn('SUPABASE_SERVICE_ROLE_KEY no configurada, omitiendo checkEmailExists')
+      return false
+    }
     const { data, error } = await supabaseAdmin.auth.admin.listUsers()
     if (error) {
       console.error('Error verificando email:', error)
@@ -81,10 +86,13 @@ export async function resetPasswordForEmail(correo: string) {
   const supabase = await createClient()
   const email = correo.trim().toLowerCase()
 
-  // Verificamos si el usuario existe para evitar correos fantasma
-  const emailExists = await checkEmailExists(email)
-  if (!emailExists) {
-    return { error: 'USER_NOT_FOUND' }
+  // Solo bloqueamos si tenemos la key admin Y confirmamos que el usuario NO existe
+  // Si la key no está configurada, dejamos que Supabase lo maneje
+  if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    const emailExists = await checkEmailExists(email)
+    if (!emailExists) {
+      return { error: 'USER_NOT_FOUND' }
+    }
   }
 
   // Obtenemos la URL base desde el entorno
