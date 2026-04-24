@@ -428,7 +428,7 @@ export default function RegisterPage() {
         {/* Content */}
         <div className="absolute inset-0 flex flex-col justify-between p-10 xl:p-14 z-10">
           {/* Logo centrado y adaptable */}
-          <div className="flex-1 flex items-center justify-center overflow-visible -mt-36">
+          <div className="flex-1 flex items-center justify-center overflow-visible -mt-24">
             <img
               src="/logo.png"
               alt="Reservio Logo"
