@@ -5,9 +5,9 @@ const nextConfig: NextConfig = {
     return [
       {
         source: '/:path*',
-        has: [{ type: 'host', value: 'www.reservio.ditechdev.com' }],
-        destination: 'https://reservio.ditechdev.com/:path*',
-        permanent: true, // 301
+        has: [{ type: 'host', value: 'www.ditechdev.com' }],
+        destination: 'https://ditechdev.com/:path*',
+        permanent: true,
       },
     ]
   },
