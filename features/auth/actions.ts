@@ -98,6 +98,19 @@ export async function loginUser(correo: string, password: string) {
     return { error: 'UNKNOWN' }
   }
 
+  // Verificar si el usuario está activo
+  const admin = getSupabaseAdmin()
+  const { data: userRecord } = await admin
+    .from('usuarios')
+    .select('activo')
+    .eq('id', data.user.id)
+    .single()
+
+  if (userRecord && userRecord.activo === false) {
+    await supabase.auth.signOut()
+    return { error: 'USER_INACTIVE' }
+  }
+
   return { success: true }
 }
 
