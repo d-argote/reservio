@@ -242,7 +242,7 @@ export default function MainMenuPage() {
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
-    router.push('/login')
+    window.location.href = '/login'
   }
 
   const openModal = (salaId?: string) => {

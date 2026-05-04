@@ -119,7 +119,7 @@ function validatePassword(value: string): string | undefined {
   if (!/[A-Z]/.test(value)) return 'La contraseña debe tener al menos una letra mayúscula.'
   if (!/[a-z]/.test(value)) return 'La contraseña debe tener al menos una letra minúscula.'
   if (!/[0-9]/.test(value)) return 'La contraseña debe tener al menos un número.'
-  if (!/[!@#$%^&*(),.?":{}|<>]/.test(value)) return 'La contraseña debe tener al menos un carácter especial.'
+  if (!/[^a-zA-Z0-9]/.test(value)) return 'La contraseña debe tener al menos un carácter especial.'
   return undefined
 }
 
@@ -235,7 +235,7 @@ function PasswordRequirements({ password }: { password: string }) {
     { label: 'Una letra mayúscula', met: /[A-Z]/.test(password) },
     { label: 'Una letra minúscula', met: /[a-z]/.test(password) },
     { label: 'Un número', met: /[0-9]/.test(password) },
-    { label: 'Un carácter especial', met: /[!@#$%^&*(),.?":{}|<>]/.test(password) },
+    { label: 'Un carácter especial', met: /[^a-zA-Z0-9]/.test(password) },
   ]
 
   return (

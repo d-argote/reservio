@@ -5,27 +5,101 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { updatePassword } from '@/features/auth/actions'
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// VALIDACIÓN DE CONTRASEÑA
+// ═══════════════════════════════════════════════════════════════════════════════
+const MIN_PASSWORD_LENGTH = 8
+
+function validatePassword(value: string): string | undefined {
+  if (!value) return 'La contraseña es obligatoria.'
+  if (value.length < MIN_PASSWORD_LENGTH) return `La contraseña debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres.`
+  if (!/[A-Z]/.test(value)) return 'La contraseña debe tener al menos una letra mayúscula.'
+  if (!/[a-z]/.test(value)) return 'La contraseña debe tener al menos una letra minúscula.'
+  if (!/[0-9]/.test(value)) return 'La contraseña debe tener al menos un número.'
+  if (!/[^a-zA-Z0-9]/.test(value)) return 'La contraseña debe tener al menos un carácter especial.'  
+  return undefined
+}
+
+function PasswordRequirements({ password }: { password: string }) {
+  const requirements = [
+    { label: `Mínimo ${MIN_PASSWORD_LENGTH} caracteres`, met: password.length >= MIN_PASSWORD_LENGTH },
+    { label: 'Una letra mayúscula', met: /[A-Z]/.test(password) },
+    { label: 'Una letra minúscula', met: /[a-z]/.test(password) },
+    { label: 'Un número', met: /[0-9]/.test(password) },
+    { label: 'Un carácter especial', met: /[^a-zA-Z0-9]/.test(password) },
+  ]
+
+  return (
+    <div className="mt-2 space-y-1">
+      {requirements.map((req, index) => (
+        <div
+          key={index}
+          className={`flex items-center gap-2 text-xs transition-colors ${
+            req.met ? 'text-green-600' : 'text-on-surface-variant/60'
+          }`}
+        >
+          <span className={`material-symbols-outlined text-sm ${req.met ? 'text-green-500' : ''}`}>
+            {req.met ? 'check_circle' : 'radio_button_unchecked'}
+          </span>
+          {req.label}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function FieldError({ message }: { message: string }) {
+  return (
+    <p className="flex items-center gap-1.5 text-sm text-red-600 mt-2 animate-fadeIn">
+      <span className="material-symbols-outlined text-base leading-none shrink-0">error</span>
+      <span>{message}</span>
+    </p>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// COMPONENTE PRINCIPAL
+// ═══════════════════════════════════════════════════════════════════════════════
 export default function ResetPasswordPage() {
   const router = useRouter()
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [passwordError, setPasswordError] = useState<string | undefined>()
+  const [confirmError, setConfirmError] = useState<string | undefined>()
+  const [touchedPassword, setTouchedPassword] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [globalError, setGlobalError] = useState<string | null>(null)
   const [isSuccess, setIsSuccess] = useState(false)
+
+  const handlePasswordChange = (value: string) => {
+    setPassword(value)
+    if (touchedPassword) {
+      setPasswordError(validatePassword(value))
+    }
+    if (confirmPassword) {
+      setConfirmError(value !== confirmPassword ? 'Las contraseñas no coinciden.' : undefined)
+    }
+  }
+
+  const handleConfirmChange = (value: string) => {
+    setConfirmPassword(value)
+    setConfirmError(value !== password ? 'Las contraseñas no coinciden.' : undefined)
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setGlobalError(null)
 
-    if (password.length < 8) {
-      setGlobalError('La contraseña debe tener al menos 8 caracteres.')
-      return
-    }
+    const pwError = validatePassword(password)
+    const cfError = password !== confirmPassword ? 'Las contraseñas no coinciden.' : undefined
 
-    if (password !== confirmPassword) {
-      setGlobalError('Las contraseñas no coinciden.')
-      return
-    }
+    setPasswordError(pwError)
+    setConfirmError(cfError)
+    setTouchedPassword(true)
+
+    if (pwError || cfError) return
 
     setIsLoading(true)
     const result = await updatePassword(password)
@@ -84,32 +158,69 @@ export default function ResetPasswordPage() {
               <label htmlFor="new-password" className="block font-label text-sm font-semibold text-on-surface">
                 Nueva Contraseña
               </label>
-              <input
-                id="new-password"
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-lg px-4 py-3 bg-surface-container-highest border border-outline-variant/15 text-on-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
-                disabled={isLoading}
-                required
-              />
+              <div className="relative">
+                <input
+                  id="new-password"
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => handlePasswordChange(e.target.value)}
+                  onBlur={() => {
+                    setTouchedPassword(true)
+                    setPasswordError(validatePassword(password))
+                  }}
+                  className={`w-full rounded-lg px-4 py-3 pr-10 text-on-surface focus:outline-none focus:ring-2 transition-all duration-200 placeholder:text-on-surface-variant/50 ${
+                    passwordError
+                      ? 'bg-red-50 border-2 border-red-500 focus:ring-red-200 focus:border-red-500'
+                      : 'bg-surface-container-highest border border-outline-variant/15 focus:border-primary focus:ring-primary/20'
+                  }`}
+                  disabled={isLoading}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(p => !p)}
+                  className="absolute inset-y-0 right-3 flex items-center text-on-surface-variant hover:text-on-surface transition-colors"
+                  tabIndex={-1}
+                >
+                  <span className="material-symbols-outlined text-xl">
+                    {showPassword ? 'visibility_off' : 'visibility'}
+                  </span>
+                </button>
+              </div>
+              {password && <PasswordRequirements password={password} />}
+              {passwordError && <FieldError message={passwordError} />}
             </div>
 
             <div className="space-y-1.5">
               <label htmlFor="confirm-password" className="block font-label text-sm font-semibold text-on-surface">
                 Confirmar Contraseña
               </label>
-              <input
-                id="confirm-password"
-                type="password"
-                placeholder="••••••••"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full rounded-lg px-4 py-3 bg-surface-container-highest border border-outline-variant/15 text-on-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
-                disabled={isLoading}
-                required
-              />
+              <div className="relative">
+                <input
+                  id="confirm-password"
+                  type={showConfirm ? 'text' : 'password'}
+                  placeholder="••••••••"
+                  value={confirmPassword}
+                  onChange={(e) => handleConfirmChange(e.target.value)}
+                  className={`w-full rounded-lg px-4 py-3 pr-10 text-on-surface focus:outline-none focus:ring-2 transition-all duration-200 placeholder:text-on-surface-variant/50 ${
+                    confirmError
+                      ? 'bg-red-50 border-2 border-red-500 focus:ring-red-200 focus:border-red-500'
+                      : 'bg-surface-container-highest border border-outline-variant/15 focus:border-primary focus:ring-primary/20'
+                  }`}
+                  disabled={isLoading}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirm(p => !p)}
+                  className="absolute inset-y-0 right-3 flex items-center text-on-surface-variant hover:text-on-surface transition-colors"
+                  tabIndex={-1}
+                >
+                  <span className="material-symbols-outlined text-xl">
+                    {showConfirm ? 'visibility_off' : 'visibility'}
+                  </span>
+                </button>
+              </div>
+              {confirmError && <FieldError message={confirmError} />}
             </div>
 
             <div className="pt-4 space-y-3">
