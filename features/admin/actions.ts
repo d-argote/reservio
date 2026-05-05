@@ -28,8 +28,11 @@ export interface SalaAdmin {
 export interface Equipo {
   id: string
   nombre: string
-  tipo: string
-  disponible: boolean
+  categoria: string
+  sistema_operativo: string
+  marca: string
+  tipo_equipo: string
+  estado: 'disponible' | 'reservado' | 'mantenimiento'
   imagen_url: string | null
 }
 
@@ -178,7 +181,7 @@ export async function getEquipos(): Promise<{ data?: Equipo[]; error?: string }>
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('equipos')
-    .select('id, nombre, tipo, disponible, imagen_url')
+    .select('id, nombre, categoria, sistema_operativo, marca, tipo_equipo, estado, imagen_url')
     .order('nombre')
 
   if (error) return { error: error.message }
@@ -202,9 +205,9 @@ export async function createEquipo(
   return { data: data as Equipo }
 }
 
-export async function toggleEquipoDisponibilidad(
+export async function updateEquipoEstado(
   id: string,
-  disponible: boolean,
+  estado: Equipo['estado'],
 ): Promise<{ success?: boolean; error?: string }> {
   const guard = await assertAdmin()
   if (guard) return { error: guard.error }
@@ -212,7 +215,7 @@ export async function toggleEquipoDisponibilidad(
   const supabase = getSupabaseAdmin()
   const { error } = await supabase
     .from('equipos')
-    .update({ disponible })
+    .update({ estado })
     .eq('id', id)
 
   if (error) return { error: error.message }
