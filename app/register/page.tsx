@@ -13,7 +13,7 @@ const SimpleParallax = dynamic(() => import('simple-parallax-js'), { ssr: false 
 // ═══════════════════════════════════════════════════════════════════════════════
 const VALIDATION_RULES = {
   nombre: /^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/,
-  correo: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/,
+  correo: /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/,
 } as const
 
 // Constantes de validación
@@ -103,7 +103,12 @@ function validateNombre(value: string): string | undefined {
 function validateCorreo(value: string): string | undefined {
   const trimmed = value.trim()
   if (!trimmed) return ERROR_MESSAGES.correo.required
-  if (!VALIDATION_RULES.correo.test(trimmed)) return ERROR_MESSAGES.correo.invalid
+  if (trimmed.includes(' ')) return 'El correo no puede contener espacios.'
+  if (/[(),:;<>[\]\\]/.test(trimmed)) return 'El correo contiene caracteres no permitidos: ( ) , : ; < > [ ] \\'
+  const atCount = (trimmed.match(/@/g) ?? []).length
+  if (atCount === 0) return 'El correo debe contener el símbolo @.'
+  if (atCount > 1) return 'El correo debe contener exactamente un símbolo @.'
+  if (!VALIDATION_RULES.correo.test(trimmed)) return 'El formato no es válido. Ejemplo: usuario@dominio.com'
   return undefined
 }
 

@@ -4,8 +4,28 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { FEATURES } from '@/config/features'
+import {
+  getUsuarios,
+  updateUserRole,
+  getEquipos,
+  createEquipo,
+  updateEquipoEstado,
+  deleteEquipo,
+  createUsuarioAdmin,
+  toggleUsuarioActivo,
+  updateUsuarioEmail,
+  sendPasswordResetAdmin,
+  getSalasAdmin,
+  createSala,
+  updateSala,
+  deleteSala,
+  type UsuarioAdmin,
+  type Equipo,
+  type SalaAdmin,
+} from '@/features/admin/actions'
+import { getSistemas, getMarcas, getTipos, TIPO_EQUIPO_LABELS } from '@/lib/equipo-catalogo'
 
-// ── Types ─────────────────────────────────────────────────────────
+// ── Types
 
 interface UserProfile {
   nombre: string
@@ -32,7 +52,8 @@ interface Reserva {
   salas: Pick<Sala, 'id' | 'nombre' | 'capacidad' | 'ubicacion'> | null
 }
 
-type ActiveTab = 'reservations' | 'rooms' | 'tech' | 'profile'
+type ActiveTab = 'reservations' | 'rooms' | 'tech' | 'profile' | 'admin'
+type AdminSubTab = 'users' | 'equipment' | 'rooms'
 
 interface ReservaForm {
   titulo: string
@@ -148,6 +169,54 @@ function SkeletonRoomCard() {
   )
 }
 
+// ── Validaciones para el panel admin ──────────────────────────────────
+const ADMIN_MIN_PASSWORD_LENGTH = 8
+
+function adminValidateEmail(value: string): string | undefined {
+  const trimmed = value.trim()
+  if (!trimmed) return 'El correo es obligatorio.'
+  if (trimmed.includes(' ')) return 'El correo no puede contener espacios.'
+  if (/[(),:;<>[\]\\]/.test(trimmed)) return 'El correo contiene caracteres no permitidos: ( ) , : ; < > [ ] \\'
+  const atCount = (trimmed.match(/@/g) ?? []).length
+  if (atCount === 0) return 'El correo debe contener el símbolo @.'
+  if (atCount > 1) return 'El correo debe contener exactamente un símbolo @.'
+  if (!/^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(trimmed))
+    return 'El formato no es válido. Ejemplo: usuario@dominio.com'
+  return undefined
+}
+
+function adminValidatePassword(value: string): string | undefined {
+  if (!value) return 'La contraseña es obligatoria.'
+  if (value.length < ADMIN_MIN_PASSWORD_LENGTH) return `La contraseña debe tener al menos ${ADMIN_MIN_PASSWORD_LENGTH} caracteres.`
+  if (!/[A-Z]/.test(value)) return 'La contraseña debe tener al menos una letra mayúscula.'
+  if (!/[a-z]/.test(value)) return 'La contraseña debe tener al menos una letra minúscula.'
+  if (!/[0-9]/.test(value)) return 'La contraseña debe tener al menos un número.'
+  if (!/[^a-zA-Z0-9]/.test(value)) return 'La contraseña debe tener al menos un carácter especial.'
+  return undefined
+}
+
+function AdminPasswordRequirements({ password }: { password: string }) {
+  const requirements = [
+    { label: `Mínimo ${ADMIN_MIN_PASSWORD_LENGTH} caracteres`, met: password.length >= ADMIN_MIN_PASSWORD_LENGTH },
+    { label: 'Una letra mayúscula', met: /[A-Z]/.test(password) },
+    { label: 'Una letra minúscula', met: /[a-z]/.test(password) },
+    { label: 'Un número', met: /[0-9]/.test(password) },
+    { label: 'Un carácter especial', met: /[^a-zA-Z0-9]/.test(password) },
+  ]
+  return (
+    <div className="mt-1 space-y-1">
+      {requirements.map((req, i) => (
+        <div key={i} className={`flex items-center gap-1.5 text-xs transition-colors ${req.met ? 'text-green-600' : 'text-on-surface-variant/60'}`}>
+          <span className={`material-symbols-outlined text-sm ${req.met ? 'text-green-500' : ''}`}>
+            {req.met ? 'check_circle' : 'radio_button_unchecked'}
+          </span>
+          {req.label}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function MainMenuPage() {
   const router = useRouter()
 
@@ -178,6 +247,52 @@ export default function MainMenuPage() {
   const [submitting, setSubmitting] = useState(false)
   const [modalError, setModalError] = useState<string | null>(null)
   const [modalSuccess, setModalSuccess] = useState(false)
+
+  // ── HU-08: Preview modal de sala ─────────────────────────────────
+  const [previewSala, setPreviewSala] = useState<Sala | null>(null)
+
+  // ── HU-06: Admin — Usuarios ───────────────────────────────────────
+  const [adminSubTab, setAdminSubTab] = useState<AdminSubTab>('users')
+  const [usuarios, setUsuarios] = useState<UsuarioAdmin[]>([])
+  const [loadingUsuarios, setLoadingUsuarios] = useState(false)
+  const [updatingRole, setUpdatingRole] = useState<string | null>(null)
+
+  // ── HU-07: Admin — Equipos ────────────────────────────────────────
+  const [equipos, setEquipos] = useState<Equipo[]>([])
+  const [loadingEquipos, setLoadingEquipos] = useState(false)
+  const [equipoForm, setEquipoForm] = useState({
+    nombre: '',
+    categoria: '',
+    sistema_operativo: '',
+    marca: '',
+    tipo_equipo: '',
+    estado: 'disponible' as Equipo['estado'],
+    imagen_url: '',
+  })
+  const [addingEquipo, setAddingEquipo] = useState(false)
+  const [showEquipoForm, setShowEquipoForm] = useState(false)
+
+  // ── Admin — Usuarios CRUD ─────────────────────────────────────────
+  const [showUserForm, setShowUserForm] = useState(false)
+  const [userForm, setUserForm] = useState({ nombre: '', correo: '', password: '', confirmPassword: '', rol: 'usuario' as 'usuario' | 'admin' })
+  const [addingUser, setAddingUser] = useState(false)
+  const [userFormError, setUserFormError] = useState<string | null>(null)
+  const [togglingActivo, setTogglingActivo] = useState<string | null>(null)
+  const [editingUserId, setEditingUserId] = useState<string | null>(null)
+  const [editEmailValue, setEditEmailValue] = useState('')
+  const [savingEmail, setSavingEmail] = useState(false)
+  const [resetingPwd, setResetingPwd] = useState<string | null>(null)
+  const [pwdResetSuccess, setPwdResetSuccess] = useState<string | null>(null)
+
+  // ── Admin — Salas CRUD ────────────────────────────────────────────
+  const [salasAdmin, setSalasAdmin] = useState<SalaAdmin[]>([])
+  const [loadingSalasAdmin, setLoadingSalasAdmin] = useState(false)
+  const [showSalaForm, setShowSalaForm] = useState(false)
+  const [salaForm, setSalaForm] = useState({ nombre: '', descripcion: '', capacidad: '', ubicacion: '', imagen_url: '', estado: 'disponible' as SalaAdmin['estado'] })
+  const [addingSala, setAddingSala] = useState(false)
+  const [editingSalaId, setEditingSalaId] = useState<string | null>(null)
+  const [editSalaForm, setEditSalaForm] = useState({ nombre: '', descripcion: '', capacidad: '', ubicacion: '', imagen_url: '', estado: 'disponible' as SalaAdmin['estado'] })
+  const [savingSala, setSavingSala] = useState(false)
 
   useEffect(() => {
     const fetchReservas = async (userId: string) => {
@@ -245,6 +360,210 @@ export default function MainMenuPage() {
     window.location.href = '/login'
   }
 
+  // ── HU-08: Abrir preview modal de sala ───────────────────────────
+  const handleReservarPreview = (sala: Sala) => {
+    setPreviewSala(sala)
+  }
+
+  // ── HU-06: Cargar usuarios ────────────────────────────────────────
+  const loadUsuarios = useCallback(async () => {
+    setLoadingUsuarios(true)
+    const result = await getUsuarios()
+    if (result.data) setUsuarios(result.data)
+    setLoadingUsuarios(false)
+  }, [])
+
+  const handleRoleChange = async (userId: string, newRol: 'usuario' | 'admin') => {
+    setUpdatingRole(userId)
+    await updateUserRole(userId, newRol)
+    setUsuarios(prev => prev.map(u => u.id === userId ? { ...u, rol: newRol } : u))
+    setUpdatingRole(null)
+  }
+
+  // ── HU-07: Cargar y gestionar equipos ────────────────────────────
+  const loadEquipos = useCallback(async () => {
+    setLoadingEquipos(true)
+    const result = await getEquipos()
+    if (result.data) setEquipos(result.data)
+    setLoadingEquipos(false)
+  }, [])
+
+  const handleToggleEquipo = async (id: string, estado: Equipo['estado']) => {
+    await updateEquipoEstado(id, estado)
+    setEquipos(prev => prev.map(e => e.id === id ? { ...e, estado } : e))
+  }
+
+  const handleDeleteEquipo = async (id: string) => {
+    await deleteEquipo(id)
+    setEquipos(prev => prev.filter(e => e.id !== id))
+  }
+
+  const handleAddEquipo = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!equipoForm.nombre.trim() || !equipoForm.tipo_equipo) return
+    setAddingEquipo(true)
+    const result = await createEquipo({
+      nombre: equipoForm.nombre.trim(),
+      categoria: equipoForm.categoria,
+      sistema_operativo: equipoForm.sistema_operativo,
+      marca: equipoForm.marca,
+      tipo_equipo: equipoForm.tipo_equipo,
+      estado: equipoForm.estado,
+      imagen_url: equipoForm.imagen_url.trim() || null,
+    })
+    if (result.data) {
+      setEquipos(prev => [...prev, result.data!])
+      setEquipoForm({ nombre: '', categoria: '', sistema_operativo: '', marca: '', tipo_equipo: '', estado: 'disponible', imagen_url: '' })
+      setShowEquipoForm(false)
+    }
+    setAddingEquipo(false)
+  }
+
+  function setEquipoField(field: string, value: string) {
+    setEquipoForm(prev => {
+      const next = { ...prev, [field]: value }
+      if (field === 'categoria') {
+        next.sistema_operativo = ''
+        next.marca             = ''
+        next.tipo_equipo       = ''
+      }
+      if (field === 'sistema_operativo') {
+        next.marca       = ''
+        next.tipo_equipo = ''
+      }
+      if (field === 'marca') {
+        next.tipo_equipo = ''
+      }
+      return next
+    })
+  }
+
+  // ── Activar tab admin y cargar datos ─────────────────────────────
+  const handleAdminTab = useCallback(() => {
+    setActiveTab('admin')
+    loadUsuarios()
+    loadEquipos()
+  }, [loadUsuarios, loadEquipos])
+
+  // ── Admin: Crear usuario ──────────────────────────────────────────
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setUserFormError(null)
+    if (!userForm.nombre.trim()) {
+      setUserFormError('El nombre es obligatorio.')
+      return
+    }
+    const emailError = adminValidateEmail(userForm.correo)
+    if (emailError) {
+      setUserFormError(emailError)
+      return
+    }
+    const passwordError = adminValidatePassword(userForm.password)
+    if (passwordError) {
+      setUserFormError(passwordError)
+      return
+    }
+    if (userForm.password !== userForm.confirmPassword) {
+      setUserFormError('Las contraseñas no coinciden.')
+      return
+    }
+    setAddingUser(true)
+    const result = await createUsuarioAdmin(userForm.nombre, userForm.correo, userForm.password, userForm.rol)
+    if (result.error) {
+      setUserFormError(result.error)
+    } else {
+      setUserForm({ nombre: '', correo: '', password: '', confirmPassword: '', rol: 'usuario' })
+      setShowUserForm(false)
+      loadUsuarios()
+    }
+    setAddingUser(false)
+  }
+
+  // ── Admin: Toggle activo ──────────────────────────────────────────
+  const handleToggleActivo = async (userId: string, activo: boolean) => {
+    setTogglingActivo(userId)
+    await toggleUsuarioActivo(userId, activo)
+    setUsuarios(prev => prev.map(u => u.id === userId ? { ...u, activo } : u))
+    setTogglingActivo(null)
+  }
+
+  // ── Admin: Editar email ───────────────────────────────────────────
+  const handleSaveEmail = async (userId: string) => {
+    if (!editEmailValue.trim()) return
+    setSavingEmail(true)
+    const result = await updateUsuarioEmail(userId, editEmailValue)
+    if (!result.error) {
+      setUsuarios(prev => prev.map(u => u.id === userId ? { ...u, correo: editEmailValue.trim().toLowerCase() } : u))
+      setEditingUserId(null)
+    }
+    setSavingEmail(false)
+  }
+
+  // ── Admin: Reset password ─────────────────────────────────────────
+  const handleResetPassword = async (correo: string, userId: string) => {
+    setResetingPwd(userId)
+    await sendPasswordResetAdmin(correo)
+    setPwdResetSuccess(userId)
+    setResetingPwd(null)
+    setTimeout(() => setPwdResetSuccess(null), 3000)
+  }
+
+  // ── Admin: Salas CRUD ─────────────────────────────────────────────
+  const loadSalasAdmin = useCallback(async () => {
+    setLoadingSalasAdmin(true)
+    const result = await getSalasAdmin()
+    if (result.data) setSalasAdmin(result.data)
+    setLoadingSalasAdmin(false)
+  }, [])
+
+  const handleAddSala = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!salaForm.nombre.trim() || !salaForm.capacidad) return
+    setAddingSala(true)
+    const result = await createSala({
+      nombre: salaForm.nombre.trim(),
+      descripcion: salaForm.descripcion.trim() || null,
+      capacidad: parseInt(salaForm.capacidad) || 1,
+      ubicacion: salaForm.ubicacion.trim() || null,
+      imagen_url: salaForm.imagen_url.trim() || null,
+      estado: salaForm.estado,
+    })
+    if (result.data) {
+      setSalasAdmin(prev => [...prev, result.data!])
+      setSalaForm({ nombre: '', descripcion: '', capacidad: '', ubicacion: '', imagen_url: '', estado: 'disponible' })
+      setShowSalaForm(false)
+    }
+    setAddingSala(false)
+  }
+
+  const handleDeleteSala = async (id: string) => {
+    await deleteSala(id)
+    setSalasAdmin(prev => prev.filter(s => s.id !== id))
+  }
+
+  const handleSaveSala = async (id: string) => {
+    setSavingSala(true)
+    await updateSala(id, {
+      nombre: editSalaForm.nombre.trim(),
+      descripcion: editSalaForm.descripcion.trim() || null,
+      capacidad: parseInt(editSalaForm.capacidad) || 1,
+      ubicacion: editSalaForm.ubicacion.trim() || null,
+      imagen_url: editSalaForm.imagen_url.trim() || null,
+      estado: editSalaForm.estado,
+    })
+    setSalasAdmin(prev => prev.map(s => s.id === id ? {
+      ...s,
+      nombre: editSalaForm.nombre.trim(),
+      descripcion: editSalaForm.descripcion.trim() || null,
+      capacidad: parseInt(editSalaForm.capacidad) || 1,
+      ubicacion: editSalaForm.ubicacion.trim() || null,
+      imagen_url: editSalaForm.imagen_url.trim() || null,
+      estado: editSalaForm.estado,
+    } : s))
+    setEditingSalaId(null)
+    setSavingSala(false)
+  }
+
   const openModal = (salaId?: string) => {
     const todayStr = new Date().toISOString().split('T')[0]
     setForm({ ...EMPTY_FORM, fecha: todayStr, sala_id: salaId ?? '' })
@@ -258,9 +577,8 @@ export default function MainMenuPage() {
     openModal()
   }
 
-  const handleReservarRapido = (salaId: string) => {
-    if (!FEATURES.roomBooking) { showComingSoon(); return }
-    openModal(salaId)
+  const handleReservarRapido = (sala: Sala) => {
+    handleReservarPreview(sala)
   }
 
   const handleSubmitReserva = async (e: React.FormEvent) => {
@@ -400,21 +718,39 @@ export default function MainMenuPage() {
               <p className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant px-4 mb-1">
                 Administración
               </p>
-              {[
-                { label: 'Panel de Control', icon: 'admin_panel_settings' },
-                { label: 'Gestionar Salas', icon: 'door_front' },
-                { label: 'Equipos', icon: 'devices' },
-                { label: 'Usuarios', icon: 'manage_accounts' },
-                { label: 'Reportes', icon: 'bar_chart' },
-              ].map((item) => (
-                <button
-                  key={item.label}
-                  className="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left text-secondary hover:bg-surface-container-low hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
-                >
-                  <span className="material-symbols-outlined text-[20px]">{item.icon}</span>
-                  <span>{item.label}</span>
-                </button>
-              ))}
+              <button
+                onClick={() => { handleAdminTab(); setAdminSubTab('users') }}
+                className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200 ${
+                  activeTab === 'admin' && adminSubTab === 'users'
+                    ? 'bg-surface-container-lowest text-primary font-bold shadow-sm'
+                    : 'text-secondary hover:bg-surface-container-low hover:scale-[1.02] active:scale-[0.98]'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[20px]" style={activeTab === 'admin' && adminSubTab === 'users' ? { fontVariationSettings: "'FILL' 1" } : undefined}>manage_accounts</span>
+                <span>Usuarios</span>
+              </button>
+              <button
+                onClick={() => { handleAdminTab(); setAdminSubTab('equipment') }}
+                className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200 ${
+                  activeTab === 'admin' && adminSubTab === 'equipment'
+                    ? 'bg-surface-container-lowest text-primary font-bold shadow-sm'
+                    : 'text-secondary hover:bg-surface-container-low hover:scale-[1.02] active:scale-[0.98]'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[20px]" style={activeTab === 'admin' && adminSubTab === 'equipment' ? { fontVariationSettings: "'FILL' 1" } : undefined}>devices</span>
+                <span>Equipos</span>
+              </button>
+              <button
+                onClick={() => { handleAdminTab(); setAdminSubTab('rooms'); loadSalasAdmin() }}
+                className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200 ${
+                  activeTab === 'admin' && adminSubTab === 'rooms'
+                    ? 'bg-surface-container-lowest text-primary font-bold shadow-sm'
+                    : 'text-secondary hover:bg-surface-container-low hover:scale-[1.02] active:scale-[0.98]'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[20px]" style={activeTab === 'admin' && adminSubTab === 'rooms' ? { fontVariationSettings: "'FILL' 1" } : undefined}>meeting_room</span>
+                <span>Salas</span>
+              </button>
             </>
           )}
         </div>
@@ -493,21 +829,39 @@ export default function MainMenuPage() {
                   <p className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant px-4 mb-1">
                     Administración
                   </p>
-                  {[
-                    { label: 'Panel de Control', icon: 'admin_panel_settings' },
-                    { label: 'Gestionar Salas', icon: 'door_front' },
-                    { label: 'Equipos', icon: 'devices' },
-                    { label: 'Usuarios', icon: 'manage_accounts' },
-                    { label: 'Reportes', icon: 'bar_chart' },
-                  ].map((item) => (
-                    <button
-                      key={item.label}
-                      className="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left text-secondary hover:bg-surface-container-low transition-all duration-200"
-                    >
-                      <span className="material-symbols-outlined text-[20px]">{item.icon}</span>
-                      <span>{item.label}</span>
-                    </button>
-                  ))}
+                  <button
+                    onClick={() => { handleAdminTab(); setAdminSubTab('users'); setMobileMenuOpen(false) }}
+                    className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200 ${
+                      activeTab === 'admin' && adminSubTab === 'users'
+                        ? 'bg-surface-container-lowest text-primary font-bold'
+                        : 'text-secondary hover:bg-surface-container-low'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[20px]">manage_accounts</span>
+                    <span>Usuarios</span>
+                  </button>
+                  <button
+                    onClick={() => { handleAdminTab(); setAdminSubTab('equipment'); setMobileMenuOpen(false) }}
+                    className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200 ${
+                      activeTab === 'admin' && adminSubTab === 'equipment'
+                        ? 'bg-surface-container-lowest text-primary font-bold'
+                        : 'text-secondary hover:bg-surface-container-low'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[20px]">devices</span>
+                    <span>Equipos</span>
+                  </button>
+                  <button
+                    onClick={() => { handleAdminTab(); setAdminSubTab('rooms'); loadSalasAdmin(); setMobileMenuOpen(false) }}
+                    className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200 ${
+                      activeTab === 'admin' && adminSubTab === 'rooms'
+                        ? 'bg-surface-container-lowest text-primary font-bold'
+                        : 'text-secondary hover:bg-surface-container-low'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[20px]">meeting_room</span>
+                    <span>Salas</span>
+                  </button>
                 </>
               )}
             </div>
@@ -536,12 +890,18 @@ export default function MainMenuPage() {
                 {activeTab === 'rooms'        && 'Salas disponibles'}
                 {activeTab === 'tech'         && 'Equipamiento Tecnológico'}
                 {activeTab === 'profile'      && 'Mi Perfil'}
+                {activeTab === 'admin' && adminSubTab === 'users'     && 'Gestión de Usuarios'}
+                {activeTab === 'admin' && adminSubTab === 'equipment' && 'Gestión de Equipos'}
+                {activeTab === 'admin' && adminSubTab === 'rooms'     && 'Gestión de Salas'}
               </h2>
               <p className="font-body text-lg text-secondary">
                 {activeTab === 'reservations' && '¿Qué espacio necesitas hoy para brillar?'}
                 {activeTab === 'rooms'        && 'Encuentra el ambiente perfecto para tu próxima reunión.'}
                 {activeTab === 'tech'         && 'Herramientas de última generación para potenciar tu trabajo.'}
                 {activeTab === 'profile'      && 'Gestiona tus datos personales y preferencias de cuenta.'}
+                {activeTab === 'admin' && adminSubTab === 'users'     && 'Administra los roles y accesos de todos los usuarios.'}
+                {activeTab === 'admin' && adminSubTab === 'equipment' && 'Registra y controla la disponibilidad del equipamiento.'}
+                {activeTab === 'admin' && adminSubTab === 'rooms'     && 'Crea y administra las salas disponibles.'}
               </p>
             </div>
             {activeTab === 'reservations' && (
@@ -747,7 +1107,7 @@ export default function MainMenuPage() {
                           </div>
                           <p className="font-body text-xs text-secondary mb-2 flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">group</span> {sala.capacidad} pers.</p>
                           <button
-                            onClick={() => handleReservarRapido(sala.id)}
+                            onClick={() => handleReservarRapido(sala)}
                             className="font-label text-xs font-bold text-primary hover:underline"
                           >
                             Reservar Rápido
@@ -828,7 +1188,7 @@ export default function MainMenuPage() {
                       
                       <div className="mt-6 pt-4 border-t border-outline-variant/15 mt-auto">
                         <button
-                          onClick={() => handleReservarRapido(sala.id)}
+                          onClick={() => handleReservarRapido(sala)}
                           disabled={sala.estado !== 'disponible'}
                           className="w-full bg-primary text-on-primary font-label text-sm font-bold py-3 rounded-xl hover:bg-primary-container hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-40 disabled:hover:translate-y-0 disabled:shadow-none disabled:cursor-not-allowed flex items-center justify-center gap-2"
                         >
@@ -937,6 +1297,575 @@ export default function MainMenuPage() {
                 <span className="material-symbols-outlined text-lg">logout</span>
                 Cerrar Sesión
               </button>
+            </div>
+          )}
+
+          {/* ══ TAB: ADMIN ════════════════════════════════════════════ */}
+          {activeTab === 'admin' && (
+            <div className="space-y-6">
+
+              {/* Sub-tabs */}
+              <div className="flex gap-2 border-b border-outline-variant/20 pb-0">
+                <button
+                  onClick={() => { setAdminSubTab('users'); loadUsuarios() }}
+                  className={`px-5 py-2.5 text-sm font-label font-semibold rounded-t-lg border-b-2 transition-colors ${
+                    adminSubTab === 'users'
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-on-surface-variant hover:text-on-surface'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[18px]">manage_accounts</span>
+                    Usuarios
+                  </span>
+                </button>
+                <button
+                  onClick={() => { setAdminSubTab('equipment'); loadEquipos() }}
+                  className={`px-5 py-2.5 text-sm font-label font-semibold rounded-t-lg border-b-2 transition-colors ${
+                    adminSubTab === 'equipment'
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-on-surface-variant hover:text-on-surface'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[18px]">devices</span>
+                    Equipos
+                  </span>
+                </button>
+                <button
+                  onClick={() => { setAdminSubTab('rooms'); loadSalasAdmin() }}
+                  className={`px-5 py-2.5 text-sm font-label font-semibold rounded-t-lg border-b-2 transition-colors ${
+                    adminSubTab === 'rooms'
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-on-surface-variant hover:text-on-surface'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[18px]">meeting_room</span>
+                    Salas
+                  </span>
+                </button>
+              </div>
+
+              {/* ─── HU-06: Gestión de usuarios ─────────────────────── */}
+              {adminSubTab === 'users' && (
+                <div className="space-y-4">
+                  {/* Botón registrar usuario */}
+                  <div className="flex justify-end">
+                    <button
+                      onClick={() => { setShowUserForm(v => !v); setUserFormError(null) }}
+                      className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label text-sm font-semibold hover:opacity-90 transition-opacity"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">{showUserForm ? 'close' : 'person_add'}</span>
+                      {showUserForm ? 'Cancelar' : 'Registrar Usuario'}
+                    </button>
+                  </div>
+
+                  {/* Formulario registrar usuario */}
+                  {showUserForm && (
+                    <form onSubmit={handleCreateUser} className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-5 space-y-4">
+                      <h4 className="font-headline font-bold text-on-surface mb-2">Nuevo Usuario</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Nombre *</label>
+                          <input type="text" value={userForm.nombre} onChange={e => setUserForm(f => ({ ...f, nombre: e.target.value }))} placeholder="Nombre completo" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" required />
+                        </div>
+                        <div>
+                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Correo *</label>
+                          <input type="text" value={userForm.correo} onChange={e => setUserForm(f => ({ ...f, correo: e.target.value }))} placeholder="correo@ejemplo.com" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                        </div>
+                        <div>
+                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Contraseña *</label>
+                          <input type="password" value={userForm.password} onChange={e => setUserForm(f => ({ ...f, password: e.target.value }))} placeholder="Mín. 8 caracteres" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" required />
+                          {userForm.password && <AdminPasswordRequirements password={userForm.password} />}
+                        </div>
+                        <div>
+                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Confirmar Contraseña *</label>
+                          <input type="password" value={userForm.confirmPassword} onChange={e => setUserForm(f => ({ ...f, confirmPassword: e.target.value }))} placeholder="Repite la contraseña" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" required />
+                        </div>
+                        <div>
+                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Rol</label>
+                          <select value={userForm.rol} onChange={e => setUserForm(f => ({ ...f, rol: e.target.value as 'usuario' | 'admin' }))} className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40">
+                            <option value="usuario">Usuario</option>
+                            <option value="admin">Admin</option>
+                          </select>
+                        </div>
+                      </div>
+                      {userFormError && (
+                        <p className="text-sm text-red-600 font-body flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-[16px]">error</span>
+                          {userFormError}
+                        </p>
+                      )}
+                      <div className="flex justify-end">
+                        <button type="submit" disabled={addingUser} className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2 rounded-lg font-label text-sm font-semibold disabled:opacity-60">
+                          {addingUser ? <><span className="h-4 w-4 animate-spin rounded-full border-2 border-on-primary border-t-transparent" /> Creando…</> : <><span className="material-symbols-outlined text-[18px]">save</span> Crear Usuario</>}
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                  {/* Tabla usuarios */}
+                  <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 shadow-sm overflow-hidden">
+                    {loadingUsuarios ? (
+                      <div className="flex items-center justify-center py-16 gap-3">
+                        <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                        <span className="font-body text-sm text-on-surface-variant">Cargando usuarios…</span>
+                      </div>
+                    ) : usuarios.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+                        <span className="material-symbols-outlined text-on-surface-variant text-4xl">group_off</span>
+                        <p className="font-body text-sm text-on-surface-variant">No se encontraron usuarios.</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead className="bg-surface-container border-b border-outline-variant/20">
+                            <tr>
+                              <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-6 py-3">Nombre</th>
+                              <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-6 py-3">Correo</th>
+                              <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-6 py-3">Rol</th>
+                              <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-6 py-3">Estado</th>
+                              <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-6 py-3">Acciones</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-outline-variant/10">
+                            {usuarios.map((u) => (
+                              <tr key={u.id} className={`transition-colors ${u.activo === false ? 'bg-red-50/60' : 'hover:bg-surface-container/50'}`}>
+                                <td className={`px-6 py-4 font-body font-medium ${u.activo === false ? 'text-red-500 line-through decoration-red-400' : 'text-on-surface'}`}>{u.nombre}</td>
+                                <td className="px-6 py-4 font-body text-on-surface-variant">
+                                  {editingUserId === u.id ? (
+                                    <div className="flex items-center gap-2">
+                                      <input type="email" value={editEmailValue} onChange={e => setEditEmailValue(e.target.value)} className="bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none focus:ring-1 focus:ring-primary w-44" autoFocus />
+                                      <button onClick={() => handleSaveEmail(u.id)} disabled={savingEmail} className="p-1 rounded hover:bg-green-100 text-green-600 disabled:opacity-50">
+                                        {savingEmail ? <span className="h-3 w-3 animate-spin rounded-full border border-green-600 border-t-transparent inline-block" /> : <span className="material-symbols-outlined text-[16px]">check</span>}
+                                      </button>
+                                      <button onClick={() => setEditingUserId(null)} className="p-1 rounded hover:bg-red-50 text-red-500">
+                                        <span className="material-symbols-outlined text-[16px]">close</span>
+                                      </button>
+                                    </div>
+                                  ) : u.correo}
+                                </td>
+                                <td className="px-6 py-4">
+                                  <select
+                                    value={['admin','administrador','administrator'].includes(u.rol) ? 'admin' : 'usuario'}
+                                    onChange={(e) => handleRoleChange(u.id, e.target.value as 'usuario' | 'admin')}
+                                    disabled={updatingRole === u.id || u.activo === false}
+                                    className="bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-1.5 text-xs font-body text-on-surface focus:outline-none disabled:opacity-50"
+                                  >
+                                    <option value="usuario">Usuario</option>
+                                    <option value="admin">Admin</option>
+                                  </select>
+                                </td>
+                                <td className="px-6 py-4">
+                                  {u.activo === false ? (
+                                    <span className="inline-flex items-center gap-1 text-xs font-label font-bold px-2 py-0.5 rounded bg-red-100 text-red-600">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-red-500" />Eliminado
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 text-xs font-label font-bold px-2 py-0.5 rounded bg-green-100 text-green-700">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-green-500" />Activo
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="px-6 py-4">
+                                  <div className="flex items-center gap-1">
+                                    {editingUserId !== u.id && (
+                                      <button onClick={() => { setEditingUserId(u.id); setEditEmailValue(u.correo) }} title="Editar correo" className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors">
+                                        <span className="material-symbols-outlined text-[16px]">edit</span>
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={() => handleResetPassword(u.correo, u.id)}
+                                      disabled={resetingPwd === u.id || u.activo === false}
+                                      title="Enviar reset de contraseña"
+                                      className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors disabled:opacity-40"
+                                    >
+                                      {pwdResetSuccess === u.id ? <span className="material-symbols-outlined text-[16px] text-green-600">check_circle</span>
+                                        : resetingPwd === u.id ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent inline-block" />
+                                        : <span className="material-symbols-outlined text-[16px]">lock_reset</span>}
+                                    </button>
+                                    <button
+                                      onClick={() => handleToggleActivo(u.id, u.activo === false)}
+                                      disabled={togglingActivo === u.id}
+                                      title={u.activo === false ? 'Reactivar usuario' : 'Desactivar usuario'}
+                                      className={`p-1.5 rounded-lg transition-colors disabled:opacity-40 ${u.activo === false ? 'text-green-600 hover:bg-green-50' : 'text-red-500 hover:bg-red-50'}`}
+                                    >
+                                      {togglingActivo === u.id
+                                        ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent inline-block" />
+                                        : <span className="material-symbols-outlined text-[16px]">{u.activo === false ? 'person_check' : 'person_off'}</span>}
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ─── HU-07: Gestión de equipos ──────────────────────── */}
+              {adminSubTab === 'equipment' && (
+                <div className="space-y-4">
+                  {/* Botón agregar */}
+                  <div className="flex justify-end">
+                    <button
+                      onClick={() => setShowEquipoForm(v => !v)}
+                      className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label text-sm font-medium hover:bg-primary-container transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">{showEquipoForm ? 'close' : 'add'}</span>
+                      {showEquipoForm ? 'Cancelar' : 'Agregar Equipo'}
+                    </button>
+                  </div>
+
+                  {/* Formulario agregar */}
+                  {showEquipoForm && (
+                    <form onSubmit={handleAddEquipo} className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-5 shadow-sm">
+                      <h4 className="font-headline font-bold text-on-surface mb-4">Nuevo Equipo</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+
+                        {/* Nombre */}
+                        <div className="sm:col-span-2 lg:col-span-3">
+                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Nombre *</label>
+                          <input
+                            type="text"
+                            value={equipoForm.nombre}
+                            onChange={(e) => setEquipoField('nombre', e.target.value)}
+                            placeholder="Ej: Dell Latitude 5520 #3"
+                            className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
+                            required
+                          />
+                        </div>
+
+                        {/* Categoría */}
+                        <div>
+                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Categoría *</label>
+                          <select
+                            value={equipoForm.categoria}
+                            onChange={(e) => setEquipoField('categoria', e.target.value)}
+                            className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
+                            required
+                          >
+                            <option value="">Selecciona categoría</option>
+                            <option value="ordenador">Ordenador</option>
+                            <option value="movil">Móvil</option>
+                          </select>
+                        </div>
+
+                        {/* Sistema Operativo */}
+                        <div>
+                          <label className={`font-label text-xs uppercase tracking-widest block mb-1.5 ${equipoForm.categoria ? 'text-on-surface-variant' : 'text-on-surface-variant/40'}`}>
+                            Sistema Operativo *
+                          </label>
+                          <select
+                            value={equipoForm.sistema_operativo}
+                            onChange={(e) => setEquipoField('sistema_operativo', e.target.value)}
+                            disabled={!equipoForm.categoria}
+                            className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-40 disabled:cursor-not-allowed"
+                            required
+                          >
+                            <option value="">Selecciona SO</option>
+                            {getSistemas(equipoForm.categoria).map(o => (
+                              <option key={o.value} value={o.value}>{o.label}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Marca */}
+                        <div>
+                          <label className={`font-label text-xs uppercase tracking-widest block mb-1.5 ${equipoForm.sistema_operativo ? 'text-on-surface-variant' : 'text-on-surface-variant/40'}`}>
+                            Marca *
+                          </label>
+                          <select
+                            value={equipoForm.marca}
+                            onChange={(e) => setEquipoField('marca', e.target.value)}
+                            disabled={!equipoForm.sistema_operativo}
+                            className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-40 disabled:cursor-not-allowed"
+                            required
+                          >
+                            <option value="">Selecciona marca</option>
+                            {getMarcas(equipoForm.categoria, equipoForm.sistema_operativo).map(o => (
+                              <option key={o.value} value={o.value}>{o.label}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Tipo de equipo */}
+                        <div>
+                          <label className={`font-label text-xs uppercase tracking-widest block mb-1.5 ${equipoForm.marca ? 'text-on-surface-variant' : 'text-on-surface-variant/40'}`}>
+                            Tipo de Equipo *
+                          </label>
+                          <select
+                            value={equipoForm.tipo_equipo}
+                            onChange={(e) => setEquipoField('tipo_equipo', e.target.value)}
+                            disabled={!equipoForm.marca}
+                            className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-40 disabled:cursor-not-allowed"
+                            required
+                          >
+                            <option value="">Selecciona tipo</option>
+                            {getTipos(equipoForm.categoria, equipoForm.sistema_operativo, equipoForm.marca).map(o => (
+                              <option key={o.value} value={o.value}>{o.label}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Estado */}
+                        <div>
+                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Estado</label>
+                          <select
+                            value={equipoForm.estado}
+                            onChange={(e) => setEquipoField('estado', e.target.value)}
+                            className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
+                          >
+                            <option value="disponible">Disponible</option>
+                            <option value="reservado">Reservado</option>
+                            <option value="mantenimiento">Mantenimiento</option>
+                          </select>
+                        </div>
+
+                        {/* URL Imagen */}
+                        <div>
+                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">URL Imagen</label>
+                          <input
+                            type="text"
+                            value={equipoForm.imagen_url}
+                            onChange={(e) => setEquipoField('imagen_url', e.target.value)}
+                            placeholder="/tech/imagen.jpg"
+                            className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="mt-4 flex justify-end">
+                        <button
+                          type="submit"
+                          disabled={addingEquipo}
+                          className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2 rounded-lg font-label text-sm font-medium hover:bg-primary-container disabled:opacity-60 transition-colors"
+                        >
+                          {addingEquipo ? (
+                            <><span className="h-4 w-4 animate-spin rounded-full border-2 border-on-primary border-t-transparent" /> Guardando…</>
+                          ) : (
+                            <><span className="material-symbols-outlined text-[18px]">save</span> Guardar</>
+                          )}
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                  {/* Lista de equipos */}
+                  <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 shadow-sm overflow-hidden">
+                    {loadingEquipos ? (
+                      <div className="flex items-center justify-center py-16 gap-3">
+                        <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                        <span className="font-body text-sm text-on-surface-variant">Cargando equipos…</span>
+                      </div>
+                    ) : equipos.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+                        <span className="material-symbols-outlined text-on-surface-variant text-4xl">devices_off</span>
+                        <p className="font-body text-sm text-on-surface-variant">No hay equipos registrados.</p>
+                        <p className="font-body text-xs text-on-surface-variant/60">Agrega el primer equipo con el botón de arriba.</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead className="bg-surface-container border-b border-outline-variant/20">
+                            <tr>
+                              <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-6 py-3">Nombre</th>
+                              <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-6 py-3">Tipo</th>
+                              <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-6 py-3">Estado</th>
+                              <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-6 py-3">Acciones</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-outline-variant/10">
+                            {equipos.map((eq) => (
+                              <tr key={eq.id} className="hover:bg-surface-container/50 transition-colors">
+                                <td className="px-6 py-4 font-body font-medium text-on-surface">{eq.nombre}</td>
+                                <td className="px-6 py-4 font-label text-xs uppercase tracking-wider text-primary">{eq.tipo_equipo}</td>
+                                <td className="px-6 py-4">
+                                  <button
+                                    onClick={() => handleToggleEquipo(eq.id, eq.estado === 'disponible' ? 'mantenimiento' : 'disponible')}
+                                    className={`inline-flex items-center gap-1.5 text-xs font-label font-bold px-2.5 py-1 rounded-md transition-colors ${
+                                      eq.estado === 'disponible'
+                                        ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                                        : 'bg-red-100 text-red-700 hover:bg-red-200'
+                                    }`}
+                                  >
+                                    <span className={`w-1.5 h-1.5 rounded-full ${eq.estado === 'disponible' ? 'bg-green-500' : 'bg-red-500'}`} />
+                                    {eq.estado === 'disponible' ? 'Disponible' : 'No disponible'}
+                                  </button>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <button
+                                    onClick={() => handleDeleteEquipo(eq.id)}
+                                    className="p-1.5 rounded-lg text-on-surface-variant hover:bg-red-50 hover:text-red-600 transition-colors"
+                                    title="Eliminar equipo"
+                                  >
+                                    <span className="material-symbols-outlined text-[18px]">delete</span>
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ─── Admin: Gestión de salas ──────────────────────────── */}
+              {adminSubTab === 'rooms' && (
+                <div className="space-y-4">
+                  {/* Botón agregar sala */}
+                  <div className="flex justify-end">
+                    <button
+                      onClick={() => setShowSalaForm(v => !v)}
+                      className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label text-sm font-semibold hover:opacity-90 transition-opacity"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">{showSalaForm ? 'close' : 'add'}</span>
+                      {showSalaForm ? 'Cancelar' : 'Agregar Sala'}
+                    </button>
+                  </div>
+
+                  {/* Formulario agregar sala */}
+                  {showSalaForm && (
+                    <form onSubmit={handleAddSala} className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-5 space-y-4">
+                      <h4 className="font-headline font-bold text-on-surface mb-2">Nueva Sala</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <div>
+                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Nombre *</label>
+                          <input type="text" value={salaForm.nombre} onChange={e => setSalaForm(f => ({ ...f, nombre: e.target.value }))} placeholder="Ej: Sala Innovación A" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" required />
+                        </div>
+                        <div>
+                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Capacidad *</label>
+                          <input type="number" min="1" value={salaForm.capacidad} onChange={e => setSalaForm(f => ({ ...f, capacidad: e.target.value }))} placeholder="Ej: 10" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" required />
+                        </div>
+                        <div>
+                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Ubicación</label>
+                          <input type="text" value={salaForm.ubicacion} onChange={e => setSalaForm(f => ({ ...f, ubicacion: e.target.value }))} placeholder="Ej: Piso 2, Ala Norte" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Descripción</label>
+                          <input type="text" value={salaForm.descripcion} onChange={e => setSalaForm(f => ({ ...f, descripcion: e.target.value }))} placeholder="Descripción breve de la sala" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                        </div>
+                        <div>
+                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Estado</label>
+                          <select value={salaForm.estado} onChange={e => setSalaForm(f => ({ ...f, estado: e.target.value as SalaAdmin['estado'] }))} className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40">
+                            <option value="disponible">Disponible</option>
+                            <option value="ocupada">Ocupada</option>
+                            <option value="mantenimiento">Mantenimiento</option>
+                          </select>
+                        </div>
+                        <div className="sm:col-span-2 lg:col-span-3">
+                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">URL Imagen</label>
+                          <input type="text" value={salaForm.imagen_url} onChange={e => setSalaForm(f => ({ ...f, imagen_url: e.target.value }))} placeholder="/rooms/imagen.jpg" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                        </div>
+                      </div>
+                      <div className="flex justify-end">
+                        <button type="submit" disabled={addingSala} className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2 rounded-lg font-label text-sm font-semibold disabled:opacity-60">
+                          {addingSala ? <><span className="h-4 w-4 animate-spin rounded-full border-2 border-on-primary border-t-transparent" /> Guardando…</> : <><span className="material-symbols-outlined text-[18px]">save</span> Guardar Sala</>}
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                  {/* Lista de salas */}
+                  <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 shadow-sm overflow-hidden">
+                    {loadingSalasAdmin ? (
+                      <div className="flex items-center justify-center py-16 gap-3">
+                        <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                        <span className="font-body text-sm text-on-surface-variant">Cargando salas…</span>
+                      </div>
+                    ) : salasAdmin.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+                        <span className="material-symbols-outlined text-on-surface-variant text-4xl">meeting_room</span>
+                        <p className="font-body text-sm text-on-surface-variant">No hay salas registradas.</p>
+                        <p className="font-body text-xs text-on-surface-variant/60">Agrega la primera sala con el botón de arriba.</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead className="bg-surface-container border-b border-outline-variant/20">
+                            <tr>
+                              <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-6 py-3">Nombre</th>
+                              <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-6 py-3">Cap.</th>
+                              <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-6 py-3">Ubicación</th>
+                              <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-6 py-3">Estado</th>
+                              <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-6 py-3">Acciones</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-outline-variant/10">
+                            {salasAdmin.map((s) => (
+                              <tr key={s.id} className="hover:bg-surface-container/50 transition-colors">
+                                {editingSalaId === s.id ? (
+                                  <>
+                                    <td className="px-6 py-3"><input type="text" value={editSalaForm.nombre} onChange={e => setEditSalaForm(f => ({ ...f, nombre: e.target.value }))} className="w-full bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none" /></td>
+                                    <td className="px-6 py-3"><input type="number" min="1" value={editSalaForm.capacidad} onChange={e => setEditSalaForm(f => ({ ...f, capacidad: e.target.value }))} className="w-16 bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none" /></td>
+                                    <td className="px-6 py-3"><input type="text" value={editSalaForm.ubicacion} onChange={e => setEditSalaForm(f => ({ ...f, ubicacion: e.target.value }))} className="w-full bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none" /></td>
+                                    <td className="px-6 py-3">
+                                      <select value={editSalaForm.estado} onChange={e => setEditSalaForm(f => ({ ...f, estado: e.target.value as SalaAdmin['estado'] }))} className="bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none">
+                                        <option value="disponible">Disponible</option>
+                                        <option value="ocupada">Ocupada</option>
+                                        <option value="mantenimiento">Mantenimiento</option>
+                                      </select>
+                                    </td>
+                                    <td className="px-6 py-3">
+                                      <div className="flex items-center gap-1">
+                                        <button onClick={() => handleSaveSala(s.id)} disabled={savingSala} className="p-1.5 rounded-lg text-green-600 hover:bg-green-50 transition-colors disabled:opacity-50">
+                                          {savingSala ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-green-600 border-t-transparent inline-block" /> : <span className="material-symbols-outlined text-[16px]">check</span>}
+                                        </button>
+                                        <button onClick={() => setEditingSalaId(null)} className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors">
+                                          <span className="material-symbols-outlined text-[16px]">close</span>
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </>
+                                ) : (
+                                  <>
+                                    <td className="px-6 py-4 font-body font-medium text-on-surface">{s.nombre}</td>
+                                    <td className="px-6 py-4 font-body text-on-surface-variant">{s.capacidad}</td>
+                                    <td className="px-6 py-4 font-body text-on-surface-variant">{s.ubicacion ?? '—'}</td>
+                                    <td className="px-6 py-4">
+                                      <span className={`inline-flex items-center gap-1 text-xs font-label font-bold px-2 py-0.5 rounded ${
+                                        s.estado === 'disponible' ? 'bg-green-100 text-green-700' :
+                                        s.estado === 'ocupada' ? 'bg-red-100 text-red-600' : 'bg-yellow-100 text-yellow-700'
+                                      }`}>
+                                        <span className={`w-1.5 h-1.5 rounded-full ${s.estado === 'disponible' ? 'bg-green-500' : s.estado === 'ocupada' ? 'bg-red-500' : 'bg-yellow-500'}`} />
+                                        {s.estado === 'disponible' ? 'Disponible' : s.estado === 'ocupada' ? 'Ocupada' : 'Mantenimiento'}
+                                      </span>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                      <div className="flex items-center gap-1">
+                                        <button
+                                          onClick={() => { setEditingSalaId(s.id); setEditSalaForm({ nombre: s.nombre, descripcion: s.descripcion ?? '', capacidad: String(s.capacidad), ubicacion: s.ubicacion ?? '', imagen_url: s.imagen_url ?? '', estado: s.estado }) }}
+                                          title="Editar sala"
+                                          className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors"
+                                        >
+                                          <span className="material-symbols-outlined text-[16px]">edit</span>
+                                        </button>
+                                        <button
+                                          onClick={() => handleDeleteSala(s.id)}
+                                          title="Eliminar sala"
+                                          className="p-1.5 rounded-lg text-on-surface-variant hover:bg-red-50 hover:text-red-600 transition-colors"
+                                        >
+                                          <span className="material-symbols-outlined text-[16px]">delete</span>
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </>
+                                )}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1123,6 +2052,70 @@ export default function MainMenuPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ══ HU-08: MODAL PREVIEW SALA ══════════════════════════════ */}
+      {previewSala && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setPreviewSala(null)}
+          />
+          <div className="relative w-full max-w-sm bg-surface rounded-2xl shadow-2xl border border-outline-variant/20 overflow-hidden">
+            {/* Imagen */}
+            <div className="relative h-44 overflow-hidden">
+              <img
+                src={previewSala.imagen_url || '/rooms/photo-1495576775051-8af0d10f19b1.jpg'}
+                alt={previewSala.nombre}
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+              <button
+                onClick={() => setPreviewSala(null)}
+                className="absolute top-3 right-3 p-1.5 rounded-full bg-black/30 text-white hover:bg-black/50 transition-colors"
+              >
+                <span className="material-symbols-outlined text-[18px]">close</span>
+              </button>
+            </div>
+
+            {/* Contenido */}
+            <div className="px-6 py-5 space-y-4">
+              <div>
+                <h3 className="font-headline text-xl font-bold text-on-surface">{previewSala.nombre}</h3>
+                <div className="flex flex-wrap gap-3 mt-2 text-sm font-label text-secondary">
+                  <span className="flex items-center gap-1 bg-surface-container px-2 py-1 rounded-md">
+                    <span className="material-symbols-outlined text-[14px]">group</span>
+                    {previewSala.capacidad} personas
+                  </span>
+                  {previewSala.ubicacion && (
+                    <span className="flex items-center gap-1 bg-surface-container px-2 py-1 rounded-md">
+                      <span className="material-symbols-outlined text-[14px]">location_on</span>
+                      {previewSala.ubicacion}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Mensaje próximo sprint */}
+              <div className="flex items-start gap-3 bg-[#001529]/5 border border-[#001529]/10 rounded-xl px-4 py-3">
+                <span className="material-symbols-outlined text-[22px] text-yellow-500 shrink-0" style={{ fontVariationSettings: "'FILL' 1" }}>
+                  rocket_launch
+                </span>
+                <div>
+                  <p className="font-label text-sm font-bold text-on-surface">Disponible para reservar en el próximo sprint</p>
+                  <p className="font-body text-xs text-on-surface-variant mt-0.5">Esta funcionalidad estará habilitada pronto.</p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setPreviewSala(null)}
+                className="w-full py-3 rounded-xl bg-surface-container text-on-surface font-label text-sm font-medium hover:bg-surface-container-high transition-colors"
+              >
+                Entendido
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -32,6 +32,9 @@ export default function LoginPage() {
 
     if (result.error) {
       switch (result.error) {
+        case 'USER_INACTIVE':
+          setGlobalError('Tu cuenta ha sido desactivada. Contacta al administrador.')
+          break
         case 'USER_NOT_FOUND':
           setGlobalError('Este usuario no está registrado. Por favor, crea una cuenta primero.')
           break
