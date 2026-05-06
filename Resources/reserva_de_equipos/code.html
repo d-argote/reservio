@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>User Reservation Portal - AssetCentral</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-tertiary-fixed": "#311400",
+                        "inverse-primary": "#adc6ff",
+                        "tertiary-fixed": "#ffdcc6",
+                        "on-tertiary": "#ffffff",
+                        "surface-variant": "#e1e2ec",
+                        "on-error-container": "#93000a",
+                        "on-surface-variant": "#424754",
+                        "secondary-container": "#d5e0f8",
+                        "surface-bright": "#f9f9ff",
+                        "on-tertiary-container": "#fffbff",
+                        "background": "#f9f9ff",
+                        "on-primary": "#ffffff",
+                        "secondary-fixed": "#d8e3fb",
+                        "secondary": "#545f73",
+                        "surface-container-highest": "#e1e2ec",
+                        "surface": "#f9f9ff",
+                        "surface-dim": "#d8d9e3",
+                        "primary-fixed-dim": "#adc6ff",
+                        "error-container": "#ffdad6",
+                        "primary-container": "#2170e4",
+                        "on-secondary-container": "#586377",
+                        "on-surface": "#191b23",
+                        "surface-container-high": "#e6e7f2",
+                        "inverse-on-surface": "#eff0fa",
+                        "primary": "#0058be",
+                        "error": "#ba1a1a",
+                        "on-primary-fixed-variant": "#004395",
+                        "outline-variant": "#c2c6d6",
+                        "on-error": "#ffffff",
+                        "tertiary-fixed-dim": "#ffb786",
+                        "on-primary-fixed": "#001a42",
+                        "on-background": "#191b23",
+                        "inverse-surface": "#2e3038",
+                        "on-secondary-fixed": "#111c2d",
+                        "outline": "#727785",
+                        "surface-container": "#ecedf7",
+                        "tertiary-container": "#b75b00",
+                        "surface-tint": "#005ac2",
+                        "on-primary-container": "#fefcff",
+                        "primary-fixed": "#d8e2ff",
+                        "tertiary": "#924700",
+                        "on-secondary": "#ffffff",
+                        "surface-container-low": "#f2f3fd",
+                        "on-secondary-fixed-variant": "#3c475a",
+                        "surface-container-lowest": "#ffffff",
+                        "secondary-fixed-dim": "#bcc7de",
+                        "on-tertiary-fixed-variant": "#723600"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "xl": "32px",
+                        "gutter": "16px",
+                        "margin": "24px",
+                        "unit": "4px",
+                        "md": "16px",
+                        "lg": "24px",
+                        "xs": "4px",
+                        "sm": "8px"
+                    },
+                    "fontFamily": {
+                        "table-header": ["Inter"],
+                        "badge": ["Inter"],
+                        "h1": ["Inter"],
+                        "body-sm": ["Inter"],
+                        "body-md": ["Inter"],
+                        "h2": ["Inter"],
+                        "data-tabular": ["Inter"]
+                    },
+                    "fontSize": {
+                        "table-header": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "badge": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+                        "h1": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-sm": ["13px", { "lineHeight": "18px", "fontWeight": "400" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "h2": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "data-tabular": ["14px", { "lineHeight": "20px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface font-body-md min-h-screen flex flex-col">
+<!-- TopAppBar -->
+<header class="flex justify-between items-center w-full px-lg h-16 z-40 bg-surface dark:bg-on-background docked full-width top-0 border-b border-outline-variant dark:border-outline flat no shadows shrink-0">
+<div class="flex items-center gap-md">
+<span class="font-h1 text-h1 text-primary dark:text-primary-fixed font-bold tracking-tight">AssetCentral</span>
+</div>
+<div class="flex items-center gap-md">
+<div class="hidden md:flex relative mr-lg">
+<span class="material-symbols-outlined absolute left-sm top-1/2 -translate-y-1/2 text-on-surface-variant text-sm">search</span>
+<input class="pl-[32px] pr-sm py-xs border border-outline-variant rounded bg-surface-container-lowest text-body-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none w-64" placeholder="Search assets..." type="text"/>
+</div>
+<button class="text-on-surface-variant hover:bg-surface-container-high dark:hover:bg-on-secondary-fixed-variant transition-colors p-xs rounded-full cursor-pointer active:opacity-80">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="text-on-surface-variant hover:bg-surface-container-high dark:hover:bg-on-secondary-fixed-variant transition-colors p-xs rounded-full cursor-pointer active:opacity-80">
+<span class="material-symbols-outlined">help</span>
+</button>
+<button class="text-on-surface-variant hover:bg-surface-container-high dark:hover:bg-on-secondary-fixed-variant transition-colors p-xs rounded-full cursor-pointer active:opacity-80">
+<span class="material-symbols-outlined">settings</span>
+</button>
+<div class="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center text-on-primary-container font-h2 text-h2 ml-sm border border-outline-variant overflow-hidden">
+<img alt="User avatar" class="w-full h-full object-cover" data-alt="A professional headshot of a person looking directly at the camera. The lighting is soft and even, typical of a modern corporate portrait. The individual has a neutral but approachable expression, and the background is slightly out of focus, emphasizing the subject. The image represents a typical user avatar in a light-themed enterprise software environment." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAMb6guyYLccoAqoSQSQc4EaTgKgOh9zYM9ALgO3F-NYav9aVGohiTe3YJkQGPAqb8gaoZEHEK9qQifV7y80_rjoJ0QLyJkEzKDtxWtZcm933kmKF5VyRPUqPuzy19mS6QBbtI38JxK-y2qayTlNtqYp3mO1A6ZeROis02KWStIt2Z9iDCYddHo6oLL6TTLaxIgWahpXfJtgkzS07eedfgfZzD970accLbzA4GQsRoVdZF0frGJB_j-A9DQrWutcG8cy4iGYy_ZXwQ"/>
+</div>
+</div>
+</header>
+<div class="flex flex-1 overflow-hidden">
+<!-- SideNavBar -->
+<nav class="hidden md:flex flex-col h-screen border-r border-outline-variant z-50 fixed left-0 top-0 w-64 bg-surface-container-low dark:bg-inverse-surface flat no shadows pt-16">
+<div class="p-lg border-b border-outline-variant mb-sm">
+<div class="font-h2 text-h2 text-on-surface dark:text-inverse-on-surface">IT Assets</div>
+<div class="font-body-sm text-body-sm text-on-surface-variant">Enterprise Management</div>
+</div>
+<button class="mx-lg mb-md bg-primary text-on-primary py-sm px-md rounded flex items-center justify-center gap-sm font-body-sm hover:bg-primary-container hover:text-on-primary-container transition-colors shadow-sm">
+<span class="material-symbols-outlined text-[18px]">add</span>
+                New Asset
+            </button>
+<div class="flex-1 overflow-y-auto py-sm">
+<a class="flex items-center gap-md px-lg py-md cursor-pointer text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-high dark:hover:bg-secondary-fixed-dim/10 transition-all" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-body-md text-body-md">Dashboard</span>
+</a>
+<a class="flex items-center gap-md px-lg py-md cursor-pointer text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-high dark:hover:bg-secondary-fixed-dim/10 transition-all" href="#">
+<span class="material-symbols-outlined">inventory_2</span>
+<span class="font-body-md text-body-md">Inventory</span>
+</a>
+<a class="flex items-center gap-md px-lg py-md cursor-pointer bg-secondary-container dark:bg-on-secondary-fixed-variant text-on-secondary-container dark:text-secondary-fixed border-l-2 border-primary font-bold" href="#">
+<span class="material-symbols-outlined">event_available</span>
+<span class="font-body-md text-body-md">Reservations</span>
+</a>
+<a class="flex items-center gap-md px-lg py-md cursor-pointer text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-high dark:hover:bg-secondary-fixed-dim/10 transition-all" href="#">
+<span class="material-symbols-outlined">build</span>
+<span class="font-body-md text-body-md">Maintenance</span>
+</a>
+<a class="flex items-center gap-md px-lg py-md cursor-pointer text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-high dark:hover:bg-secondary-fixed-dim/10 transition-all" href="#">
+<span class="material-symbols-outlined">analytics</span>
+<span class="font-body-md text-body-md">Reports</span>
+</a>
+</div>
+<div class="border-t border-outline-variant py-sm">
+<a class="flex items-center gap-md px-lg py-md cursor-pointer text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-high transition-all" href="#">
+<span class="material-symbols-outlined">contact_support</span>
+<span class="font-body-md text-body-md">Support</span>
+</a>
+<a class="flex items-center gap-md px-lg py-md cursor-pointer text-on-surface-variant dark:text-surface-variant hover:bg-surface-container-high transition-all" href="#">
+<span class="material-symbols-outlined">logout</span>
+<span class="font-body-md text-body-md">Sign Out</span>
+</a>
+</div>
+</nav>
+<!-- Main Content Area -->
+<main class="flex-1 md:ml-64 p-lg overflow-y-auto bg-background">
+<div class="max-w-7xl mx-auto space-y-margin">
+<!-- Page Header -->
+<div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-md">
+<div>
+<h1 class="font-h1 text-h1 text-on-surface">Asset Reservation Portal</h1>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-xs">Find and reserve available IT equipment.</p>
+</div>
+</div>
+<!-- Search & Filters Container (Glassmorphism/Card) -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md shadow-sm">
+<div class="flex flex-col gap-md">
+<!-- Main Search Bar -->
+<div class="relative w-full">
+<span class="material-symbols-outlined absolute left-md top-1/2 -translate-y-1/2 text-on-surface-variant">search</span>
+<input class="w-full pl-[40px] pr-md py-[10px] border border-outline-variant rounded-lg bg-surface font-body-md text-body-md focus:border-primary focus:ring-2 focus:ring-primary focus:ring-opacity-50 outline-none transition-shadow" placeholder="Search by model, specs, or keyword..." type="text"/>
+</div>
+<!-- Cascading Filters -->
+<div class="grid grid-cols-1 md:grid-cols-4 gap-sm">
+<div class="flex flex-col gap-xs">
+<label class="font-table-header text-table-header text-on-surface-variant">Category</label>
+<div class="relative">
+<select class="w-full appearance-none bg-surface border border-outline-variant rounded px-sm py-[6px] font-body-sm text-body-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none">
+<option value="">All Categories</option>
+<option value="laptops">Laptops</option>
+<option value="desktops">Desktops</option>
+<option value="monitors">Monitors</option>
+<option value="accessories">Accessories</option>
+</select>
+<span class="material-symbols-outlined absolute right-sm top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none text-[16px]">expand_more</span>
+</div>
+</div>
+<div class="flex flex-col gap-xs">
+<label class="font-table-header text-table-header text-on-surface-variant">Operating System</label>
+<div class="relative">
+<select class="w-full appearance-none bg-surface border border-outline-variant rounded px-sm py-[6px] font-body-sm text-body-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none">
+<option value="">Any OS</option>
+<option value="macos">macOS</option>
+<option value="windows">Windows</option>
+<option value="linux">Linux</option>
+</select>
+<span class="material-symbols-outlined absolute right-sm top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none text-[16px]">expand_more</span>
+</div>
+</div>
+<div class="flex flex-col gap-xs">
+<label class="font-table-header text-table-header text-on-surface-variant">Brand</label>
+<div class="relative">
+<select class="w-full appearance-none bg-surface border border-outline-variant rounded px-sm py-[6px] font-body-sm text-body-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none">
+<option value="">All Brands</option>
+<option value="apple">Apple</option>
+<option value="dell">Dell</option>
+<option value="lenovo">Lenovo</option>
+</select>
+<span class="material-symbols-outlined absolute right-sm top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none text-[16px]">expand_more</span>
+</div>
+</div>
+<div class="flex flex-col gap-xs">
+<label class="font-table-header text-table-header text-on-surface-variant">Type</label>
+<div class="relative">
+<select class="w-full appearance-none bg-surface border border-outline-variant rounded px-sm py-[6px] font-body-sm text-body-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none">
+<option value="">Any Type</option>
+<option value="standard">Standard</option>
+<option value="high_perf">High Performance</option>
+<option value="ultra_light">Ultra-Light</option>
+</select>
+<span class="material-symbols-outlined absolute right-sm top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none text-[16px]">expand_more</span>
+</div>
+</div>
+</div>
+<!-- Active Filters & Reset -->
+<div class="flex justify-between items-center mt-xs pt-sm border-t border-surface-dim">
+<div class="flex flex-wrap gap-xs">
+<span class="font-body-sm text-body-sm text-on-surface-variant py-[2px]">Active Filters:</span>
+<div class="bg-primary-fixed text-on-primary-fixed px-sm py-[2px] rounded-full flex items-center gap-xs font-badge text-badge">
+                                    Status: Available
+                                </div>
+</div>
+<button class="text-primary hover:text-primary-container font-body-sm text-body-sm flex items-center gap-xs transition-colors">
+<span class="material-symbols-outlined text-[16px]">refresh</span>
+                                Reset Filters
+                            </button>
+</div>
+</div>
+</div>
+<!-- Results Info Bar -->
+<div class="flex justify-between items-center px-xs">
+<span class="font-body-md text-body-md text-on-surface-variant">Showing <strong class="text-on-surface">12</strong> available assets</span>
+<div class="flex items-center gap-sm">
+<span class="font-body-sm text-body-sm text-on-surface-variant">Sort by:</span>
+<select class="appearance-none bg-transparent border-none font-body-md text-body-md text-primary font-medium focus:ring-0 cursor-pointer pr-lg relative">
+<option>Relevance</option>
+<option>Newest</option>
+<option>Name A-Z</option>
+</select>
+</div>
+</div>
+<!-- Asset Gallery (Bento Grid Style) -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-md">
+<!-- Asset Card 1 -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden flex flex-col hover:border-primary transition-colors group">
+<div class="h-40 bg-surface-container-high relative overflow-hidden flex items-center justify-center p-md">
+<img alt="MacBook Pro" class="max-h-full object-contain group-hover:scale-105 transition-transform duration-300" data-alt="A sleek, silver Apple MacBook Pro laptop slightly open, resting on a clean, light-colored desk surface. The lighting is bright and even, highlighting the premium metallic finish of the device. The background is minimal and slightly blurred, fitting a modern corporate tech environment. The overall aesthetic is clean, professional, and high-end." src="https://lh3.googleusercontent.com/aida-public/AB6AXuA_ZhbU50emDZmUF6thslzdnnswc0UJ9qFnERqlfq2D4US0fbQhdT0HBoedCs0tCmvRLzOad4h-Aw9S_pXhSnQuMCPgnRHm0RwktcXix5zQIQ_-iG996xZW_s2_hEKcgHDR7nN-P8Gr7PaQ8wI2CkjTlUH8nv0sseZ2v9mwqPLBvzqypVZfuwWUwJI7E6O7z2QuN1sdy5FYw3MgUbHBfl1ttOHYHLYKosdIHTE-1WkKAi5bcygmjx1rv4SyIUY56DIyzVuoNgyhJy8"/>
+<div class="absolute top-sm right-sm bg-primary/10 text-primary font-badge text-badge px-xs py-[2px] rounded border border-primary/20 backdrop-blur-sm">Available</div>
+</div>
+<div class="p-md flex flex-col flex-1 border-t border-outline-variant">
+<div class="flex justify-between items-start mb-xs">
+<h3 class="font-h2 text-h2 text-on-surface line-clamp-1">MacBook Pro 16" (M2 Max)</h3>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-md">Apple • High Performance</p>
+<div class="space-y-xs mb-md flex-1">
+<div class="flex items-center gap-xs font-body-sm text-body-sm text-on-surface">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant w-4">memory</span>
+<span>64GB Unified Memory</span>
+</div>
+<div class="flex items-center gap-xs font-body-sm text-body-sm text-on-surface">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant w-4">hard_drive</span>
+<span>2TB SSD</span>
+</div>
+<div class="flex items-center gap-xs font-body-sm text-body-sm text-on-surface">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant w-4">terminal</span>
+<span>macOS Ventura</span>
+</div>
+</div>
+<button class="w-full bg-primary hover:bg-primary-container text-on-primary font-body-md text-body-md h-[36px] rounded transition-colors flex items-center justify-center gap-xs">
+<span class="material-symbols-outlined text-[18px]">bookmark_add</span>
+                                Reserve
+                            </button>
+</div>
+</div>
+<!-- Asset Card 2 -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden flex flex-col hover:border-primary transition-colors group">
+<div class="h-40 bg-surface-container-high relative overflow-hidden flex items-center justify-center p-md">
+<img alt="Dell XPS 15" class="max-h-full object-contain group-hover:scale-105 transition-transform duration-300" data-alt="A modern Dell XPS laptop viewed from a slight angle, showing its thin profile and edge-to-edge screen display. The laptop sits on a crisp white surface under studio lighting, emphasizing its professional build quality. The setting is minimalist, aligning with an enterprise hardware catalog style. The light mode aesthetic is maintained throughout." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCm1N3E7OsxzHvRM3MllOzOkmnn8iWUIwDxfy1wTI8FwOViyDcNy4sWWCFchLClaCOSDVe7V_g4gNoMWnQrQIFB29KEfO73tR_B4m_TBJ2S50aTzTSZR8jtJN-xcykRY5qwrELgJGNGh_UfEvnZVqn1I2OBs-ps2iIVUPWrvziuIe5vtH6M9AkZQrWjhDc6YXLGp4UYPPf1NGvpt_QdAFHsvU58MpPRgB9ovu_KO0eJIFcrEWwfcUAAI2qsm239A4L4KOur5WVc4bE"/>
+<div class="absolute top-sm right-sm bg-primary/10 text-primary font-badge text-badge px-xs py-[2px] rounded border border-primary/20 backdrop-blur-sm">Available</div>
+</div>
+<div class="p-md flex flex-col flex-1 border-t border-outline-variant">
+<div class="flex justify-between items-start mb-xs">
+<h3 class="font-h2 text-h2 text-on-surface line-clamp-1">Dell XPS 15</h3>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-md">Dell • Standard</p>
+<div class="space-y-xs mb-md flex-1">
+<div class="flex items-center gap-xs font-body-sm text-body-sm text-on-surface">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant w-4">memory</span>
+<span>32GB RAM</span>
+</div>
+<div class="flex items-center gap-xs font-body-sm text-body-sm text-on-surface">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant w-4">hard_drive</span>
+<span>1TB NVMe SSD</span>
+</div>
+<div class="flex items-center gap-xs font-body-sm text-body-sm text-on-surface">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant w-4">desktop_windows</span>
+<span>Windows 11 Pro</span>
+</div>
+</div>
+<button class="w-full bg-primary hover:bg-primary-container text-on-primary font-body-md text-body-md h-[36px] rounded transition-colors flex items-center justify-center gap-xs">
+<span class="material-symbols-outlined text-[18px]">bookmark_add</span>
+                                Reserve
+                            </button>
+</div>
+</div>
+<!-- Asset Card 3 -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden flex flex-col hover:border-primary transition-colors group">
+<div class="h-40 bg-surface-container-high relative overflow-hidden flex items-center justify-center p-md">
+<img alt="MacBook Air" class="max-h-full object-contain group-hover:scale-105 transition-transform duration-300" data-alt="An Apple MacBook Air in starlight color, shown in a closed or semi-closed state to highlight its extremely thin profile. It is placed on a pristine, bright desk environment. The lighting is soft and airy, conveying lightness and portability. The visual tone is consistent with a high-end corporate IT catalog in light mode." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB4H2PbLo2iD8Mx4-0oRBtE8tJIW9CRyi-Xfyzl5jOFZHC8dzMRJsGPBC_cpa61NmROsO1ug4LIuvnLpofO61_P4eH3Zacrf-SjTSx8Vtzd6xMv14sXhGZDaeTF752BhfNrKe3jrRnZeXH4Bi0rQo5HMGdlNuNgp4UFn-XGSp2O5GxqP_El6SauFTp3q3MYBZQzTod9ppv70GZAEnibUSOeIqm5DNH8JgBwjo-KWlQTe5pgaMVvS8-EnGA-KPZ7a_8xac4F34MRf8A"/>
+<div class="absolute top-sm right-sm bg-primary/10 text-primary font-badge text-badge px-xs py-[2px] rounded border border-primary/20 backdrop-blur-sm">Available</div>
+</div>
+<div class="p-md flex flex-col flex-1 border-t border-outline-variant">
+<div class="flex justify-between items-start mb-xs">
+<h3 class="font-h2 text-h2 text-on-surface line-clamp-1">MacBook Air 13" (M2)</h3>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-md">Apple • Ultra-Light</p>
+<div class="space-y-xs mb-md flex-1">
+<div class="flex items-center gap-xs font-body-sm text-body-sm text-on-surface">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant w-4">memory</span>
+<span>16GB Unified Memory</span>
+</div>
+<div class="flex items-center gap-xs font-body-sm text-body-sm text-on-surface">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant w-4">hard_drive</span>
+<span>512GB SSD</span>
+</div>
+<div class="flex items-center gap-xs font-body-sm text-body-sm text-on-surface">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant w-4">terminal</span>
+<span>macOS Ventura</span>
+</div>
+</div>
+<button class="w-full bg-primary hover:bg-primary-container text-on-primary font-body-md text-body-md h-[36px] rounded transition-colors flex items-center justify-center gap-xs">
+<span class="material-symbols-outlined text-[18px]">bookmark_add</span>
+                                Reserve
+                            </button>
+</div>
+</div>
+<!-- Asset Card 4 -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden flex flex-col hover:border-primary transition-colors group">
+<div class="h-40 bg-surface-container-high relative overflow-hidden flex items-center justify-center p-md">
+<img alt="Lenovo ThinkPad" class="max-h-full object-contain group-hover:scale-105 transition-transform duration-300" data-alt="A classic black Lenovo ThinkPad laptop, identifiable by its red trackpoint, resting on a clean office desk. The lighting highlights the matte black finish and robust build quality typical of enterprise hardware. The scene is brightly lit with cool, white tones, maintaining a professional and systematic visual style suitable for a corporate inventory system." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDCtH2KZc8LC55ZhvzqLe4-3bunINkI4tWVyAh0H8tffq-zrZmhQnLsEX5B45vSPLhEDLEz4IY-se0P0iynSB64saxafbcLeVjfmsX9_gt6J3T1PrwpMD-VFSucqxJ5dWdogmCCcx-b-U6bJ5CCuS8hBNcmqjIM4vqojqr2QOlJ581MN_jGQJ_jsGwJ0UBpL8PICj9kvVPoqq2jF4KvsGczjOE8ZMOs3UgaHkqZd_hEduSJXuQ-9aVMPByEz9HhALPCXeVCmPaB0p8"/>
+<div class="absolute top-sm right-sm bg-primary/10 text-primary font-badge text-badge px-xs py-[2px] rounded border border-primary/20 backdrop-blur-sm">Available</div>
+</div>
+<div class="p-md flex flex-col flex-1 border-t border-outline-variant">
+<div class="flex justify-between items-start mb-xs">
+<h3 class="font-h2 text-h2 text-on-surface line-clamp-1">Lenovo ThinkPad X1 Carbon</h3>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-md">Lenovo • Standard</p>
+<div class="space-y-xs mb-md flex-1">
+<div class="flex items-center gap-xs font-body-sm text-body-sm text-on-surface">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant w-4">memory</span>
+<span>16GB LPDDR5</span>
+</div>
+<div class="flex items-center gap-xs font-body-sm text-body-sm text-on-surface">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant w-4">hard_drive</span>
+<span>512GB PCIe SSD</span>
+</div>
+<div class="flex items-center gap-xs font-body-sm text-body-sm text-on-surface">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant w-4">android</span>
+<span>Ubuntu Linux 22.04</span>
+</div>
+</div>
+<button class="w-full bg-primary hover:bg-primary-container text-on-primary font-body-md text-body-md h-[36px] rounded transition-colors flex items-center justify-center gap-xs">
+<span class="material-symbols-outlined text-[18px]">bookmark_add</span>
+                                Reserve
+                            </button>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body></html>

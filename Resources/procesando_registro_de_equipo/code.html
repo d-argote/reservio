@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Register New Asset - Loading</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary-fixed-variant": "#3c475a",
+                        "secondary-fixed-dim": "#bcc7de",
+                        "background": "#f9f9ff",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-bright": "#f9f9ff",
+                        "on-secondary": "#ffffff",
+                        "on-background": "#191b23",
+                        "on-tertiary-fixed-variant": "#723600",
+                        "on-secondary-container": "#586377",
+                        "surface-dim": "#d8d9e3",
+                        "inverse-on-surface": "#eff0fa",
+                        "surface-tint": "#005ac2",
+                        "error-container": "#ffdad6",
+                        "on-error-container": "#93000a",
+                        "tertiary-container": "#b75b00",
+                        "outline": "#727785",
+                        "inverse-surface": "#2e3038",
+                        "surface-container-highest": "#e1e2ec",
+                        "on-primary-fixed": "#001a42",
+                        "surface-variant": "#e1e2ec",
+                        "surface-container": "#ecedf7",
+                        "on-surface-variant": "#424754",
+                        "surface-container-high": "#e6e7f2",
+                        "outline-variant": "#c2c6d6",
+                        "tertiary-fixed-dim": "#ffb786",
+                        "on-primary-fixed-variant": "#004395",
+                        "primary-fixed-dim": "#adc6ff",
+                        "tertiary-fixed": "#ffdcc6",
+                        "tertiary": "#924700",
+                        "primary-container": "#2170e4",
+                        "on-surface": "#191b23",
+                        "on-primary-container": "#fefcff",
+                        "inverse-primary": "#adc6ff",
+                        "primary-fixed": "#d8e2ff",
+                        "on-secondary-fixed": "#111c2d",
+                        "secondary": "#545f73",
+                        "on-tertiary-container": "#fffbff",
+                        "error": "#ba1a1a",
+                        "on-error": "#ffffff",
+                        "secondary-fixed": "#d8e3fb",
+                        "surface": "#f9f9ff",
+                        "on-primary": "#ffffff",
+                        "surface-container-low": "#f2f3fd",
+                        "primary": "#0058be",
+                        "on-tertiary-fixed": "#311400",
+                        "secondary-container": "#d5e0f8",
+                        "on-tertiary": "#ffffff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "xl": "32px",
+                        "margin": "24px",
+                        "xs": "4px",
+                        "lg": "24px",
+                        "sm": "8px",
+                        "md": "16px",
+                        "gutter": "16px",
+                        "unit": "4px"
+                    },
+                    "fontFamily": {
+                        "body-sm": ["Inter"],
+                        "body-md": ["Inter"],
+                        "badge": ["Inter"],
+                        "table-header": ["Inter"],
+                        "h1": ["Inter"],
+                        "data-tabular": ["Inter"],
+                        "h2": ["Inter"]
+                    },
+                    "fontSize": {
+                        "body-sm": ["13px", {"lineHeight": "18px", "fontWeight": "400"}],
+                        "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                        "badge": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
+                        "table-header": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                        "h1": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                        "data-tabular": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                        "h2": ["20px", {"lineHeight": "28px", "letterSpacing": "-0.01em", "fontWeight": "600"}]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .spin {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-md min-h-screen flex antialiased">
+<!-- TopAppBar (Visible on small screens, hidden on md+) -->
+<header class="md:hidden flex justify-between items-center w-full px-lg h-16 z-40 bg-surface border-b border-outline-variant flat no shadows fixed top-0 left-0 right-0">
+<div class="flex items-center gap-md cursor-pointer active:opacity-80">
+<span class="material-symbols-outlined text-primary text-2xl" data-icon="arrow_back">arrow_back</span>
+<span class="font-h1 text-h1 text-primary">AssetCentral</span>
+</div>
+<div class="flex gap-sm">
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-high transition-colors rounded-full cursor-pointer active:opacity-80">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-high transition-colors rounded-full cursor-pointer active:opacity-80">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+</button>
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-high transition-colors rounded-full cursor-pointer active:opacity-80">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</button>
+</div>
+</header>
+<!-- SideNavBar (Hidden on small screens, visible on md+) -->
+<nav class="hidden md:flex flex-col h-screen border-r border-outline-variant z-50 fixed left-0 top-0 h-full w-64 bg-surface-container-low flat no shadows">
+<div class="p-lg border-b border-outline-variant">
+<div class="flex items-center gap-md mb-lg">
+<img alt="System Logo" class="rounded-full" data-alt="A sleek, minimalist vector icon representing a computer network node or stylized geometric 'A' for AssetCentral. It uses shades of deep enterprise blue (like primary #0058be) and crisp white on a slightly raised surface to convey trust and structural integrity within a modern IT management context." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAl758ZdfQkVczLdaiMmQNQ_ahyfVk2n8dD5oX8oV8G5xdThQxVCUwDYXW2Z1lf79xUjHP8C9-PcsGgrFq_Qe3ga0zdqWuAvyCJ7pLWku1QWhujuxZiWcmE4fRuDWwU2DEwnTLBHeJa7riVxc4jJPNxxYuUIqU-NxI0ME8szIvLoDOJJ6NDhuiFK-1f_NcTHRjKhIW19hDJPCy5X-dus3w_FzwA3Pg8z47B-oauSOb1pD0DSOhhnPNC9RT3idN30m3Wtmrsi2DsYUM"/>
+<div>
+<h1 class="font-h2 text-h2 text-on-surface">IT Assets</h1>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Enterprise Management</p>
+</div>
+</div>
+<button class="w-full bg-primary text-on-primary font-body-md text-body-md py-sm rounded-DEFAULT flex items-center justify-center gap-sm opacity-50 cursor-not-allowed" disabled="">
+<span class="material-symbols-outlined" data-icon="add">add</span>
+                New Asset
+            </button>
+</div>
+<ul class="flex-1 py-md">
+<li class="flex items-center gap-md px-lg py-md cursor-pointer text-on-surface-variant hover:bg-surface-container-high transition-all">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="font-body-md text-body-md">Dashboard</span>
+</li>
+<!-- Inventory is active logically as we are adding a new asset -->
+<li class="flex items-center gap-md px-lg py-md cursor-pointer bg-secondary-container text-on-secondary-container border-l-2 border-primary">
+<span class="material-symbols-outlined" data-icon="inventory_2" data-weight="fill" style="font-variation-settings: 'FILL' 1;">inventory_2</span>
+<span class="font-body-md text-body-md font-bold">Inventory</span>
+</li>
+<li class="flex items-center gap-md px-lg py-md cursor-pointer text-on-surface-variant hover:bg-surface-container-high transition-all">
+<span class="material-symbols-outlined" data-icon="event_available">event_available</span>
+<span class="font-body-md text-body-md">Reservations</span>
+</li>
+<li class="flex items-center gap-md px-lg py-md cursor-pointer text-on-surface-variant hover:bg-surface-container-high transition-all">
+<span class="material-symbols-outlined" data-icon="build">build</span>
+<span class="font-body-md text-body-md">Maintenance</span>
+</li>
+<li class="flex items-center gap-md px-lg py-md cursor-pointer text-on-surface-variant hover:bg-surface-container-high transition-all">
+<span class="material-symbols-outlined" data-icon="analytics">analytics</span>
+<span class="font-body-md text-body-md">Reports</span>
+</li>
+</ul>
+<div class="p-md border-t border-outline-variant">
+<ul class="flex flex-col">
+<li class="flex items-center gap-md px-lg py-md cursor-pointer text-on-surface-variant hover:bg-surface-container-high transition-all">
+<span class="material-symbols-outlined" data-icon="contact_support">contact_support</span>
+<span class="font-body-md text-body-md">Support</span>
+</li>
+<li class="flex items-center gap-md px-lg py-md cursor-pointer text-on-surface-variant hover:bg-surface-container-high transition-all">
+<span class="material-symbols-outlined" data-icon="logout">logout</span>
+<span class="font-body-md text-body-md">Sign Out</span>
+</li>
+</ul>
+</div>
+</nav>
+<!-- Main Content Canvas -->
+<main class="flex-1 md:ml-64 pt-16 md:pt-0 p-lg md:p-xl flex justify-center items-start overflow-y-auto">
+<div class="w-full max-w-4xl relative">
+<!-- Loading Overlay (Subtle) -->
+<div class="absolute inset-0 bg-surface/40 z-10 rounded-xl pointer-events-none"></div>
+<div class="mb-lg flex items-center justify-between opacity-70">
+<div>
+<h2 class="font-h1 text-h1 text-on-background">Register New Asset</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mt-xs">Processing registration details...</p>
+</div>
+<div class="hidden sm:flex gap-sm">
+<button class="h-[36px] px-md bg-surface-container text-on-surface-variant font-body-md text-body-md rounded-DEFAULT border border-outline-variant opacity-50 cursor-not-allowed" disabled="">Cancel</button>
+<button class="h-[36px] px-md bg-primary text-on-primary font-body-md text-body-md rounded-DEFAULT flex items-center justify-center gap-sm opacity-80 cursor-wait" disabled="">
+<span class="material-symbols-outlined spin text-lg" data-icon="progress_activity">progress_activity</span>
+                        Saving...
+                    </button>
+</div>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-lg">
+<!-- Main Form Details -->
+<div class="lg:col-span-2 flex flex-col gap-lg">
+<!-- Basic Information Card -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md shadow-[0px_4px_12px_rgba(0,0,0,0.05)] opacity-60 pointer-events-none transition-opacity">
+<h3 class="font-h2 text-h2 text-on-surface mb-md pb-sm border-b border-surface-container">Basic Information</h3>
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-md">
+<div class="flex flex-col gap-xs sm:col-span-2">
+<label class="font-body-sm text-body-sm font-semibold text-on-surface-variant">Asset Name / Model</label>
+<input class="h-10 px-sm border border-outline-variant rounded-DEFAULT bg-surface-container-lowest text-data-tabular font-data-tabular text-on-surface focus:ring-0 focus:outline-none" disabled="" type="text" value="ThinkPad X1 Carbon Gen 10"/>
+</div>
+<div class="flex flex-col gap-xs">
+<label class="font-body-sm text-body-sm font-semibold text-on-surface-variant">Category</label>
+<div class="relative">
+<select class="w-full h-10 px-sm border border-outline-variant rounded-DEFAULT bg-surface-container-lowest text-data-tabular font-data-tabular text-on-surface appearance-none focus:ring-0 focus:outline-none" disabled="">
+<option>Laptops</option>
+<option>Desktops</option>
+<option>Peripherals</option>
+</select>
+<span class="material-symbols-outlined absolute right-2 top-2.5 text-on-surface-variant pointer-events-none" data-icon="expand_more">expand_more</span>
+</div>
+</div>
+<div class="flex flex-col gap-xs">
+<label class="font-body-sm text-body-sm font-semibold text-on-surface-variant">Manufacturer</label>
+<input class="h-10 px-sm border border-outline-variant rounded-DEFAULT bg-surface-container-lowest text-data-tabular font-data-tabular text-on-surface focus:ring-0 focus:outline-none" disabled="" type="text" value="Lenovo"/>
+</div>
+<div class="flex flex-col gap-xs sm:col-span-2">
+<label class="font-body-sm text-body-sm font-semibold text-on-surface-variant">Serial Number</label>
+<input class="h-10 px-sm border border-outline-variant rounded-DEFAULT bg-surface-container-highest text-data-tabular font-data-tabular text-on-surface focus:ring-0 focus:outline-none" disabled="" type="text" value="PF3TQ22A"/>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-xs text-[11px]">Unique identifier. Scanned from barcode.</p>
+</div>
+</div>
+</div>
+<!-- Financial Details Card -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md shadow-[0px_4px_12px_rgba(0,0,0,0.05)] opacity-60 pointer-events-none transition-opacity">
+<h3 class="font-h2 text-h2 text-on-surface mb-md pb-sm border-b border-surface-container">Financial Details</h3>
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-md">
+<div class="flex flex-col gap-xs">
+<label class="font-body-sm text-body-sm font-semibold text-on-surface-variant">Purchase Date</label>
+<input class="h-10 px-sm border border-outline-variant rounded-DEFAULT bg-surface-container-lowest text-data-tabular font-data-tabular text-on-surface focus:ring-0 focus:outline-none" disabled="" type="date" value="2023-10-24"/>
+</div>
+<div class="flex flex-col gap-xs">
+<label class="font-body-sm text-body-sm font-semibold text-on-surface-variant">Purchase Price ($)</label>
+<input class="h-10 px-sm border border-outline-variant rounded-DEFAULT bg-surface-container-lowest text-data-tabular font-data-tabular text-on-surface focus:ring-0 focus:outline-none" disabled="" type="text" value="1,450.00"/>
+</div>
+<div class="flex flex-col gap-xs">
+<label class="font-body-sm text-body-sm font-semibold text-on-surface-variant">Warranty Expiration</label>
+<input class="h-10 px-sm border border-outline-variant rounded-DEFAULT bg-surface-container-lowest text-data-tabular font-data-tabular text-on-surface focus:ring-0 focus:outline-none" disabled="" type="date" value="2026-10-24"/>
+</div>
+<div class="flex flex-col gap-xs">
+<label class="font-body-sm text-body-sm font-semibold text-on-surface-variant">PO Number</label>
+<input class="h-10 px-sm border border-outline-variant rounded-DEFAULT bg-surface-container-lowest text-data-tabular font-data-tabular text-on-surface focus:ring-0 focus:outline-none" disabled="" type="text" value="PO-2023-8842"/>
+</div>
+</div>
+</div>
+</div>
+<!-- Sidebar Details (Status & Assignment) -->
+<div class="flex flex-col gap-lg">
+<!-- Status Card -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md shadow-[0px_4px_12px_rgba(0,0,0,0.05)] opacity-60 pointer-events-none transition-opacity">
+<h3 class="font-h2 text-h2 text-on-surface mb-md pb-sm border-b border-surface-container">Initial Status</h3>
+<div class="flex flex-col gap-md">
+<div class="flex flex-col gap-xs">
+<label class="font-body-sm text-body-sm font-semibold text-on-surface-variant">Status</label>
+<div class="relative">
+<select class="w-full h-10 px-sm border border-outline-variant rounded-DEFAULT bg-surface-container-lowest text-data-tabular font-data-tabular text-on-surface appearance-none focus:ring-0 focus:outline-none" disabled="">
+<option>In Storage</option>
+<option>Deployed</option>
+<option>In Repair</option>
+</select>
+<span class="material-symbols-outlined absolute right-2 top-2.5 text-on-surface-variant pointer-events-none" data-icon="expand_more">expand_more</span>
+</div>
+</div>
+<div class="bg-surface-container-low p-sm rounded-DEFAULT border border-surface-dim">
+<p class="font-body-sm text-body-sm text-on-surface-variant flex items-start gap-xs">
+<span class="material-symbols-outlined text-[16px] mt-[2px]" data-icon="info">info</span>
+                                    Asset will be marked as "In Storage" upon registration completion.
+                                </p>
+</div>
+</div>
+</div>
+<!-- Assignment Card -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md shadow-[0px_4px_12px_rgba(0,0,0,0.05)] opacity-60 pointer-events-none transition-opacity">
+<h3 class="font-h2 text-h2 text-on-surface mb-md pb-sm border-b border-surface-container">Location</h3>
+<div class="flex flex-col gap-md">
+<div class="flex flex-col gap-xs">
+<label class="font-body-sm text-body-sm font-semibold text-on-surface-variant">Site</label>
+<div class="relative">
+<select class="w-full h-10 px-sm border border-outline-variant rounded-DEFAULT bg-surface-container-lowest text-data-tabular font-data-tabular text-on-surface appearance-none focus:ring-0 focus:outline-none" disabled="">
+<option>HQ - Building A</option>
+<option>HQ - Building B</option>
+<option>Remote</option>
+</select>
+<span class="material-symbols-outlined absolute right-2 top-2.5 text-on-surface-variant pointer-events-none" data-icon="expand_more">expand_more</span>
+</div>
+</div>
+<div class="flex flex-col gap-xs">
+<label class="font-body-sm text-body-sm font-semibold text-on-surface-variant">Department</label>
+<div class="relative">
+<select class="w-full h-10 px-sm border border-outline-variant rounded-DEFAULT bg-surface-container-lowest text-data-tabular font-data-tabular text-on-surface appearance-none focus:ring-0 focus:outline-none" disabled="">
+<option>Engineering</option>
+<option>Sales</option>
+<option>IT Support</option>
+</select>
+<span class="material-symbols-outlined absolute right-2 top-2.5 text-on-surface-variant pointer-events-none" data-icon="expand_more">expand_more</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Mobile Action Bottom Bar -->
+<div class="sm:hidden fixed bottom-0 left-0 right-0 bg-surface-container-lowest border-t border-outline-variant p-md flex gap-sm z-30 shadow-[0px_-4px_12px_rgba(0,0,0,0.05)]">
+<button class="flex-1 h-[36px] bg-surface-container text-on-surface-variant font-body-md text-body-md rounded-DEFAULT border border-outline-variant opacity-50 cursor-not-allowed" disabled="">Cancel</button>
+<button class="flex-[2] h-[36px] bg-primary text-on-primary font-body-md text-body-md rounded-DEFAULT flex items-center justify-center gap-sm opacity-80 cursor-wait" disabled="">
+<span class="material-symbols-outlined spin text-lg" data-icon="progress_activity">progress_activity</span>
+                    Saving...
+                </button>
+</div>
+</div>
+</main>
+</body></html>
