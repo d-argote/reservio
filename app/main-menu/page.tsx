@@ -10,6 +10,7 @@ import {
   getEquipos,
   createEquipo,
   updateEquipoEstado,
+  updateEquipo,
   deleteEquipo,
   createUsuarioAdmin,
   toggleUsuarioActivo,
@@ -112,15 +113,6 @@ const ROOM_IMAGES = [
 function getRoomImage(index: number) {
   return ROOM_IMAGES[index % ROOM_IMAGES.length];
 }
-
-const MOCK_TECH = [
-  { id: 't1', nombre: 'Proyector Laser 4K', tipo: 'Audiovisual', disponible: true, imagen: '/tech/photo-1552320640-6e01a5f1c1e9.jpg' },
-  { id: 't2', nombre: 'MacBook Pro M3 Max', tipo: 'Laptop', disponible: false, imagen: '/tech/photo-1610641563856-4ec0223d7084.jpg' },
-  { id: 't3', nombre: 'Kit VR Meta Quest 3', tipo: 'Realidad Virtual', disponible: true, imagen: '/tech/photo-1598187079701-01513e580415.jpg' },
-  { id: 't4', nombre: 'Micrófono Podcast Shure', tipo: 'Audio', disponible: true, imagen: '/tech/photo-1601919263076-4a6a8514c461.jpg' },
-  { id: 't5', nombre: 'Cámara 360 Institucional', tipo: 'Video', disponible: true, imagen: '/tech/photo-1646154034833-d10291080448.jpg' },
-  { id: 't6', nombre: 'iPad Pro Setup', tipo: 'Tablet', disponible: true, imagen: '/tech/photo-1648912869366-b89a51f52d44.jpg' },
-];
 
 // ── Skeleton Components ────────────────────────────────────────────
 
@@ -271,6 +263,21 @@ export default function MainMenuPage() {
   })
   const [addingEquipo, setAddingEquipo] = useState(false)
   const [showEquipoForm, setShowEquipoForm] = useState(false)
+  const [equipoFormStage, setEquipoFormStage] = useState<'form' | 'processing' | 'success'>('form')
+  const [equipoSearch, setEquipoSearch] = useState('')
+  const [editingEquipoId, setEditingEquipoId] = useState<string | null>(null)
+  const [editEquipoForm, setEditEquipoForm] = useState({
+    nombre: '',
+    categoria: '',
+    sistema_operativo: '',
+    marca: '',
+    tipo_equipo: '',
+    estado: 'disponible' as Equipo['estado'],
+    imagen_url: '',
+  })
+  const [savingEquipo, setSavingEquipo] = useState(false)
+  const [techSearch, setTechSearch] = useState('')
+  const [techFilter, setTechFilter] = useState('')
 
   // ── Admin — Usuarios CRUD ─────────────────────────────────────────
   const [showUserForm, setShowUserForm] = useState(false)
@@ -402,6 +409,7 @@ export default function MainMenuPage() {
     e.preventDefault()
     if (!equipoForm.nombre.trim() || !equipoForm.tipo_equipo) return
     setAddingEquipo(true)
+    setEquipoFormStage('processing')
     const result = await createEquipo({
       nombre: equipoForm.nombre.trim(),
       categoria: equipoForm.categoria,
@@ -413,10 +421,60 @@ export default function MainMenuPage() {
     })
     if (result.data) {
       setEquipos(prev => [...prev, result.data!])
-      setEquipoForm({ nombre: '', categoria: '', sistema_operativo: '', marca: '', tipo_equipo: '', estado: 'disponible', imagen_url: '' })
-      setShowEquipoForm(false)
+      setEquipoFormStage('success')
+      setTimeout(() => {
+        setEquipoForm({ nombre: '', categoria: '', sistema_operativo: '', marca: '', tipo_equipo: '', estado: 'disponible', imagen_url: '' })
+        setShowEquipoForm(false)
+        setEquipoFormStage('form')
+      }, 1800)
+    } else {
+      setEquipoFormStage('form')
     }
     setAddingEquipo(false)
+  }
+
+  const handleSaveEquipo = async (id: string) => {
+    setSavingEquipo(true)
+    await updateEquipo(id, {
+      nombre: editEquipoForm.nombre.trim(),
+      categoria: editEquipoForm.categoria,
+      sistema_operativo: editEquipoForm.sistema_operativo,
+      marca: editEquipoForm.marca,
+      tipo_equipo: editEquipoForm.tipo_equipo,
+      estado: editEquipoForm.estado,
+      imagen_url: editEquipoForm.imagen_url.trim() || null,
+    })
+    setEquipos(prev => prev.map(eq => eq.id === id ? {
+      ...eq,
+      nombre: editEquipoForm.nombre.trim(),
+      categoria: editEquipoForm.categoria,
+      sistema_operativo: editEquipoForm.sistema_operativo,
+      marca: editEquipoForm.marca,
+      tipo_equipo: editEquipoForm.tipo_equipo,
+      estado: editEquipoForm.estado,
+      imagen_url: editEquipoForm.imagen_url.trim() || null,
+    } : eq))
+    setEditingEquipoId(null)
+    setSavingEquipo(false)
+  }
+
+  function setEditEquipoField(field: string, value: string) {
+    setEditEquipoForm(prev => {
+      const next = { ...prev, [field]: value }
+      if (field === 'categoria') {
+        next.sistema_operativo = ''
+        next.marca             = ''
+        next.tipo_equipo       = ''
+      }
+      if (field === 'sistema_operativo') {
+        next.marca       = ''
+        next.tipo_equipo = ''
+      }
+      if (field === 'marca') {
+        next.tipo_equipo = ''
+      }
+      return next
+    })
   }
 
   function setEquipoField(field: string, value: string) {
@@ -444,7 +502,6 @@ export default function MainMenuPage() {
     loadUsuarios()
     loadEquipos()
   }, [loadUsuarios, loadEquipos])
-
   // ── Admin: Crear usuario ──────────────────────────────────────────
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -689,7 +746,7 @@ export default function MainMenuPage() {
           {navItems.map((item) => (
             <button
               key={item.id}
-              onClick={() => setActiveTab(item.id)}
+              onClick={() => { setActiveTab(item.id); if (item.id === 'tech') loadEquipos() }}
               className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200
                 ${
                   activeTab === item.id
@@ -807,7 +864,7 @@ export default function MainMenuPage() {
               {navItems.map((item) => (
                 <button
                   key={item.id}
-                  onClick={() => { setActiveTab(item.id); setMobileMenuOpen(false) }}
+                  onClick={() => { setActiveTab(item.id); if (item.id === 'tech') loadEquipos(); setMobileMenuOpen(false) }}
                   className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200
                     ${activeTab === item.id
                       ? 'bg-surface-container-lowest text-primary font-bold shadow-sm'
@@ -1208,52 +1265,139 @@ export default function MainMenuPage() {
           )}
 
           {/* ══ TAB: TECH (EQUIPOS) ═════════════════════════════════════════ */}
-          {activeTab === 'tech' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {MOCK_TECH.map((item) => (
-                <div key={item.id} className="bg-surface-container-lowest rounded-2xl overflow-hidden border border-outline-variant/20 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] transition-all duration-300 group flex flex-col">
-                  <div className="relative h-48 overflow-hidden bg-surface-container">
-                    <img 
-                      src={item.imagen} 
-                      alt={item.nombre} 
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out" 
+          {activeTab === 'tech' && (() => {
+            const filteredTech = equipos.filter(eq => {
+              const matchesSearch = techSearch.trim() === '' ||
+                eq.nombre.toLowerCase().includes(techSearch.toLowerCase()) ||
+                eq.marca.toLowerCase().includes(techSearch.toLowerCase()) ||
+                eq.tipo_equipo.toLowerCase().includes(techSearch.toLowerCase())
+              const matchesFilter = techFilter === '' || eq.categoria === techFilter || eq.tipo_equipo === techFilter
+              return matchesSearch && matchesFilter
+            })
+            return (
+              <div className="space-y-6">
+                {/* Search + filter bar */}
+                <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-4 shadow-sm flex flex-col sm:flex-row gap-3">
+                  <div className="relative flex-1">
+                    <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">search</span>
+                    <input
+                      type="text"
+                      value={techSearch}
+                      onChange={e => setTechSearch(e.target.value)}
+                      placeholder="Buscar por modelo, marca, tipo…"
+                      className="w-full pl-9 pr-3 py-2 bg-surface-container-low border border-outline-variant/30 rounded-lg text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-80" />
-                    <div className="absolute bottom-4 left-4 right-4 flex justify-between items-end">
-                      <span className={`inline-flex items-center gap-1.5 text-xs font-label font-bold px-2.5 py-1 rounded-md uppercase tracking-wider backdrop-blur-md ${
-                        item.disponible ? 'bg-green-500/20 text-green-50 border border-green-500/30' : 'bg-red-500/20 text-red-50 border border-red-500/30'
-                      }`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${item.disponible ? 'bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.8)]' : 'bg-red-400'}`} />
-                        {item.disponible ? 'Disponible' : 'En Uso'}
-                      </span>
-                    </div>
                   </div>
-                  
-                  <div className="p-5 flex-1 flex flex-col">
-                    <div>
-                      <h4 className="font-headline font-bold text-on-surface text-lg">{item.nombre}</h4>
-                      <p className="font-label text-xs uppercase tracking-wider text-primary mt-1">{item.tipo}</p>
-                    </div>
-                    
-                    <div className="mt-6 pt-4 border-t border-outline-variant/15 mt-auto">
+                  <div className="flex gap-2 flex-wrap">
+                    {[
+                      { value: '', label: 'Todos' },
+                      { value: 'ordenador', label: 'Ordenadores' },
+                      { value: 'movil', label: 'Móviles' },
+                    ].map(f => (
                       <button
-                        onClick={() => { if (!FEATURES.techRequests) { showComingSoon(); return } }}
-                        disabled={!item.disponible}
-                        className="w-full bg-surface-container-high text-on-surface font-label text-sm font-bold py-3 rounded-xl hover:bg-secondary hover:text-on-secondary hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-40 disabled:hover:translate-y-0 disabled:shadow-none disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        key={f.value}
+                        onClick={() => setTechFilter(f.value)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-label font-semibold border transition-colors ${
+                          techFilter === f.value
+                            ? 'bg-primary text-on-primary border-primary'
+                            : 'bg-surface border-outline-variant/30 text-on-surface-variant hover:bg-surface-container'
+                        }`}
                       >
-                        {item.disponible ? (
-                          <>
-                            <span className="material-symbols-outlined text-[18px]">add_shopping_cart</span>
-                            Solicitar Equipo
-                          </>
-                        ) : 'No disponible'}
+                        {f.label}
                       </button>
-                    </div>
+                    ))}
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
+
+                {loadingEquipos ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {[0,1,2,3,4,5].map(i => <SkeletonRoomCard key={i} />)}
+                  </div>
+                ) : filteredTech.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
+                    <span className="material-symbols-outlined text-on-surface-variant text-4xl">devices_off</span>
+                    <p className="font-body font-semibold text-on-surface text-sm">
+                      {techSearch || techFilter ? 'Sin resultados para tu búsqueda' : 'No hay equipos disponibles'}
+                    </p>
+                    {(techSearch || techFilter) && (
+                      <button onClick={() => { setTechSearch(''); setTechFilter('') }} className="font-label text-sm text-primary hover:underline">
+                        Limpiar filtros
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {filteredTech.map((item) => (
+                      <div key={item.id} className="bg-surface-container-lowest rounded-2xl overflow-hidden border border-outline-variant/20 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] transition-all duration-300 group flex flex-col">
+                        <div className="relative h-48 overflow-hidden bg-surface-container">
+                          {item.imagen_url ? (
+                            <img
+                              src={item.imagen_url}
+                              alt={item.nombre}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center bg-surface-container-high">
+                              <span className="material-symbols-outlined text-on-surface-variant text-6xl">devices</span>
+                            </div>
+                          )}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-80" />
+                          <div className="absolute bottom-4 left-4 right-4 flex justify-between items-end">
+                            <span className={`inline-flex items-center gap-1.5 text-xs font-label font-bold px-2.5 py-1 rounded-md uppercase tracking-wider backdrop-blur-md ${
+                              item.estado === 'disponible'     ? 'bg-green-500/20 text-green-50 border border-green-500/30'  :
+                              item.estado === 'reservado'      ? 'bg-blue-500/20 text-blue-50 border border-blue-500/30'     :
+                              'bg-orange-500/20 text-orange-50 border border-orange-500/30'
+                            }`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${
+                                item.estado === 'disponible' ? 'bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.8)]' :
+                                item.estado === 'reservado'  ? 'bg-blue-400' :
+                                'bg-orange-400'
+                              }`} />
+                              {item.estado === 'disponible' ? 'Disponible' : item.estado === 'reservado' ? 'Reservado' : 'Mantenimiento'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="p-5 flex-1 flex flex-col">
+                          <div>
+                            <h4 className="font-headline font-bold text-on-surface text-lg">{item.nombre}</h4>
+                            <p className="font-label text-xs uppercase tracking-wider text-primary mt-1">{TIPO_EQUIPO_LABELS[item.tipo_equipo] ?? item.tipo_equipo} · {item.marca}</p>
+                          </div>
+
+                          <div className="flex flex-wrap gap-2 mt-3">
+                            <span className="inline-flex items-center gap-1 bg-surface-container px-2 py-0.5 rounded text-xs font-label text-on-surface-variant capitalize">
+                              <span className="material-symbols-outlined text-[14px]">computer</span>
+                              {item.sistema_operativo}
+                            </span>
+                            <span className="inline-flex items-center gap-1 bg-surface-container px-2 py-0.5 rounded text-xs font-label text-on-surface-variant capitalize">
+                              <span className="material-symbols-outlined text-[14px]">category</span>
+                              {item.categoria}
+                            </span>
+                          </div>
+
+                          <div className="mt-6 pt-4 border-t border-outline-variant/15 mt-auto">
+                            <button
+                              onClick={() => { if (!FEATURES.techRequests) { showComingSoon(); return } }}
+                              disabled={item.estado !== 'disponible'}
+                              className="w-full bg-surface-container-high text-on-surface font-label text-sm font-bold py-3 rounded-xl hover:bg-secondary hover:text-on-secondary hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-40 disabled:hover:translate-y-0 disabled:shadow-none disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            >
+                              {item.estado === 'disponible' ? (
+                                <>
+                                  <span className="material-symbols-outlined text-[18px]">add_shopping_cart</span>
+                                  Solicitar Equipo
+                                </>
+                              ) : item.estado === 'reservado' ? 'Actualmente Reservado' : 'En Mantenimiento'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
 
           {/* ══ TAB: PROFILE ═══════════════════════════════════════ */}
           {activeTab === 'profile' && (
@@ -1508,213 +1652,427 @@ export default function MainMenuPage() {
               )}
 
               {/* ─── HU-07: Gestión de equipos ──────────────────────── */}
-              {adminSubTab === 'equipment' && (
-                <div className="space-y-4">
-                  {/* Botón agregar */}
-                  <div className="flex justify-end">
-                    <button
-                      onClick={() => setShowEquipoForm(v => !v)}
-                      className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label text-sm font-medium hover:bg-primary-container transition-colors"
-                    >
-                      <span className="material-symbols-outlined text-[18px]">{showEquipoForm ? 'close' : 'add'}</span>
-                      {showEquipoForm ? 'Cancelar' : 'Agregar Equipo'}
-                    </button>
-                  </div>
+              {adminSubTab === 'equipment' && (() => {
+                const filteredEquipos = equipos.filter(eq =>
+                  equipoSearch.trim() === '' ||
+                  eq.nombre.toLowerCase().includes(equipoSearch.toLowerCase()) ||
+                  eq.marca.toLowerCase().includes(equipoSearch.toLowerCase()) ||
+                  eq.tipo_equipo.toLowerCase().includes(equipoSearch.toLowerCase()) ||
+                  eq.categoria.toLowerCase().includes(equipoSearch.toLowerCase())
+                )
+                const totalEquipos       = equipos.length
+                const disponiblesCount   = equipos.filter(e => e.estado === 'disponible').length
+                const reservadosCount    = equipos.filter(e => e.estado === 'reservado').length
+                const mantenimientoCount = equipos.filter(e => e.estado === 'mantenimiento').length
 
-                  {/* Formulario agregar */}
-                  {showEquipoForm && (
-                    <form onSubmit={handleAddEquipo} className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-5 shadow-sm">
-                      <h4 className="font-headline font-bold text-on-surface mb-4">Nuevo Equipo</h4>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                return (
+                  <div className="space-y-6">
 
-                        {/* Nombre */}
-                        <div className="sm:col-span-2 lg:col-span-3">
-                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Nombre *</label>
-                          <input
-                            type="text"
-                            value={equipoForm.nombre}
-                            onChange={(e) => setEquipoField('nombre', e.target.value)}
-                            placeholder="Ej: Dell Latitude 5520 #3"
-                            className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
-                            required
-                          />
+                    {/* KPI Cards */}
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="bg-surface-container-lowest rounded-xl p-4 border border-outline-variant/20 shadow-sm flex flex-col justify-between">
+                        <div className="flex justify-between items-start">
+                          <span className="font-label text-xs uppercase tracking-widest text-on-surface-variant">Total Equipos</span>
+                          <span className="material-symbols-outlined text-primary bg-primary/10 p-1.5 rounded-lg text-[18px]">devices</span>
                         </div>
-
-                        {/* Categoría */}
-                        <div>
-                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Categoría *</label>
-                          <select
-                            value={equipoForm.categoria}
-                            onChange={(e) => setEquipoField('categoria', e.target.value)}
-                            className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
-                            required
-                          >
-                            <option value="">Selecciona categoría</option>
-                            <option value="ordenador">Ordenador</option>
-                            <option value="movil">Móvil</option>
-                          </select>
-                        </div>
-
-                        {/* Sistema Operativo */}
-                        <div>
-                          <label className={`font-label text-xs uppercase tracking-widest block mb-1.5 ${equipoForm.categoria ? 'text-on-surface-variant' : 'text-on-surface-variant/40'}`}>
-                            Sistema Operativo *
-                          </label>
-                          <select
-                            value={equipoForm.sistema_operativo}
-                            onChange={(e) => setEquipoField('sistema_operativo', e.target.value)}
-                            disabled={!equipoForm.categoria}
-                            className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-40 disabled:cursor-not-allowed"
-                            required
-                          >
-                            <option value="">Selecciona SO</option>
-                            {getSistemas(equipoForm.categoria).map(o => (
-                              <option key={o.value} value={o.value}>{o.label}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        {/* Marca */}
-                        <div>
-                          <label className={`font-label text-xs uppercase tracking-widest block mb-1.5 ${equipoForm.sistema_operativo ? 'text-on-surface-variant' : 'text-on-surface-variant/40'}`}>
-                            Marca *
-                          </label>
-                          <select
-                            value={equipoForm.marca}
-                            onChange={(e) => setEquipoField('marca', e.target.value)}
-                            disabled={!equipoForm.sistema_operativo}
-                            className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-40 disabled:cursor-not-allowed"
-                            required
-                          >
-                            <option value="">Selecciona marca</option>
-                            {getMarcas(equipoForm.categoria, equipoForm.sistema_operativo).map(o => (
-                              <option key={o.value} value={o.value}>{o.label}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        {/* Tipo de equipo */}
-                        <div>
-                          <label className={`font-label text-xs uppercase tracking-widest block mb-1.5 ${equipoForm.marca ? 'text-on-surface-variant' : 'text-on-surface-variant/40'}`}>
-                            Tipo de Equipo *
-                          </label>
-                          <select
-                            value={equipoForm.tipo_equipo}
-                            onChange={(e) => setEquipoField('tipo_equipo', e.target.value)}
-                            disabled={!equipoForm.marca}
-                            className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-40 disabled:cursor-not-allowed"
-                            required
-                          >
-                            <option value="">Selecciona tipo</option>
-                            {getTipos(equipoForm.categoria, equipoForm.sistema_operativo, equipoForm.marca).map(o => (
-                              <option key={o.value} value={o.value}>{o.label}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        {/* Estado */}
-                        <div>
-                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Estado</label>
-                          <select
-                            value={equipoForm.estado}
-                            onChange={(e) => setEquipoField('estado', e.target.value)}
-                            className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
-                          >
-                            <option value="disponible">Disponible</option>
-                            <option value="reservado">Reservado</option>
-                            <option value="mantenimiento">Mantenimiento</option>
-                          </select>
-                        </div>
-
-                        {/* URL Imagen */}
-                        <div>
-                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">URL Imagen</label>
-                          <input
-                            type="text"
-                            value={equipoForm.imagen_url}
-                            onChange={(e) => setEquipoField('imagen_url', e.target.value)}
-                            placeholder="/tech/imagen.jpg"
-                            className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
-                          />
+                        <div className="mt-3">
+                          <span className="font-headline text-3xl font-bold text-on-surface">{totalEquipos}</span>
                         </div>
                       </div>
-
-                      <div className="mt-4 flex justify-end">
-                        <button
-                          type="submit"
-                          disabled={addingEquipo}
-                          className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2 rounded-lg font-label text-sm font-medium hover:bg-primary-container disabled:opacity-60 transition-colors"
-                        >
-                          {addingEquipo ? (
-                            <><span className="h-4 w-4 animate-spin rounded-full border-2 border-on-primary border-t-transparent" /> Guardando…</>
-                          ) : (
-                            <><span className="material-symbols-outlined text-[18px]">save</span> Guardar</>
+                      <div className="bg-surface-container-lowest rounded-xl p-4 border border-outline-variant/20 shadow-sm flex flex-col justify-between">
+                        <div className="flex justify-between items-start">
+                          <span className="font-label text-xs uppercase tracking-widest text-on-surface-variant">Disponibles</span>
+                          <span className="material-symbols-outlined text-green-600 bg-green-50 p-1.5 rounded-lg text-[18px]">check_circle</span>
+                        </div>
+                        <div className="mt-3">
+                          <span className="font-headline text-3xl font-bold text-on-surface">{disponiblesCount}</span>
+                          <p className="font-label text-[11px] text-on-surface-variant mt-0.5">
+                            {totalEquipos > 0 ? Math.round((disponiblesCount / totalEquipos) * 100) : 0}% del inventario
+                          </p>
+                        </div>
+                      </div>
+                      <div className="bg-surface-container-lowest rounded-xl p-4 border border-outline-variant/20 shadow-sm flex flex-col justify-between">
+                        <div className="flex justify-between items-start">
+                          <span className="font-label text-xs uppercase tracking-widest text-on-surface-variant">Reservados</span>
+                          <span className="material-symbols-outlined text-primary bg-primary/10 p-1.5 rounded-lg text-[18px]">event_available</span>
+                        </div>
+                        <div className="mt-3">
+                          <span className="font-headline text-3xl font-bold text-on-surface">{reservadosCount}</span>
+                        </div>
+                      </div>
+                      <div className="bg-surface-container-lowest rounded-xl p-4 border border-outline-variant/20 shadow-sm flex flex-col justify-between">
+                        <div className="flex justify-between items-start">
+                          <span className="font-label text-xs uppercase tracking-widest text-on-surface-variant">Mantenimiento</span>
+                          <span className="material-symbols-outlined text-orange-500 bg-orange-50 p-1.5 rounded-lg text-[18px]">build</span>
+                        </div>
+                        <div className="mt-3">
+                          <span className="font-headline text-3xl font-bold text-on-surface">{mantenimientoCount}</span>
+                          {mantenimientoCount > 0 && (
+                            <p className="font-label text-[11px] text-orange-500 flex items-center gap-0.5 mt-0.5">
+                              <span className="material-symbols-outlined text-[12px]">warning</span>
+                              Requiere atención
+                            </p>
                           )}
-                        </button>
+                        </div>
                       </div>
-                    </form>
-                  )}
+                    </div>
 
-                  {/* Lista de equipos */}
-                  <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 shadow-sm overflow-hidden">
-                    {loadingEquipos ? (
-                      <div className="flex items-center justify-center py-16 gap-3">
-                        <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                        <span className="font-body text-sm text-on-surface-variant">Cargando equipos…</span>
+                    {/* Toolbar: search + register button */}
+                    <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+                      <div className="relative w-full sm:max-w-xs">
+                        <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">search</span>
+                        <input
+                          type="text"
+                          value={equipoSearch}
+                          onChange={e => setEquipoSearch(e.target.value)}
+                          placeholder="Buscar por nombre, marca, tipo…"
+                          className="w-full pl-9 pr-3 py-2 bg-surface-container-low border border-outline-variant/30 rounded-lg text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
+                        />
                       </div>
-                    ) : equipos.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
-                        <span className="material-symbols-outlined text-on-surface-variant text-4xl">devices_off</span>
-                        <p className="font-body text-sm text-on-surface-variant">No hay equipos registrados.</p>
-                        <p className="font-body text-xs text-on-surface-variant/60">Agrega el primer equipo con el botón de arriba.</p>
-                      </div>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead className="bg-surface-container border-b border-outline-variant/20">
-                            <tr>
-                              <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-6 py-3">Nombre</th>
-                              <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-6 py-3">Tipo</th>
-                              <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-6 py-3">Estado</th>
-                              <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-6 py-3">Acciones</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-outline-variant/10">
-                            {equipos.map((eq) => (
-                              <tr key={eq.id} className="hover:bg-surface-container/50 transition-colors">
-                                <td className="px-6 py-4 font-body font-medium text-on-surface">{eq.nombre}</td>
-                                <td className="px-6 py-4 font-label text-xs uppercase tracking-wider text-primary">{eq.tipo_equipo}</td>
-                                <td className="px-6 py-4">
-                                  <button
-                                    onClick={() => handleToggleEquipo(eq.id, eq.estado === 'disponible' ? 'mantenimiento' : 'disponible')}
-                                    className={`inline-flex items-center gap-1.5 text-xs font-label font-bold px-2.5 py-1 rounded-md transition-colors ${
-                                      eq.estado === 'disponible'
-                                        ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                                        : 'bg-red-100 text-red-700 hover:bg-red-200'
-                                    }`}
+                      <button
+                        onClick={() => { setShowEquipoForm(v => !v); setEquipoFormStage('form') }}
+                        className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label text-sm font-medium hover:bg-primary-container transition-colors shrink-0"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">{showEquipoForm ? 'close' : 'add'}</span>
+                        {showEquipoForm ? 'Cancelar' : 'Registrar Equipo'}
+                      </button>
+                    </div>
+
+                    {/* Registration form — 3 stages */}
+                    {showEquipoForm && (
+                      <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 shadow-sm overflow-hidden">
+
+                        {/* Stage: processing */}
+                        {equipoFormStage === 'processing' && (
+                          <div className="flex flex-col items-center justify-center py-16 gap-4">
+                            <div className="h-12 w-12 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+                            <p className="font-headline font-bold text-on-surface text-lg">Registrando equipo…</p>
+                            <p className="font-body text-sm text-on-surface-variant">Procesando los datos del nuevo activo.</p>
+                          </div>
+                        )}
+
+                        {/* Stage: success */}
+                        {equipoFormStage === 'success' && (
+                          <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+                            <div className="bg-primary/10 text-primary rounded-full w-16 h-16 flex items-center justify-center">
+                              <span className="material-symbols-outlined text-4xl" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
+                            </div>
+                            <div>
+                              <p className="font-headline font-bold text-on-surface text-xl">¡Equipo Registrado!</p>
+                              <p className="font-body text-sm text-on-surface-variant mt-1">El nuevo equipo ha sido añadido al inventario.</p>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Stage: form */}
+                        {equipoFormStage === 'form' && (
+                          <form onSubmit={handleAddEquipo} className="p-5">
+                            <h4 className="font-headline font-bold text-on-surface mb-4 flex items-center gap-2">
+                              <span className="material-symbols-outlined text-primary text-[20px]">add_box</span>
+                              Registrar Nuevo Equipo
+                            </h4>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+
+                              {/* Nombre */}
+                              <div className="sm:col-span-2 lg:col-span-3">
+                                <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Nombre / Modelo *</label>
+                                <input
+                                  type="text"
+                                  value={equipoForm.nombre}
+                                  onChange={(e) => setEquipoField('nombre', e.target.value)}
+                                  placeholder="Ej: Dell Latitude 5520 #3"
+                                  className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
+                                  required
+                                />
+                              </div>
+
+                              {/* Categoría */}
+                              <div>
+                                <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Categoría *</label>
+                                <select
+                                  value={equipoForm.categoria}
+                                  onChange={(e) => setEquipoField('categoria', e.target.value)}
+                                  className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
+                                  required
+                                >
+                                  <option value="">Selecciona categoría</option>
+                                  <option value="ordenador">Ordenador</option>
+                                  <option value="movil">Móvil</option>
+                                </select>
+                              </div>
+
+                              {/* Sistema Operativo */}
+                              <div>
+                                <label className={`font-label text-xs uppercase tracking-widest block mb-1.5 ${equipoForm.categoria ? 'text-on-surface-variant' : 'text-on-surface-variant/40'}`}>
+                                  Sistema Operativo *
+                                </label>
+                                <select
+                                  value={equipoForm.sistema_operativo}
+                                  onChange={(e) => setEquipoField('sistema_operativo', e.target.value)}
+                                  disabled={!equipoForm.categoria}
+                                  className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-40 disabled:cursor-not-allowed"
+                                  required
+                                >
+                                  <option value="">Selecciona SO</option>
+                                  {getSistemas(equipoForm.categoria).map(o => (
+                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              {/* Marca */}
+                              <div>
+                                <label className={`font-label text-xs uppercase tracking-widest block mb-1.5 ${equipoForm.sistema_operativo ? 'text-on-surface-variant' : 'text-on-surface-variant/40'}`}>
+                                  Marca *
+                                </label>
+                                <select
+                                  value={equipoForm.marca}
+                                  onChange={(e) => setEquipoField('marca', e.target.value)}
+                                  disabled={!equipoForm.sistema_operativo}
+                                  className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-40 disabled:cursor-not-allowed"
+                                  required
+                                >
+                                  <option value="">Selecciona marca</option>
+                                  {getMarcas(equipoForm.categoria, equipoForm.sistema_operativo).map(o => (
+                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              {/* Tipo de equipo */}
+                              <div>
+                                <label className={`font-label text-xs uppercase tracking-widest block mb-1.5 ${equipoForm.marca ? 'text-on-surface-variant' : 'text-on-surface-variant/40'}`}>
+                                  Tipo de Equipo *
+                                </label>
+                                <select
+                                  value={equipoForm.tipo_equipo}
+                                  onChange={(e) => setEquipoField('tipo_equipo', e.target.value)}
+                                  disabled={!equipoForm.marca}
+                                  className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-40 disabled:cursor-not-allowed"
+                                  required
+                                >
+                                  <option value="">Selecciona tipo</option>
+                                  {getTipos(equipoForm.categoria, equipoForm.sistema_operativo, equipoForm.marca).map(o => (
+                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              {/* Estado inicial */}
+                              <div>
+                                <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Estado Inicial</label>
+                                <div className="flex items-center gap-3 bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2">
+                                  <span className={`inline-flex items-center gap-1 text-xs font-label font-bold px-2 py-0.5 rounded ${
+                                    equipoForm.estado === 'disponible' ? 'bg-green-100 text-green-700' :
+                                    equipoForm.estado === 'reservado'  ? 'bg-primary/10 text-primary' :
+                                    'bg-orange-100 text-orange-700'
+                                  }`}>
+                                    <span className={`w-1.5 h-1.5 rounded-full ${
+                                      equipoForm.estado === 'disponible' ? 'bg-green-500' :
+                                      equipoForm.estado === 'reservado'  ? 'bg-primary' :
+                                      'bg-orange-500'
+                                    }`} />
+                                    {equipoForm.estado === 'disponible' ? 'Disponible' : equipoForm.estado === 'reservado' ? 'Reservado' : 'Mantenimiento'}
+                                  </span>
+                                  <select
+                                    value={equipoForm.estado}
+                                    onChange={(e) => setEquipoField('estado', e.target.value)}
+                                    className="flex-1 bg-transparent text-sm font-body text-on-surface focus:outline-none"
                                   >
-                                    <span className={`w-1.5 h-1.5 rounded-full ${eq.estado === 'disponible' ? 'bg-green-500' : 'bg-red-500'}`} />
-                                    {eq.estado === 'disponible' ? 'Disponible' : 'No disponible'}
-                                  </button>
-                                </td>
-                                <td className="px-6 py-4">
-                                  <button
-                                    onClick={() => handleDeleteEquipo(eq.id)}
-                                    className="p-1.5 rounded-lg text-on-surface-variant hover:bg-red-50 hover:text-red-600 transition-colors"
-                                    title="Eliminar equipo"
-                                  >
-                                    <span className="material-symbols-outlined text-[18px]">delete</span>
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                                    <option value="disponible">Disponible</option>
+                                    <option value="reservado">Reservado</option>
+                                    <option value="mantenimiento">Mantenimiento</option>
+                                  </select>
+                                </div>
+                              </div>
+
+                              {/* URL Imagen */}
+                              <div className="sm:col-span-2">
+                                <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">URL de Imagen</label>
+                                <input
+                                  type="text"
+                                  value={equipoForm.imagen_url}
+                                  onChange={(e) => setEquipoField('imagen_url', e.target.value)}
+                                  placeholder="/tech/imagen.jpg o https://…"
+                                  className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="mt-5 flex items-center justify-end gap-3 pt-4 border-t border-outline-variant/15">
+                              <button
+                                type="button"
+                                onClick={() => { setShowEquipoForm(false); setEquipoFormStage('form') }}
+                                className="px-4 py-2 rounded-lg border border-outline-variant/30 text-sm font-label font-medium text-on-surface hover:bg-surface-container transition-colors"
+                              >
+                                Cancelar
+                              </button>
+                              <button
+                                type="submit"
+                                disabled={addingEquipo}
+                                className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2 rounded-lg font-label text-sm font-medium hover:bg-primary-container disabled:opacity-60 transition-colors"
+                              >
+                                <span className="material-symbols-outlined text-[18px]">save</span>
+                                Registrar Equipo
+                              </button>
+                            </div>
+                          </form>
+                        )}
                       </div>
                     )}
+
+                    {/* Equipment table */}
+                    <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 shadow-sm overflow-hidden">
+                      {loadingEquipos ? (
+                        <div className="flex items-center justify-center py-16 gap-3">
+                          <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                          <span className="font-body text-sm text-on-surface-variant">Cargando equipos…</span>
+                        </div>
+                      ) : filteredEquipos.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+                          <span className="material-symbols-outlined text-on-surface-variant text-4xl">devices_off</span>
+                          <p className="font-body text-sm text-on-surface-variant">
+                            {equipoSearch ? 'Sin resultados para tu búsqueda.' : 'No hay equipos registrados.'}
+                          </p>
+                          {!equipoSearch && (
+                            <p className="font-body text-xs text-on-surface-variant/60">Registra el primer equipo con el botón de arriba.</p>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead className="bg-surface-container border-b border-outline-variant/20">
+                              <tr>
+                                <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-5 py-3">Nombre</th>
+                                <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-5 py-3 hidden md:table-cell">Categoría</th>
+                                <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-5 py-3 hidden lg:table-cell">Marca</th>
+                                <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-5 py-3 hidden lg:table-cell">SO</th>
+                                <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-5 py-3">Tipo</th>
+                                <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-5 py-3">Estado</th>
+                                <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-5 py-3">Acciones</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-outline-variant/10">
+                              {filteredEquipos.map((eq) => (
+                                <tr key={eq.id} className="hover:bg-surface-container/40 transition-colors">
+                                  {editingEquipoId === eq.id ? (
+                                    <>
+                                      <td className="px-5 py-3">
+                                        <input type="text" value={editEquipoForm.nombre} onChange={e => setEditEquipoField('nombre', e.target.value)} className="w-full bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none min-w-[120px]" />
+                                      </td>
+                                      <td className="px-5 py-3 hidden md:table-cell">
+                                        <select value={editEquipoForm.categoria} onChange={e => setEditEquipoField('categoria', e.target.value)} className="bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none">
+                                          <option value="">—</option>
+                                          <option value="ordenador">Ordenador</option>
+                                          <option value="movil">Móvil</option>
+                                        </select>
+                                      </td>
+                                      <td className="px-5 py-3 hidden lg:table-cell">
+                                        <select value={editEquipoForm.marca} onChange={e => setEditEquipoField('marca', e.target.value)} disabled={!editEquipoForm.sistema_operativo} className="bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none disabled:opacity-40">
+                                          <option value="">—</option>
+                                          {getMarcas(editEquipoForm.categoria, editEquipoForm.sistema_operativo).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                        </select>
+                                      </td>
+                                      <td className="px-5 py-3 hidden lg:table-cell">
+                                        <select value={editEquipoForm.sistema_operativo} onChange={e => setEditEquipoField('sistema_operativo', e.target.value)} disabled={!editEquipoForm.categoria} className="bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none disabled:opacity-40">
+                                          <option value="">—</option>
+                                          {getSistemas(editEquipoForm.categoria).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                        </select>
+                                      </td>
+                                      <td className="px-5 py-3">
+                                        <select value={editEquipoForm.tipo_equipo} onChange={e => setEditEquipoField('tipo_equipo', e.target.value)} disabled={!editEquipoForm.marca} className="bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none disabled:opacity-40">
+                                          <option value="">—</option>
+                                          {getTipos(editEquipoForm.categoria, editEquipoForm.sistema_operativo, editEquipoForm.marca).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                        </select>
+                                      </td>
+                                      <td className="px-5 py-3">
+                                        <select value={editEquipoForm.estado} onChange={e => setEditEquipoField('estado', e.target.value)} className="bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none">
+                                          <option value="disponible">Disponible</option>
+                                          <option value="reservado">Reservado</option>
+                                          <option value="mantenimiento">Mantenimiento</option>
+                                        </select>
+                                      </td>
+                                      <td className="px-5 py-3">
+                                        <div className="flex items-center gap-1">
+                                          <button onClick={() => handleSaveEquipo(eq.id)} disabled={savingEquipo} className="p-1.5 rounded-lg text-green-600 hover:bg-green-50 transition-colors disabled:opacity-50">
+                                            {savingEquipo ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-green-600 border-t-transparent inline-block" /> : <span className="material-symbols-outlined text-[16px]">check</span>}
+                                          </button>
+                                          <button onClick={() => setEditingEquipoId(null)} className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors">
+                                            <span className="material-symbols-outlined text-[16px]">close</span>
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <td className="px-5 py-4 font-body font-medium text-on-surface">
+                                        <div className="flex items-center gap-3">
+                                          {eq.imagen_url && (
+                                            <img src={eq.imagen_url} alt={eq.nombre} className="w-8 h-8 rounded-lg object-cover shrink-0 border border-outline-variant/20" />
+                                          )}
+                                          <span className="line-clamp-1">{eq.nombre}</span>
+                                        </div>
+                                      </td>
+                                      <td className="px-5 py-4 font-body text-on-surface-variant capitalize hidden md:table-cell">{eq.categoria}</td>
+                                      <td className="px-5 py-4 font-body text-on-surface-variant capitalize hidden lg:table-cell">{eq.marca}</td>
+                                      <td className="px-5 py-4 font-body text-on-surface-variant capitalize hidden lg:table-cell">{eq.sistema_operativo}</td>
+                                      <td className="px-5 py-4 font-label text-xs uppercase tracking-wider text-primary">{TIPO_EQUIPO_LABELS[eq.tipo_equipo] ?? eq.tipo_equipo}</td>
+                                      <td className="px-5 py-4">
+                                        <span className={`inline-flex items-center gap-1 text-xs font-label font-bold px-2 py-0.5 rounded ${
+                                          eq.estado === 'disponible'   ? 'bg-green-100 text-green-700' :
+                                          eq.estado === 'reservado'    ? 'bg-primary/10 text-primary' :
+                                          'bg-orange-100 text-orange-700'
+                                        }`}>
+                                          <span className={`w-1.5 h-1.5 rounded-full ${
+                                            eq.estado === 'disponible' ? 'bg-green-500' :
+                                            eq.estado === 'reservado'  ? 'bg-primary' :
+                                            'bg-orange-500'
+                                          }`} />
+                                          {eq.estado === 'disponible' ? 'Disponible' : eq.estado === 'reservado' ? 'Reservado' : 'Mantenimiento'}
+                                        </span>
+                                      </td>
+                                      <td className="px-5 py-4">
+                                        <div className="flex items-center gap-1">
+                                          <button
+                                            onClick={() => {
+                                              setEditingEquipoId(eq.id)
+                                              setEditEquipoForm({
+                                                nombre: eq.nombre,
+                                                categoria: eq.categoria,
+                                                sistema_operativo: eq.sistema_operativo,
+                                                marca: eq.marca,
+                                                tipo_equipo: eq.tipo_equipo,
+                                                estado: eq.estado,
+                                                imagen_url: eq.imagen_url ?? '',
+                                              })
+                                            }}
+                                            title="Editar equipo"
+                                            className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors"
+                                          >
+                                            <span className="material-symbols-outlined text-[16px]">edit</span>
+                                          </button>
+                                          <button
+                                            onClick={() => handleDeleteEquipo(eq.id)}
+                                            title="Eliminar equipo"
+                                            className="p-1.5 rounded-lg text-on-surface-variant hover:bg-red-50 hover:text-red-600 transition-colors"
+                                          >
+                                            <span className="material-symbols-outlined text-[16px]">delete</span>
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </>
+                                  )}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+
                   </div>
-                </div>
-              )}
+                )
+              })()}
 
               {/* ─── Admin: Gestión de salas ──────────────────────────── */}
               {adminSubTab === 'rooms' && (
@@ -1877,7 +2235,7 @@ export default function MainMenuPage() {
         {navItems.map((item) => (
           <button
             key={item.id}
-            onClick={() => setActiveTab(item.id)}
+            onClick={() => { setActiveTab(item.id); if (item.id === 'tech') loadEquipos() }}
             className={`flex flex-col items-center justify-center w-full h-full gap-0.5 transition-colors
               ${activeTab === item.id ? 'text-primary' : 'text-secondary hover:text-primary'}`}
           >

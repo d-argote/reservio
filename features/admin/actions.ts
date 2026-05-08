@@ -67,6 +67,7 @@ export async function getUsuarios(): Promise<{ data?: UsuarioAdmin[]; error?: st
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
+  if (!supabase) return { error: 'Error interno del servidor' }
   const { data, error } = await supabase
     .from('usuarios')
     .select('id, nombre, correo, rol, activo')
@@ -84,6 +85,7 @@ export async function updateUserRole(
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
+  if (!supabase) return { error: 'Error interno del servidor' }
   const { error } = await supabase
     .from('usuarios')
     .update({ rol: newRol })
@@ -103,6 +105,7 @@ export async function createUsuarioAdmin(
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
+  if (!supabase) return { error: 'Error interno del servidor' }
   const email = correo.trim().toLowerCase()
 
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
@@ -128,6 +131,7 @@ export async function toggleUsuarioActivo(
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
+  if (!supabase) return { error: 'Error interno del servidor' }
   const { error } = await supabase
     .from('usuarios')
     .update({ activo })
@@ -145,6 +149,7 @@ export async function updateUsuarioEmail(
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
+  if (!supabase) return { error: 'Error interno del servidor' }
   const email = newEmail.trim().toLowerCase()
 
   const { error: authError } = await supabase.auth.admin.updateUserById(userId, { email })
@@ -195,6 +200,7 @@ export async function createEquipo(
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
+  if (!supabase) return { error: 'Error interno del servidor' }
   const { data, error } = await supabase
     .from('equipos')
     .insert(equipo)
@@ -213,9 +219,28 @@ export async function updateEquipoEstado(
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
+  if (!supabase) return { error: 'Error interno del servidor' }
   const { error } = await supabase
     .from('equipos')
     .update({ estado })
+    .eq('id', id)
+
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
+export async function updateEquipo(
+  id: string,
+  updates: Partial<Omit<Equipo, 'id'>>,
+): Promise<{ success?: boolean; error?: string }> {
+  const guard = await assertAdmin()
+  if (guard) return { error: guard.error }
+
+  const supabase = getSupabaseAdmin()
+  if (!supabase) return { error: 'Error interno del servidor' }
+  const { error } = await supabase
+    .from('equipos')
+    .update(updates)
     .eq('id', id)
 
   if (error) return { error: error.message }
@@ -227,6 +252,7 @@ export async function deleteEquipo(id: string): Promise<{ success?: boolean; err
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
+  if (!supabase) return { error: 'Error interno del servidor' }
   const { error } = await supabase
     .from('equipos')
     .delete()
@@ -245,6 +271,7 @@ export async function getSalasAdmin(): Promise<{ data?: SalaAdmin[]; error?: str
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
+  if (!supabase) return { error: 'Error interno del servidor' }
   const { data, error } = await supabase
     .from('salas')
     .select('id, nombre, descripcion, capacidad, ubicacion, imagen_url, estado')
@@ -261,6 +288,7 @@ export async function createSala(
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
+  if (!supabase) return { error: 'Error interno del servidor' }
   const { data, error } = await supabase
     .from('salas')
     .insert(sala)
@@ -279,6 +307,7 @@ export async function updateSala(
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
+  if (!supabase) return { error: 'Error interno del servidor' }
   const { error } = await supabase
     .from('salas')
     .update(updates)
@@ -293,6 +322,7 @@ export async function deleteSala(id: string): Promise<{ success?: boolean; error
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
+  if (!supabase) return { error: 'Error interno del servidor' }
   const { error } = await supabase
     .from('salas')
     .delete()
