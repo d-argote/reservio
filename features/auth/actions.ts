@@ -100,6 +100,7 @@ export async function loginUser(correo: string, password: string) {
 
   // Verificar si el usuario está activo
   const admin = getSupabaseAdmin()
+  if (!admin) return { success: true } // si no hay admin client, permitir el login
   const { data: userRecord } = await admin
     .from('usuarios')
     .select('activo')
