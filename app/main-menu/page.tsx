@@ -642,6 +642,11 @@ export default function MainMenuPage() {
     e.preventDefault()
     setModalError(null)
 
+    if (activeTab === 'rooms') {
+      setModalError('__coming_soon__')
+      return
+    }
+
     if (!form.titulo.trim())   { setModalError('El título es obligatorio.'); return }
     if (!form.sala_id)         { setModalError('Selecciona una sala.'); return }
     if (!form.fecha)           { setModalError('Selecciona una fecha.'); return }
@@ -972,7 +977,7 @@ export default function MainMenuPage() {
             )}
             {activeTab === 'rooms' && (
               <button
-                onClick={handleNuevaReserva}
+                onClick={() => openModal()}
                 className="inline-flex items-center gap-2 bg-primary text-on-primary px-6 py-3 rounded-lg font-label font-medium text-sm shadow-md hover:bg-primary-container hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200"
               >
                 <span className="material-symbols-outlined text-[20px]">add</span>
@@ -2366,10 +2371,20 @@ export default function MainMenuPage() {
               </div>
 
               {/* Error */}
-              {modalError && (
+              {modalError && modalError !== '__coming_soon__' && (
                 <div className="flex items-start gap-2 bg-error-container text-on-error-container rounded-lg px-4 py-3 text-sm font-body">
                   <span className="material-symbols-outlined text-[18px] shrink-0 mt-0.5">error</span>
                   {modalError}
+                </div>
+              )}
+
+              {modalError === '__coming_soon__' && (
+                <div className="flex items-start gap-3 bg-[#001529] text-white rounded-xl px-4 py-3 text-sm font-body border border-white/10">
+                  <span className="material-symbols-outlined text-[20px] text-yellow-400 shrink-0 mt-0.5" style={{ fontVariationSettings: "'FILL' 1" }}>rocket_launch</span>
+                  <div>
+                    <p className="font-label font-semibold text-sm">Próximamente</p>
+                    <p className="text-white/70 text-xs mt-0.5">La reserva de salas estará disponible en el siguiente Sprint.</p>
+                  </div>
                 </div>
               )}
 
