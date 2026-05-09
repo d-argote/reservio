@@ -1077,7 +1077,7 @@ export default function MainMenuPage() {
                 {activeTab === 'admin' && adminSubTab === 'rooms'     && 'Gestión de Salas'}
               </h2>
               <p className="font-body text-sm text-on-surface-variant">
-                {activeTab === 'reservations' && '¿Qué espacio necesitas hoy para brillar?'}
+                {activeTab === 'reservations' && 'Reserva espacios y equipos fácilmente.'}
                 {activeTab === 'rooms'        && 'Encuentra el ambiente perfecto para tu próxima reunión.'}
                 {activeTab === 'tech'         && 'Herramientas de última generación para potenciar tu trabajo.'}
                 {activeTab === 'profile'      && 'Gestiona tus datos personales y preferencias de cuenta.'}
