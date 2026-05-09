@@ -1,0 +1,38 @@
+name: Deploy to Hostinger
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            export PATH=/opt/alt/alt-nodejs20/root/usr/bin:$PATH
+            cd ~/domains/ditechdev.com/public_html/.builds/last-source
+
+            # Pull latest code
+            git fetch origin main
+            git reset --hard origin/main
+
+            # Restore .env.local (not in git)
+            cp ~/domains/ditechdev.com/nodejs/.env.local .env.local 2>/dev/null || true
+
+            # Install dependencies and build
+            npm install
+            npm run build
+
+            # Copy build output to Node.js app directory
+            cp -r .next ~/domains/ditechdev.com/nodejs/.next
+
+            echo "Deploy completado exitosamente"

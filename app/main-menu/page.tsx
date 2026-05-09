@@ -9,11 +9,13 @@ import {
   updateUserRole,
   getEquipos,
   createEquipo,
-  toggleEquipoDisponibilidad,
+  updateEquipoEstado,
+  updateEquipo,
   deleteEquipo,
   createUsuarioAdmin,
   toggleUsuarioActivo,
   updateUsuarioEmail,
+  updateUsuarioNombre,
   sendPasswordResetAdmin,
   getSalasAdmin,
   createSala,
@@ -23,8 +25,9 @@ import {
   type Equipo,
   type SalaAdmin,
 } from '@/features/admin/actions'
+import { getSistemas, getMarcas, getTipos, TIPO_EQUIPO_LABELS } from '@/lib/equipo-catalogo'
 
-// ── Types ─────────────────────────────────────────────────────────
+// ── Types
 
 interface UserProfile {
   nombre: string
@@ -89,6 +92,50 @@ function formatHora(hora: string): string {
   return hora.slice(0, 5)
 }
 
+/** Suma `horas` (puede ser decimal) a un string 'HH:MM' y devuelve 'HH:MM'. */
+function addHoras(timeStr: string, horas: number): string {
+  const [h, m] = timeStr.split(':').map(Number)
+  const totalMin = h * 60 + m + Math.round(horas * 60)
+  const capped = Math.min(totalMin, 23 * 60 + 59)
+  const hh = Math.floor(capped / 60)
+  const mm = capped % 60
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+}
+
+/** Diferencia en horas entre dos strings 'HH:MM'. Puede ser negativa. */
+function diffHoras(inicio: string, fin: string): number {
+  const [h1, m1] = inicio.split(':').map(Number)
+  const [h2, m2] = fin.split(':').map(Number)
+  return ((h2 * 60 + m2) - (h1 * 60 + m1)) / 60
+}
+
+/** Formatea horas decimales como texto legible, e.g. 1.5 → '1 h 30 min' */
+function formatDuracion(horas: number): string {
+  if (horas <= 0) return ''
+  const h = Math.floor(horas)
+  const m = Math.round((horas - h) * 60)
+  if (h === 0) return `${m} min`
+  if (m === 0) return `${h} h`
+  return `${h} h ${m} min`
+}
+
+/** Genera un código de activo único tipo: EQ-202605-A3X9F */
+function generarCodigoActivo(): string {
+  const now = new Date()
+  const ym = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`
+  const rand = Math.random().toString(36).slice(2, 7).toUpperCase()
+  return `EQ-${ym}-${rand}`
+}
+
+async function uploadImagen(bucket: 'equipos' | 'salas', file: File): Promise<string | null> {
+  const ext = file.name.split('.').pop() ?? 'jpg'
+  const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+  const { error } = await supabase.storage.from(bucket).upload(path, file, { upsert: true })
+  if (error) { console.error('[uploadImagen]', error.message); return null }
+  const { data } = supabase.storage.from(bucket).getPublicUrl(path)
+  return data.publicUrl
+}
+
 const CARD_STYLES = [
   { bg: 'bg-primary-container',   text: 'text-on-primary',                icon: 'groups'     },
   { bg: 'bg-secondary-container', text: 'text-on-secondary-container',    icon: 'videocam'   },
@@ -112,25 +159,16 @@ function getRoomImage(index: number) {
   return ROOM_IMAGES[index % ROOM_IMAGES.length];
 }
 
-const MOCK_TECH = [
-  { id: 't1', nombre: 'Proyector Laser 4K', tipo: 'Audiovisual', disponible: true, imagen: '/tech/photo-1552320640-6e01a5f1c1e9.jpg' },
-  { id: 't2', nombre: 'MacBook Pro M3 Max', tipo: 'Laptop', disponible: false, imagen: '/tech/photo-1610641563856-4ec0223d7084.jpg' },
-  { id: 't3', nombre: 'Kit VR Meta Quest 3', tipo: 'Realidad Virtual', disponible: true, imagen: '/tech/photo-1598187079701-01513e580415.jpg' },
-  { id: 't4', nombre: 'Micrófono Podcast Shure', tipo: 'Audio', disponible: true, imagen: '/tech/photo-1601919263076-4a6a8514c461.jpg' },
-  { id: 't5', nombre: 'Cámara 360 Institucional', tipo: 'Video', disponible: true, imagen: '/tech/photo-1646154034833-d10291080448.jpg' },
-  { id: 't6', nombre: 'iPad Pro Setup', tipo: 'Tablet', disponible: true, imagen: '/tech/photo-1648912869366-b89a51f52d44.jpg' },
-];
-
 // ── Skeleton Components ────────────────────────────────────────────
 
 function SkeletonSummaryCard() {
   return (
     <div className="bg-surface-container-lowest rounded-xl p-5 border border-outline-variant/20 shadow-sm flex items-start gap-4 animate-pulse">
-      <div className="w-11 h-11 rounded-lg bg-surface-container shrink-0" />
+      <div className="w-11 h-11 rounded-lg bg-gradient-to-r from-surface-container via-surface-container-low to-surface-container shrink-0" />
       <div className="flex-1 space-y-2 pt-1">
-        <div className="h-3 bg-surface-container rounded w-2/5" />
-        <div className="h-4 bg-surface-container rounded w-3/4" />
-        <div className="h-3 bg-surface-container rounded w-1/2" />
+        <div className="h-3 bg-gradient-to-r from-surface-container via-surface-container-low to-surface-container rounded w-2/5" />
+        <div className="h-4 bg-gradient-to-r from-surface-container via-surface-container-low to-surface-container rounded w-3/4" />
+        <div className="h-3 bg-gradient-to-r from-surface-container via-surface-container-low to-surface-container rounded w-1/2" />
       </div>
     </div>
   )
@@ -140,13 +178,13 @@ function SkeletonReservationCard() {
   return (
     <div className="bg-surface-container-lowest rounded-lg p-5 border border-outline-variant/15 shadow-sm animate-pulse">
       <div className="flex items-start gap-4">
-        <div className="w-12 h-12 rounded-lg bg-surface-container shrink-0" />
+        <div className="w-12 h-12 rounded-lg bg-gradient-to-r from-surface-container via-surface-container-low to-surface-container shrink-0" />
         <div className="flex-1 space-y-2 pt-1">
-          <div className="h-4 bg-surface-container rounded w-3/4" />
-          <div className="h-3 bg-surface-container rounded w-1/2" />
+          <div className="h-4 bg-gradient-to-r from-surface-container via-surface-container-low to-surface-container rounded w-3/4" />
+          <div className="h-3 bg-gradient-to-r from-surface-container via-surface-container-low to-surface-container rounded w-1/2" />
         </div>
         <div className="hidden sm:flex flex-col items-end gap-2">
-          <div className="h-6 bg-surface-container rounded w-32" />
+          <div className="h-6 bg-gradient-to-r from-surface-container via-surface-container-low to-surface-container rounded w-32" />
         </div>
       </div>
     </div>
@@ -156,12 +194,12 @@ function SkeletonReservationCard() {
 function SkeletonRoomCard() {
   return (
     <div className="bg-surface-container-lowest rounded-2xl overflow-hidden shadow-md animate-pulse border border-outline-variant/10">
-      <div className="h-48 bg-surface-container w-full" />
+      <div className="h-48 bg-gradient-to-r from-surface-container via-surface-container-low to-surface-container w-full" />
       <div className="p-5 space-y-3">
-        <div className="h-5 bg-surface-container rounded w-3/4" />
-        <div className="h-4 bg-surface-container rounded w-1/2" />
+        <div className="h-5 bg-gradient-to-r from-surface-container via-surface-container-low to-surface-container rounded w-3/4" />
+        <div className="h-4 bg-gradient-to-r from-surface-container via-surface-container-low to-surface-container rounded w-1/2" />
         <div className="pt-2">
-          <div className="h-10 bg-surface-container rounded w-full" />
+          <div className="h-10 bg-gradient-to-r from-surface-container via-surface-container-low to-surface-container rounded w-full" />
         </div>
       </div>
     </div>
@@ -169,7 +207,17 @@ function SkeletonRoomCard() {
 }
 
 // ── Validaciones para el panel admin ──────────────────────────────────
+const ADMIN_MIN_NOMBRE_LENGTH = 2
 const ADMIN_MIN_PASSWORD_LENGTH = 8
+const ADMIN_NOMBRE_REGEX = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/
+
+function adminValidateNombre(value: string): string | undefined {
+  const trimmed = value.trim()
+  if (!trimmed) return 'El nombre es obligatorio.'
+  if (trimmed.length < ADMIN_MIN_NOMBRE_LENGTH) return `El nombre debe tener al menos ${ADMIN_MIN_NOMBRE_LENGTH} caracteres.`
+  if (!ADMIN_NOMBRE_REGEX.test(trimmed)) return 'El nombre solo puede contener letras y espacios. No se permiten números ni caracteres especiales.'
+  return undefined
+}
 
 function adminValidateEmail(value: string): string | undefined {
   const trimmed = value.trim()
@@ -246,6 +294,7 @@ export default function MainMenuPage() {
   const [submitting, setSubmitting] = useState(false)
   const [modalError, setModalError] = useState<string | null>(null)
   const [modalSuccess, setModalSuccess] = useState(false)
+  const [duracionPreset, setDuracionPreset] = useState<number | 'libre' | 'dia'>('libre')
 
   // ── HU-08: Preview modal de sala ─────────────────────────────────
   const [previewSala, setPreviewSala] = useState<Sala | null>(null)
@@ -259,18 +308,52 @@ export default function MainMenuPage() {
   // ── HU-07: Admin — Equipos ────────────────────────────────────────
   const [equipos, setEquipos] = useState<Equipo[]>([])
   const [loadingEquipos, setLoadingEquipos] = useState(false)
-  const [equipoForm, setEquipoForm] = useState({ nombre: '', tipo: '', imagen_url: '' })
+  const [equipoForm, setEquipoForm] = useState({
+    nombre: '',
+    categoria: '',
+    sistema_operativo: '',
+    marca: '',
+    tipo_equipo: '',
+    estado: 'disponible' as Equipo['estado'],
+    imagen_url: '',
+  })
   const [addingEquipo, setAddingEquipo] = useState(false)
   const [showEquipoForm, setShowEquipoForm] = useState(false)
+  const [equipoFormStage, setEquipoFormStage] = useState<'form' | 'processing' | 'success'>('form')
+  const [equipoSearch, setEquipoSearch] = useState('')
+  const [editingEquipoId, setEditingEquipoId] = useState<string | null>(null)
+  const [editEquipoForm, setEditEquipoForm] = useState({
+    nombre: '',
+    categoria: '',
+    sistema_operativo: '',
+    marca: '',
+    tipo_equipo: '',
+    estado: 'disponible' as Equipo['estado'],
+    imagen_url: '',
+  })
+  const [savingEquipo, setSavingEquipo] = useState(false)
+  const [equipoImageFile, setEquipoImageFile] = useState<File | null>(null)
+  const [editEquipoImageFile, setEditEquipoImageFile] = useState<File | null>(null)
+  const [equipoCantidad, setEquipoCantidad] = useState(1)
+  const [equipoSeriales, setEquipoSeriales] = useState<string[]>([''])
+  const [necesitaEquipo, setNecesitaEquipo] = useState(false)
+  const [equiposSeleccionados, setEquiposSeleccionados] = useState<string[]>([])
+  const [techSearch, setTechSearch] = useState('')
+  const [techFilter, setTechFilter] = useState('')
 
   // ── Admin — Usuarios CRUD ─────────────────────────────────────────
   const [showUserForm, setShowUserForm] = useState(false)
   const [userForm, setUserForm] = useState({ nombre: '', correo: '', password: '', confirmPassword: '', rol: 'usuario' as 'usuario' | 'admin' })
   const [addingUser, setAddingUser] = useState(false)
   const [userFormError, setUserFormError] = useState<string | null>(null)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [showOnlyActivos, setShowOnlyActivos] = useState(true)
   const [togglingActivo, setTogglingActivo] = useState<string | null>(null)
   const [editingUserId, setEditingUserId] = useState<string | null>(null)
   const [editEmailValue, setEditEmailValue] = useState('')
+  const [editNombreValue, setEditNombreValue] = useState('')
+  const [editUserError, setEditUserError] = useState<string | null>(null)
   const [savingEmail, setSavingEmail] = useState(false)
   const [resetingPwd, setResetingPwd] = useState<string | null>(null)
   const [pwdResetSuccess, setPwdResetSuccess] = useState<string | null>(null)
@@ -284,6 +367,8 @@ export default function MainMenuPage() {
   const [editingSalaId, setEditingSalaId] = useState<string | null>(null)
   const [editSalaForm, setEditSalaForm] = useState({ nombre: '', descripcion: '', capacidad: '', ubicacion: '', imagen_url: '', estado: 'disponible' as SalaAdmin['estado'] })
   const [savingSala, setSavingSala] = useState(false)
+  const [salaImageFile, setSalaImageFile] = useState<File | null>(null)
+  const [editSalaImageFile, setEditSalaImageFile] = useState<File | null>(null)
 
   useEffect(() => {
     const fetchReservas = async (userId: string) => {
@@ -379,9 +464,9 @@ export default function MainMenuPage() {
     setLoadingEquipos(false)
   }, [])
 
-  const handleToggleEquipo = async (id: string, disponible: boolean) => {
-    await toggleEquipoDisponibilidad(id, disponible)
-    setEquipos(prev => prev.map(e => e.id === id ? { ...e, disponible } : e))
+  const handleToggleEquipo = async (id: string, estado: Equipo['estado']) => {
+    await updateEquipoEstado(id, estado)
+    setEquipos(prev => prev.map(e => e.id === id ? { ...e, estado } : e))
   }
 
   const handleDeleteEquipo = async (id: string) => {
@@ -391,20 +476,131 @@ export default function MainMenuPage() {
 
   const handleAddEquipo = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!equipoForm.nombre.trim() || !equipoForm.tipo.trim()) return
+    if (!equipoForm.nombre.trim() || !equipoForm.tipo_equipo) return
+
+    // Validar seriales
+    const cantidad = Math.max(1, equipoCantidad)
+    for (let i = 0; i < cantidad; i++) {
+      const serial = (equipoSeriales[i] ?? '').trim()
+      if (serial.length < 4) {
+        alert(`La unidad #${i + 1} requiere un N/S o IMEI válido (mínimo 4 caracteres).`)
+        return
+      }
+    }
+    const serialesUsados = equipoSeriales.slice(0, cantidad).map(s => s.trim())
+    const duplicados = serialesUsados.filter((s, i) => serialesUsados.indexOf(s) !== i)
+    if (duplicados.length > 0) {
+      alert(`Hay números de serie duplicados: ${duplicados.join(', ')}. Cada unidad debe tener un código único.`)
+      return
+    }
+
     setAddingEquipo(true)
-    const result = await createEquipo({
-      nombre: equipoForm.nombre.trim(),
-      tipo: equipoForm.tipo.trim(),
-      disponible: true,
-      imagen_url: equipoForm.imagen_url.trim() || null,
-    })
-    if (result.data) {
-      setEquipos(prev => [...prev, result.data!])
-      setEquipoForm({ nombre: '', tipo: '', imagen_url: '' })
-      setShowEquipoForm(false)
+    setEquipoFormStage('processing')
+    let imagenUrl: string | null = null
+    if (equipoImageFile) {
+      imagenUrl = await uploadImagen('equipos', equipoImageFile)
+    }
+    const nuevosEquipos: Equipo[] = []
+    for (let i = 0; i < cantidad; i++) {
+      const nombreUnidad = cantidad > 1
+        ? `${equipoForm.nombre.trim()} #${i + 1}`
+        : equipoForm.nombre.trim()
+      const result = await createEquipo({
+        nombre: nombreUnidad,
+        categoria: equipoForm.categoria,
+        sistema_operativo: equipoForm.sistema_operativo,
+        marca: equipoForm.marca,
+        tipo_equipo: equipoForm.tipo_equipo,
+        estado: equipoForm.estado,
+        imagen_url: imagenUrl,
+        numero_serie: serialesUsados[i],
+      })
+      if (result.data) nuevosEquipos.push(result.data)
+    }
+    if (nuevosEquipos.length > 0) {
+      setEquipos(prev => [...prev, ...nuevosEquipos])
+      setEquipoFormStage('success')
+      setTimeout(() => {
+        setEquipoForm({ nombre: '', categoria: '', sistema_operativo: '', marca: '', tipo_equipo: '', estado: 'disponible', imagen_url: '' })
+        setEquipoImageFile(null)
+        setEquipoCantidad(1)
+        setEquipoSeriales([''])
+        setShowEquipoForm(false)
+        setEquipoFormStage('form')
+      }, 1800)
+    } else {
+      setEquipoFormStage('form')
     }
     setAddingEquipo(false)
+  }
+
+  const handleSaveEquipo = async (id: string) => {
+    setSavingEquipo(true)
+    let imagenUrl = editEquipoForm.imagen_url || null
+    if (editEquipoImageFile) {
+      const uploaded = await uploadImagen('equipos', editEquipoImageFile)
+      if (uploaded) imagenUrl = uploaded
+    }
+    await updateEquipo(id, {
+      nombre: editEquipoForm.nombre.trim(),
+      categoria: editEquipoForm.categoria,
+      sistema_operativo: editEquipoForm.sistema_operativo,
+      marca: editEquipoForm.marca,
+      tipo_equipo: editEquipoForm.tipo_equipo,
+      estado: editEquipoForm.estado,
+      imagen_url: imagenUrl,
+    })
+    setEquipos(prev => prev.map(eq => eq.id === id ? {
+      ...eq,
+      nombre: editEquipoForm.nombre.trim(),
+      categoria: editEquipoForm.categoria,
+      sistema_operativo: editEquipoForm.sistema_operativo,
+      marca: editEquipoForm.marca,
+      tipo_equipo: editEquipoForm.tipo_equipo,
+      estado: editEquipoForm.estado,
+      imagen_url: imagenUrl,
+    } : eq))
+    setEditingEquipoId(null)
+    setEditEquipoImageFile(null)
+    setSavingEquipo(false)
+  }
+
+  function setEditEquipoField(field: string, value: string) {
+    setEditEquipoForm(prev => {
+      const next = { ...prev, [field]: value }
+      if (field === 'categoria') {
+        next.sistema_operativo = ''
+        next.marca             = ''
+        next.tipo_equipo       = ''
+      }
+      if (field === 'sistema_operativo') {
+        next.marca       = ''
+        next.tipo_equipo = ''
+      }
+      if (field === 'marca') {
+        next.tipo_equipo = ''
+      }
+      return next
+    })
+  }
+
+  function setEquipoField(field: string, value: string) {
+    setEquipoForm(prev => {
+      const next = { ...prev, [field]: value }
+      if (field === 'categoria') {
+        next.sistema_operativo = ''
+        next.marca             = ''
+        next.tipo_equipo       = ''
+      }
+      if (field === 'sistema_operativo') {
+        next.marca       = ''
+        next.tipo_equipo = ''
+      }
+      if (field === 'marca') {
+        next.tipo_equipo = ''
+      }
+      return next
+    })
   }
 
   // ── Activar tab admin y cargar datos ─────────────────────────────
@@ -413,13 +609,13 @@ export default function MainMenuPage() {
     loadUsuarios()
     loadEquipos()
   }, [loadUsuarios, loadEquipos])
-
   // ── Admin: Crear usuario ──────────────────────────────────────────
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault()
     setUserFormError(null)
-    if (!userForm.nombre.trim()) {
-      setUserFormError('El nombre es obligatorio.')
+    const nombreError = adminValidateNombre(userForm.nombre)
+    if (nombreError) {
+      setUserFormError(nombreError)
       return
     }
     const emailError = adminValidateEmail(userForm.correo)
@@ -443,6 +639,8 @@ export default function MainMenuPage() {
     } else {
       setUserForm({ nombre: '', correo: '', password: '', confirmPassword: '', rol: 'usuario' })
       setShowUserForm(false)
+      setShowPassword(false)
+      setShowConfirmPassword(false)
       loadUsuarios()
     }
     setAddingUser(false)
@@ -456,13 +654,45 @@ export default function MainMenuPage() {
     setTogglingActivo(null)
   }
 
-  // ── Admin: Editar email ───────────────────────────────────────────
+  // ── Admin: Editar email y nombre ──────────────────────────────────
+  const NOMBRE_REGEX = /^[a-zA-ZáéíóúÁÉÍÓÚüÜñÑ\s'-]{2,60}$/
+  const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
+
   const handleSaveEmail = async (userId: string) => {
-    if (!editEmailValue.trim()) return
+    setEditUserError(null)
+    const nombre = editNombreValue.trim()
+    const correo = editEmailValue.trim()
+
+    if (!nombre) {
+      setEditUserError('El nombre no puede estar vacío.')
+      return
+    }
+    if (!NOMBRE_REGEX.test(nombre)) {
+      setEditUserError('El nombre solo puede contener letras, espacios, apóstrofes o guiones (mín. 2 caracteres).')
+      return
+    }
+    if (!correo) {
+      setEditUserError('El correo no puede estar vacío.')
+      return
+    }
+    if (!EMAIL_REGEX.test(correo)) {
+      setEditUserError('Ingresa un correo electrónico válido.')
+      return
+    }
+
     setSavingEmail(true)
-    const result = await updateUsuarioEmail(userId, editEmailValue)
-    if (!result.error) {
-      setUsuarios(prev => prev.map(u => u.id === userId ? { ...u, correo: editEmailValue.trim().toLowerCase() } : u))
+    const [emailResult, nombreResult] = await Promise.all([
+      updateUsuarioEmail(userId, correo),
+      updateUsuarioNombre(userId, nombre),
+    ])
+    const serverError = emailResult.error || nombreResult.error
+    if (serverError) {
+      setEditUserError(serverError)
+    } else {
+      setUsuarios(prev => prev.map(u => u.id === userId
+        ? { ...u, correo: correo.toLowerCase(), nombre }
+        : u
+      ))
       setEditingUserId(null)
     }
     setSavingEmail(false)
@@ -489,17 +719,22 @@ export default function MainMenuPage() {
     e.preventDefault()
     if (!salaForm.nombre.trim() || !salaForm.capacidad) return
     setAddingSala(true)
+    let imagenUrl: string | null = null
+    if (salaImageFile) {
+      imagenUrl = await uploadImagen('salas', salaImageFile)
+    }
     const result = await createSala({
       nombre: salaForm.nombre.trim(),
       descripcion: salaForm.descripcion.trim() || null,
       capacidad: parseInt(salaForm.capacidad) || 1,
       ubicacion: salaForm.ubicacion.trim() || null,
-      imagen_url: salaForm.imagen_url.trim() || null,
+      imagen_url: imagenUrl,
       estado: salaForm.estado,
     })
     if (result.data) {
       setSalasAdmin(prev => [...prev, result.data!])
       setSalaForm({ nombre: '', descripcion: '', capacidad: '', ubicacion: '', imagen_url: '', estado: 'disponible' })
+      setSalaImageFile(null)
       setShowSalaForm(false)
     }
     setAddingSala(false)
@@ -512,12 +747,17 @@ export default function MainMenuPage() {
 
   const handleSaveSala = async (id: string) => {
     setSavingSala(true)
+    let imagenUrl = editSalaForm.imagen_url || null
+    if (editSalaImageFile) {
+      const uploaded = await uploadImagen('salas', editSalaImageFile)
+      if (uploaded) imagenUrl = uploaded
+    }
     await updateSala(id, {
       nombre: editSalaForm.nombre.trim(),
       descripcion: editSalaForm.descripcion.trim() || null,
       capacidad: parseInt(editSalaForm.capacidad) || 1,
       ubicacion: editSalaForm.ubicacion.trim() || null,
-      imagen_url: editSalaForm.imagen_url.trim() || null,
+      imagen_url: imagenUrl,
       estado: editSalaForm.estado,
     })
     setSalasAdmin(prev => prev.map(s => s.id === id ? {
@@ -526,10 +766,11 @@ export default function MainMenuPage() {
       descripcion: editSalaForm.descripcion.trim() || null,
       capacidad: parseInt(editSalaForm.capacidad) || 1,
       ubicacion: editSalaForm.ubicacion.trim() || null,
-      imagen_url: editSalaForm.imagen_url.trim() || null,
+      imagen_url: imagenUrl,
       estado: editSalaForm.estado,
     } : s))
     setEditingSalaId(null)
+    setEditSalaImageFile(null)
     setSavingSala(false)
   }
 
@@ -538,6 +779,10 @@ export default function MainMenuPage() {
     setForm({ ...EMPTY_FORM, fecha: todayStr, sala_id: salaId ?? '' })
     setModalError(null)
     setModalSuccess(false)
+    setDuracionPreset('libre')
+    setNecesitaEquipo(false)
+    setEquiposSeleccionados([])
+    if (equipos.length === 0) loadEquipos()
     setModalOpen(true)
   }
 
@@ -555,54 +800,22 @@ export default function MainMenuPage() {
     setModalError(null)
 
     if (!form.titulo.trim())   { setModalError('El título es obligatorio.'); return }
+    if (form.titulo.trim().length < 3) { setModalError('El título debe tener al menos 3 caracteres.'); return }
     if (!form.sala_id)         { setModalError('Selecciona una sala.'); return }
     if (!form.fecha)           { setModalError('Selecciona una fecha.'); return }
+    if (form.fecha < new Date().toISOString().split('T')[0]) { setModalError('No puedes reservar en una fecha pasada.'); return }
     if (!form.hora_inicio)     { setModalError('Indica la hora de inicio.'); return }
     if (!form.hora_fin)        { setModalError('Indica la hora de fin.'); return }
     if (form.hora_fin <= form.hora_inicio) {
-      setModalError('La hora de fin debe ser posterior a la de inicio.')
+      setModalError('La hora de fin debe ser posterior a la hora de inicio.')
       return
     }
+    const durMin = diffHoras(form.hora_inicio, form.hora_fin) * 60
+    if (durMin < 30) { setModalError('La reserva debe durar al menos 30 minutos.'); return }
+    if (durMin > 24 * 60) { setModalError('La reserva no puede durar más de 24 horas.'); return }
 
-    setSubmitting(true)
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) { router.push('/login'); return }
-
-    const { error } = await supabase.from('reservas').insert({
-      usuario_id:  session.user.id,
-      sala_id:     form.sala_id,
-      titulo:      form.titulo.trim(),
-      fecha:       form.fecha,
-      hora_inicio: form.hora_inicio,
-      hora_fin:    form.hora_fin,
-      estado:      'confirmada',
-    })
-
-    setSubmitting(false)
-
-    if (error) {
-      setModalError('No se pudo crear la reserva. Verifica los datos e inténtalo de nuevo.')
-      return
-    }
-
+    // 🚀 Próximo Sprint — la creación real estará disponible en el siguiente sprint
     setModalSuccess(true)
-    // Refrescar lista de reservas
-    const todayStr = new Date().toISOString().split('T')[0]
-    const { data } = await supabase
-      .from('reservas')
-      .select('id, titulo, fecha, hora_inicio, hora_fin, estado, salas(id, nombre, capacidad, ubicacion)')
-      .eq('usuario_id', session.user.id)
-      .gte('fecha', todayStr)
-      .in('estado', ['pendiente', 'confirmada'])
-      .order('fecha',       { ascending: true })
-      .order('hora_inicio', { ascending: true })
-      .limit(3)
-    if (data) setReservas(data as unknown as Reserva[])
-
-    setTimeout(() => {
-      setModalOpen(false)
-      setModalSuccess(false)
-    }, 1200)
   }
 
   if (isLoading) {
@@ -645,7 +858,7 @@ export default function MainMenuPage() {
       {/* ── Sidebar (desktop) ─────────────────────────────────── */}
       <nav className="bg-surface text-primary font-body hidden h-screen w-72 flex-col border-r border-outline-variant/20 fixed left-0 top-0 z-50 md:flex">
         {/* Brand */}
-        <div className="px-8 py-8 flex items-center gap-3">
+        <div className="px-8 py-8 flex items-center gap-3 border-b border-outline-variant/20 mb-2">
           <img src="/logo.png" alt="Reservio Logo" className="w-10 h-10 object-contain drop-shadow-sm" />
           <div>
             <h1 className="font-headline text-2xl font-black text-primary mb-0 leading-none">Reservio</h1>
@@ -658,12 +871,12 @@ export default function MainMenuPage() {
           {navItems.map((item) => (
             <button
               key={item.id}
-              onClick={() => setActiveTab(item.id)}
+              onClick={() => { setActiveTab(item.id); if (item.id === 'tech') loadEquipos() }}
               className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200
                 ${
                   activeTab === item.id
-                    ? 'bg-surface-container-lowest text-primary font-bold shadow-sm scale-[1.01]'
-                    : 'text-secondary hover:bg-surface-container-low hover:scale-[1.02] active:scale-[0.98]'
+                    ? 'border-l-[3px] border-primary bg-surface-container-lowest text-primary font-semibold'
+                    : 'text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface'
                 }`}
             >
               <span
@@ -684,15 +897,15 @@ export default function MainMenuPage() {
           {isAdmin && (
             <>
               <div className="h-px bg-outline-variant/30 my-3 mx-4" />
-              <p className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant px-4 mb-1">
+              <p className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/80 px-4 mb-1">
                 Administración
               </p>
               <button
                 onClick={() => { handleAdminTab(); setAdminSubTab('users') }}
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200 ${
                   activeTab === 'admin' && adminSubTab === 'users'
-                    ? 'bg-surface-container-lowest text-primary font-bold shadow-sm'
-                    : 'text-secondary hover:bg-surface-container-low hover:scale-[1.02] active:scale-[0.98]'
+                    ? 'border-l-[3px] border-primary bg-surface-container-lowest text-primary font-semibold'
+                    : 'text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface'
                 }`}
               >
                 <span className="material-symbols-outlined text-[20px]" style={activeTab === 'admin' && adminSubTab === 'users' ? { fontVariationSettings: "'FILL' 1" } : undefined}>manage_accounts</span>
@@ -702,8 +915,8 @@ export default function MainMenuPage() {
                 onClick={() => { handleAdminTab(); setAdminSubTab('equipment') }}
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200 ${
                   activeTab === 'admin' && adminSubTab === 'equipment'
-                    ? 'bg-surface-container-lowest text-primary font-bold shadow-sm'
-                    : 'text-secondary hover:bg-surface-container-low hover:scale-[1.02] active:scale-[0.98]'
+                    ? 'border-l-[3px] border-primary bg-surface-container-lowest text-primary font-semibold'
+                    : 'text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface'
                 }`}
               >
                 <span className="material-symbols-outlined text-[20px]" style={activeTab === 'admin' && adminSubTab === 'equipment' ? { fontVariationSettings: "'FILL' 1" } : undefined}>devices</span>
@@ -713,8 +926,8 @@ export default function MainMenuPage() {
                 onClick={() => { handleAdminTab(); setAdminSubTab('rooms'); loadSalasAdmin() }}
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200 ${
                   activeTab === 'admin' && adminSubTab === 'rooms'
-                    ? 'bg-surface-container-lowest text-primary font-bold shadow-sm'
-                    : 'text-secondary hover:bg-surface-container-low hover:scale-[1.02] active:scale-[0.98]'
+                    ? 'border-l-[3px] border-primary bg-surface-container-lowest text-primary font-semibold'
+                    : 'text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface'
                 }`}
               >
                 <span className="material-symbols-outlined text-[20px]" style={activeTab === 'admin' && adminSubTab === 'rooms' ? { fontVariationSettings: "'FILL' 1" } : undefined}>meeting_room</span>
@@ -728,7 +941,7 @@ export default function MainMenuPage() {
         <div className="p-6 mt-auto">
           <button
             onClick={handleSignOut}
-            className="w-full flex items-center justify-center gap-2 bg-surface-container text-on-surface py-3 rounded-lg hover:bg-surface-container-high transition-colors text-sm font-medium font-label"
+            className="w-full flex items-center justify-center gap-2 border border-outline-variant/30 text-on-surface-variant py-3 rounded-lg hover:border-error/40 hover:text-error hover:bg-error/5 transition-colors text-sm font-medium font-label"
           >
             <span className="material-symbols-outlined text-lg">logout</span>
             Cerrar Sesión
@@ -737,7 +950,7 @@ export default function MainMenuPage() {
       </nav>
 
       {/* ── Top app bar (mobile) ───────────────────────────────── */}
-      <header className="md:hidden bg-surface-container-lowest fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-6 h-16 border-b border-outline-variant/15">
+      <header className="md:hidden bg-surface/95 backdrop-blur-sm fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-6 h-16 border-b border-outline-variant/20">
         <div className="flex items-center gap-2">
           <img src="/logo.png" alt="Logo" className="w-7 h-7 object-contain" />
           <span className="font-headline text-xl font-black text-primary tracking-wide">Reservio</span>
@@ -776,11 +989,11 @@ export default function MainMenuPage() {
               {navItems.map((item) => (
                 <button
                   key={item.id}
-                  onClick={() => { setActiveTab(item.id); setMobileMenuOpen(false) }}
+                  onClick={() => { setActiveTab(item.id); if (item.id === 'tech') loadEquipos(); setMobileMenuOpen(false) }}
                   className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200
                     ${activeTab === item.id
-                      ? 'bg-surface-container-lowest text-primary font-bold shadow-sm'
-                      : 'text-secondary hover:bg-surface-container-low'
+                      ? 'bg-surface-container-lowest text-primary font-semibold'
+                      : 'text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface'
                     }`}
                 >
                   <span
@@ -802,8 +1015,8 @@ export default function MainMenuPage() {
                     onClick={() => { handleAdminTab(); setAdminSubTab('users'); setMobileMenuOpen(false) }}
                     className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200 ${
                       activeTab === 'admin' && adminSubTab === 'users'
-                        ? 'bg-surface-container-lowest text-primary font-bold'
-                        : 'text-secondary hover:bg-surface-container-low'
+                        ? 'bg-surface-container-lowest text-primary font-semibold'
+                        : 'text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface'
                     }`}
                   >
                     <span className="material-symbols-outlined text-[20px]">manage_accounts</span>
@@ -813,8 +1026,8 @@ export default function MainMenuPage() {
                     onClick={() => { handleAdminTab(); setAdminSubTab('equipment'); setMobileMenuOpen(false) }}
                     className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200 ${
                       activeTab === 'admin' && adminSubTab === 'equipment'
-                        ? 'bg-surface-container-lowest text-primary font-bold'
-                        : 'text-secondary hover:bg-surface-container-low'
+                        ? 'bg-surface-container-lowest text-primary font-semibold'
+                        : 'text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface'
                     }`}
                   >
                     <span className="material-symbols-outlined text-[20px]">devices</span>
@@ -824,8 +1037,8 @@ export default function MainMenuPage() {
                     onClick={() => { handleAdminTab(); setAdminSubTab('rooms'); loadSalasAdmin(); setMobileMenuOpen(false) }}
                     className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200 ${
                       activeTab === 'admin' && adminSubTab === 'rooms'
-                        ? 'bg-surface-container-lowest text-primary font-bold'
-                        : 'text-secondary hover:bg-surface-container-low'
+                        ? 'bg-surface-container-lowest text-primary font-semibold'
+                        : 'text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface'
                     }`}
                   >
                     <span className="material-symbols-outlined text-[20px]">meeting_room</span>
@@ -837,7 +1050,7 @@ export default function MainMenuPage() {
             <div className="p-6">
               <button
                 onClick={handleSignOut}
-                className="w-full flex items-center justify-center gap-2 bg-surface-container text-on-surface py-3 rounded-lg hover:bg-surface-container-high transition-colors text-sm font-medium font-label"
+                className="w-full flex items-center justify-center gap-2 border border-outline-variant/30 text-on-surface-variant py-3 rounded-lg hover:border-error/40 hover:text-error hover:bg-error/5 transition-colors text-sm font-medium font-label"
               >
                 <span className="material-symbols-outlined text-lg">logout</span>
                 Cerrar Sesión
@@ -852,10 +1065,10 @@ export default function MainMenuPage() {
         <div className="max-w-7xl mx-auto p-6 md:p-8 xl:p-12">
 
           {/* Welcome header — siempre visible */}
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-10">
             <div>
-              <h2 className="font-headline text-3xl md:text-4xl font-bold text-on-surface tracking-tight mb-2">
-                {activeTab === 'reservations' && <>Hola, {profile?.nombre} 👋</>}
+              <h2 className="font-headline text-2xl md:text-3xl font-semibold text-on-surface tracking-tight mb-2">
+                {activeTab === 'reservations' && <>Hola, {profile?.nombre}</>}
                 {activeTab === 'rooms'        && 'Salas disponibles'}
                 {activeTab === 'tech'         && 'Equipamiento Tecnológico'}
                 {activeTab === 'profile'      && 'Mi Perfil'}
@@ -863,7 +1076,7 @@ export default function MainMenuPage() {
                 {activeTab === 'admin' && adminSubTab === 'equipment' && 'Gestión de Equipos'}
                 {activeTab === 'admin' && adminSubTab === 'rooms'     && 'Gestión de Salas'}
               </h2>
-              <p className="font-body text-lg text-secondary">
+              <p className="font-body text-sm text-on-surface-variant">
                 {activeTab === 'reservations' && '¿Qué espacio necesitas hoy para brillar?'}
                 {activeTab === 'rooms'        && 'Encuentra el ambiente perfecto para tu próxima reunión.'}
                 {activeTab === 'tech'         && 'Herramientas de última generación para potenciar tu trabajo.'}
@@ -876,7 +1089,7 @@ export default function MainMenuPage() {
             {activeTab === 'reservations' && (
               <button
                 onClick={handleNuevaReserva}
-                className="inline-flex items-center gap-2 bg-primary text-on-primary px-6 py-3 rounded-lg font-label font-medium text-sm shadow-md hover:bg-primary-container hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200"
+                className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label font-medium text-sm shadow-sm hover:shadow-md hover:brightness-105 transition-all duration-200"
               >
                 <span className="material-symbols-outlined text-[20px]">add</span>
                 Nueva Reserva
@@ -884,8 +1097,8 @@ export default function MainMenuPage() {
             )}
             {activeTab === 'rooms' && (
               <button
-                onClick={handleNuevaReserva}
-                className="inline-flex items-center gap-2 bg-primary text-on-primary px-6 py-3 rounded-lg font-label font-medium text-sm shadow-md hover:bg-primary-container hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200"
+                onClick={() => openModal()}
+                className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label font-medium text-sm shadow-sm hover:shadow-md hover:brightness-105 transition-all duration-200"
               >
                 <span className="material-symbols-outlined text-[20px]">add</span>
                 Nueva Reserva
@@ -903,8 +1116,8 @@ export default function MainMenuPage() {
             {loadingReservas ? (
               <SkeletonSummaryCard />
             ) : (
-              <div className="bg-surface-container-lowest rounded-xl p-5 border border-outline-variant/20 shadow-sm flex items-start gap-4">
-                <div className="bg-primary-container text-on-primary w-11 h-11 rounded-lg flex items-center justify-center shrink-0">
+              <div className="bg-surface-container-lowest rounded-xl p-5 border border-outline-variant/25 shadow-none hover:shadow-sm transition-shadow flex items-start gap-4">
+                <div className="bg-primary/10 text-primary w-10 h-10 rounded-lg flex items-center justify-center shrink-0">
                   <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
                     event_available
                   </span>
@@ -931,8 +1144,8 @@ export default function MainMenuPage() {
             {loadingSalas ? (
               <SkeletonSummaryCard />
             ) : (
-              <div className="bg-surface-container-lowest rounded-xl p-5 border border-outline-variant/20 shadow-sm flex items-start gap-4">
-                <div className="bg-secondary-container text-on-secondary-container w-11 h-11 rounded-lg flex items-center justify-center shrink-0">
+              <div className="bg-surface-container-lowest rounded-xl p-5 border border-outline-variant/25 shadow-none hover:shadow-sm transition-shadow flex items-start gap-4">
+                <div className="bg-primary/10 text-primary w-10 h-10 rounded-lg flex items-center justify-center shrink-0">
                   <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
                     meeting_room
                   </span>
@@ -953,8 +1166,8 @@ export default function MainMenuPage() {
             )}
 
             {/* Card: rol */}
-            <div className="bg-surface-container-lowest rounded-xl p-5 border border-outline-variant/20 shadow-sm flex items-start gap-4">
-              <div className="bg-tertiary-fixed text-on-tertiary-fixed w-11 h-11 rounded-lg flex items-center justify-center shrink-0">
+            <div className="bg-surface-container-lowest rounded-xl p-5 border border-outline-variant/25 shadow-none hover:shadow-sm transition-shadow flex items-start gap-4">
+              <div className="bg-primary/10 text-primary w-10 h-10 rounded-lg flex items-center justify-center shrink-0">
                 <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
                   {isAdmin ? 'shield_person' : 'account_circle'}
                 </span>
@@ -974,12 +1187,12 @@ export default function MainMenuPage() {
           </div>
 
           {/* Bento grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
             {/* Mis próximas reservas (2 cols) */}
             <div className="lg:col-span-2 space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="font-headline text-xl font-bold text-primary">Mis próximas reservas</h3>
+                <h3 className="font-headline text-xl font-semibold text-on-surface">Mis próximas reservas</h3>
                 <a href="#" className="font-label text-sm font-medium text-secondary hover:text-primary transition-colors">
                   Ver todas
                 </a>
@@ -1013,7 +1226,7 @@ export default function MainMenuPage() {
                     return (
                       <div
                         key={reserva.id}
-                        className="bg-surface-container-lowest rounded-lg p-5 border border-outline-variant/15 flex flex-col sm:flex-row sm:items-center justify-between gap-4 group hover:bg-surface-bright transition-colors shadow-sm"
+                        className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-4 hover:border-outline-variant/40 hover:shadow-sm transition-all duration-150 flex flex-col sm:flex-row sm:items-center justify-between gap-4 group"
                       >
                         <div className="flex items-start gap-4">
                           <div className={`${style.bg} ${style.text} w-12 h-12 rounded-lg flex items-center justify-center shrink-0`}>
@@ -1023,15 +1236,22 @@ export default function MainMenuPage() {
                           </div>
                           <div>
                             <h4 className="font-headline font-bold text-on-surface text-base">{reserva.titulo}</h4>
-                            <p className="font-body text-sm text-secondary flex items-center gap-1 mt-1">
+                            <p className="font-mono text-xs text-on-surface-variant flex items-center gap-1 mt-1">
                               <span className="material-symbols-outlined text-[16px]">schedule</span>
                               {formatFecha(reserva.fecha)}, {formatHora(reserva.hora_inicio)} — {formatHora(reserva.hora_fin)}
                             </p>
                           </div>
                         </div>
                         <div className="flex flex-col sm:items-end gap-2">
-                          <span className="bg-surface-container px-3 py-1 rounded text-xs font-label font-bold uppercase tracking-wider text-on-surface-variant">
+                          <span className="bg-surface-container px-3 py-1 rounded-full text-xs font-label font-bold uppercase tracking-wider text-on-surface-variant">
                             {reserva.salas?.nombre ?? 'Sala desconocida'}
+                          </span>
+                          <span className={`px-2.5 py-0.5 rounded-full text-xs font-label font-bold ${
+                            reserva.estado === 'confirmada' ? 'bg-emerald-100 text-emerald-700' :
+                            reserva.estado === 'cancelada' ? 'bg-red-100 text-red-600' :
+                            'bg-amber-100 text-amber-700'
+                          }`}>
+                            {reserva.estado}
                           </span>
                           <button className="font-label text-sm text-primary font-medium opacity-0 group-hover:opacity-100 transition-opacity">
                             Editar
@@ -1047,7 +1267,7 @@ export default function MainMenuPage() {
             {/* Salas disponibles (1 col) */}
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="font-headline text-xl font-bold text-primary">Salas disponibles</h3>
+                <h3 className="font-headline text-xl font-semibold text-on-surface">Salas disponibles</h3>
                 <span className="bg-tertiary-container text-on-tertiary-container text-[10px] font-label font-bold px-2 py-1 rounded uppercase tracking-wider">
                   AHORA
                 </span>
@@ -1110,12 +1330,12 @@ export default function MainMenuPage() {
                 </div>
               ) : (
                 salas.map((sala, idx) => (
-                  <div key={sala.id} className="bg-surface-container-lowest rounded-2xl overflow-hidden border border-outline-variant/20 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] transition-all duration-300 group flex flex-col">
+                  <div key={sala.id} className="bg-surface-container-lowest rounded-2xl overflow-hidden border border-outline-variant/15 shadow-none hover:shadow-md transition-shadow duration-200 group flex flex-col">
                     <div className="relative h-48 overflow-hidden bg-surface-container">
                       <img 
                         src={sala.imagen_url || getRoomImage(idx)} 
                         alt={sala.nombre} 
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out" 
+                        className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-300" 
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-80" />
                       <div className="absolute bottom-4 left-4 right-4 flex justify-between items-end">
@@ -1134,7 +1354,7 @@ export default function MainMenuPage() {
                       </div>
                     </div>
                     
-                    <div className="p-5 flex-1 flex flex-col">
+                    <div className="p-4 flex-1 flex flex-col">
                       <div>
                         <h4 className="font-headline font-bold text-on-surface text-lg">{sala.nombre}</h4>
                         {sala.descripcion && (
@@ -1159,7 +1379,7 @@ export default function MainMenuPage() {
                         <button
                           onClick={() => handleReservarRapido(sala)}
                           disabled={sala.estado !== 'disponible'}
-                          className="w-full bg-primary text-on-primary font-label text-sm font-bold py-3 rounded-xl hover:bg-primary-container hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-40 disabled:hover:translate-y-0 disabled:shadow-none disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                          className="w-full border border-primary/40 text-primary font-label text-sm font-bold py-3 rounded-xl hover:bg-primary hover:text-on-primary transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                         >
                           {sala.estado === 'disponible' ? (
                             <>
@@ -1177,52 +1397,145 @@ export default function MainMenuPage() {
           )}
 
           {/* ══ TAB: TECH (EQUIPOS) ═════════════════════════════════════════ */}
-          {activeTab === 'tech' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {MOCK_TECH.map((item) => (
-                <div key={item.id} className="bg-surface-container-lowest rounded-2xl overflow-hidden border border-outline-variant/20 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] transition-all duration-300 group flex flex-col">
-                  <div className="relative h-48 overflow-hidden bg-surface-container">
-                    <img 
-                      src={item.imagen} 
-                      alt={item.nombre} 
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out" 
+          {activeTab === 'tech' && (() => {
+            const filteredTech = equipos.filter(eq => {
+              const matchesSearch = techSearch.trim() === '' ||
+                eq.nombre.toLowerCase().includes(techSearch.toLowerCase()) ||
+                eq.marca.toLowerCase().includes(techSearch.toLowerCase()) ||
+                eq.tipo_equipo.toLowerCase().includes(techSearch.toLowerCase())
+              const matchesFilter = techFilter === '' || eq.categoria === techFilter || eq.tipo_equipo === techFilter
+              return matchesSearch && matchesFilter
+            })
+            return (
+              <div className="space-y-6">
+                {/* Search + filter bar */}
+                <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-4 shadow-sm flex flex-col sm:flex-row gap-3">
+                  <div className="relative flex-1">
+                    <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">search</span>
+                    <input
+                      type="text"
+                      value={techSearch}
+                      onChange={e => setTechSearch(e.target.value)}
+                      placeholder="Buscar por modelo, marca, tipo…"
+                      className="w-full pl-9 pr-3 py-2 bg-surface-container-low border border-outline-variant/30 rounded-lg text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-80" />
-                    <div className="absolute bottom-4 left-4 right-4 flex justify-between items-end">
-                      <span className={`inline-flex items-center gap-1.5 text-xs font-label font-bold px-2.5 py-1 rounded-md uppercase tracking-wider backdrop-blur-md ${
-                        item.disponible ? 'bg-green-500/20 text-green-50 border border-green-500/30' : 'bg-red-500/20 text-red-50 border border-red-500/30'
-                      }`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${item.disponible ? 'bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.8)]' : 'bg-red-400'}`} />
-                        {item.disponible ? 'Disponible' : 'En Uso'}
-                      </span>
-                    </div>
                   </div>
-                  
-                  <div className="p-5 flex-1 flex flex-col">
-                    <div>
-                      <h4 className="font-headline font-bold text-on-surface text-lg">{item.nombre}</h4>
-                      <p className="font-label text-xs uppercase tracking-wider text-primary mt-1">{item.tipo}</p>
-                    </div>
-                    
-                    <div className="mt-6 pt-4 border-t border-outline-variant/15 mt-auto">
+                  <div className="flex gap-2 flex-wrap">
+                    {[
+                      { value: '', label: 'Todos' },
+                      { value: 'ordenador', label: 'Ordenadores' },
+                      { value: 'movil', label: 'Móviles' },
+                    ].map(f => (
                       <button
-                        onClick={() => { if (!FEATURES.techRequests) { showComingSoon(); return } }}
-                        disabled={!item.disponible}
-                        className="w-full bg-surface-container-high text-on-surface font-label text-sm font-bold py-3 rounded-xl hover:bg-secondary hover:text-on-secondary hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-40 disabled:hover:translate-y-0 disabled:shadow-none disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        key={f.value}
+                        onClick={() => setTechFilter(f.value)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-label font-semibold border transition-colors ${
+                          techFilter === f.value
+                            ? 'bg-primary text-on-primary border-primary'
+                            : 'bg-surface border-outline-variant/30 text-on-surface-variant hover:bg-surface-container'
+                        }`}
                       >
-                        {item.disponible ? (
-                          <>
-                            <span className="material-symbols-outlined text-[18px]">add_shopping_cart</span>
-                            Solicitar Equipo
-                          </>
-                        ) : 'No disponible'}
+                        {f.label}
                       </button>
-                    </div>
+                    ))}
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
+
+                {loadingEquipos ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {[0,1,2,3,4,5].map(i => <SkeletonRoomCard key={i} />)}
+                  </div>
+                ) : filteredTech.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
+                    <span className="material-symbols-outlined text-on-surface-variant text-4xl">devices_off</span>
+                    <p className="font-body font-semibold text-on-surface text-sm">
+                      {techSearch || techFilter ? 'Sin resultados para tu búsqueda' : 'No hay equipos disponibles'}
+                    </p>
+                    {(techSearch || techFilter) && (
+                      <button onClick={() => { setTechSearch(''); setTechFilter('') }} className="font-label text-sm text-primary hover:underline">
+                        Limpiar filtros
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {filteredTech.map((item) => (
+                      <div key={item.id} className="bg-surface-container-lowest rounded-2xl overflow-hidden border border-outline-variant/15 shadow-none hover:shadow-md transition-shadow duration-200 group flex flex-col">
+                        <div className="relative h-48 overflow-hidden bg-surface-container">
+                          {item.imagen_url ? (
+                            <img
+                              src={item.imagen_url}
+                              alt={item.nombre}
+                              className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-300"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center bg-surface-container-high">
+                              <span className="material-symbols-outlined text-on-surface-variant text-6xl">devices</span>
+                            </div>
+                          )}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-80" />
+                          <div className="absolute bottom-4 left-4 right-4 flex justify-between items-end">
+                            <span className={`inline-flex items-center gap-1.5 text-xs font-label font-bold px-2.5 py-1 rounded-md uppercase tracking-wider backdrop-blur-md ${
+                              item.estado === 'disponible'     ? 'bg-green-500/20 text-green-50 border border-green-500/30'  :
+                              item.estado === 'reservado'      ? 'bg-blue-500/20 text-blue-50 border border-blue-500/30'     :
+                              'bg-orange-500/20 text-orange-50 border border-orange-500/30'
+                            }`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${
+                                item.estado === 'disponible' ? 'bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.8)]' :
+                                item.estado === 'reservado'  ? 'bg-blue-400' :
+                                'bg-orange-400'
+                              }`} />
+                              {item.estado === 'disponible' ? 'Disponible' : item.estado === 'reservado' ? 'Reservado' : 'Mantenimiento'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="p-4 flex-1 flex flex-col">
+                          <div>
+                            <h4 className="font-headline font-bold text-on-surface text-lg">{item.nombre}</h4>
+                            <p className="font-label text-xs uppercase tracking-wider text-primary mt-1">{TIPO_EQUIPO_LABELS[item.tipo_equipo] ?? item.tipo_equipo} · {item.marca}</p>
+                          </div>
+
+                          <div className="flex flex-wrap gap-2 mt-3">
+                            <span className="inline-flex items-center gap-1 bg-surface-container px-2 py-0.5 rounded text-xs font-label text-on-surface-variant capitalize">
+                              <span className="material-symbols-outlined text-[14px]">computer</span>
+                              {item.sistema_operativo}
+                            </span>
+                            <span className="inline-flex items-center gap-1 bg-surface-container px-2 py-0.5 rounded text-xs font-label text-on-surface-variant capitalize">
+                              <span className="material-symbols-outlined text-[14px]">category</span>
+                              {item.categoria}
+                            </span>
+                            {item.numero_serie && (
+                              <span className="inline-flex items-center gap-1 bg-surface-container px-2 py-0.5 rounded text-xs font-mono text-primary">
+                                <span className="material-symbols-outlined text-[12px]">tag</span>
+                                {item.numero_serie}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="mt-6 pt-4 border-t border-outline-variant/15 mt-auto">
+                            <button
+                              onClick={() => { if (!FEATURES.techRequests) { showComingSoon(); return } }}
+                              disabled={item.estado !== 'disponible'}
+                              className="w-full bg-surface-container-high text-on-surface font-label text-sm font-bold py-3 rounded-xl hover:bg-secondary hover:text-on-secondary hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-40 disabled:hover:translate-y-0 disabled:shadow-none disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            >
+                              {item.estado === 'disponible' ? (
+                                <>
+                                  <span className="material-symbols-outlined text-[18px]">add_shopping_cart</span>
+                                  Solicitar Equipo
+                                </>
+                              ) : item.estado === 'reservado' ? 'Actualmente Reservado' : 'En Mantenimiento'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
 
           {/* ══ TAB: PROFILE ═══════════════════════════════════════ */}
           {activeTab === 'profile' && (
@@ -1234,8 +1547,8 @@ export default function MainMenuPage() {
                 </div>
                 <div>
                   <h3 className="font-headline text-xl font-bold text-on-surface">{profile?.nombre}</h3>
-                  <span className={`inline-block mt-1 text-xs font-label font-bold px-2 py-0.5 rounded uppercase tracking-wider ${
-                    isAdmin ? 'bg-primary-fixed text-on-primary-fixed' : 'bg-surface-container text-on-surface-variant'
+                  <span className={`inline-block mt-1 text-xs font-label font-bold px-2 py-0.5 rounded border uppercase tracking-wider ${
+                    isAdmin ? 'bg-primary/10 text-primary border-primary/20' : 'bg-surface-container text-on-surface-variant border-outline-variant/30'
                   }`}>
                     {isAdmin ? 'Administrador' : 'Usuario'}
                   </span>
@@ -1322,7 +1635,7 @@ export default function MainMenuPage() {
                   {/* Botón registrar usuario */}
                   <div className="flex justify-end">
                     <button
-                      onClick={() => { setShowUserForm(v => !v); setUserFormError(null) }}
+                      onClick={() => { setShowUserForm(v => !v); setUserFormError(null); if (showUserForm) { setShowPassword(false); setShowConfirmPassword(false) } }}
                       className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label text-sm font-semibold hover:opacity-90 transition-opacity"
                     >
                       <span className="material-symbols-outlined text-[18px]">{showUserForm ? 'close' : 'person_add'}</span>
@@ -1345,12 +1658,22 @@ export default function MainMenuPage() {
                         </div>
                         <div>
                           <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Contraseña *</label>
-                          <input type="password" value={userForm.password} onChange={e => setUserForm(f => ({ ...f, password: e.target.value }))} placeholder="Mín. 8 caracteres" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" required />
+                          <div className="relative flex items-center">
+                            <input type={showPassword ? "text" : "password"} value={userForm.password} onChange={e => setUserForm(f => ({ ...f, password: e.target.value }))} placeholder="Mín. 8 caracteres" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 pr-10 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" required />
+                            <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 text-on-surface-variant hover:text-on-surface transition-colors">
+                              <span className="material-symbols-outlined text-[20px]">{showPassword ? 'visibility_off' : 'visibility'}</span>
+                            </button>
+                          </div>
                           {userForm.password && <AdminPasswordRequirements password={userForm.password} />}
                         </div>
                         <div>
                           <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Confirmar Contraseña *</label>
-                          <input type="password" value={userForm.confirmPassword} onChange={e => setUserForm(f => ({ ...f, confirmPassword: e.target.value }))} placeholder="Repite la contraseña" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" required />
+                          <div className="relative flex items-center">
+                            <input type={showConfirmPassword ? "text" : "password"} value={userForm.confirmPassword} onChange={e => setUserForm(f => ({ ...f, confirmPassword: e.target.value }))} placeholder="Repite la contraseña" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 pr-10 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" required />
+                            <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 text-on-surface-variant hover:text-on-surface transition-colors">
+                              <span className="material-symbols-outlined text-[20px]">{showConfirmPassword ? 'visibility_off' : 'visibility'}</span>
+                            </button>
+                          </div>
                         </div>
                         <div>
                           <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Rol</label>
@@ -1375,7 +1698,23 @@ export default function MainMenuPage() {
                   )}
 
                   {/* Tabla usuarios */}
-                  <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 shadow-sm overflow-hidden">
+                  <div className="space-y-4">
+                    {/* Filtro Ver solo activos */}
+                    <div className="flex items-center gap-2 px-4 py-3 bg-surface-container-low rounded-lg border border-outline-variant/20">
+                      <input
+                        type="checkbox"
+                        id="showOnlyActivos"
+                        checked={showOnlyActivos}
+                        onChange={e => setShowOnlyActivos(e.target.checked)}
+                        className="w-4 h-4 rounded cursor-pointer accent-primary"
+                      />
+                      <label htmlFor="showOnlyActivos" className="font-body text-sm text-on-surface cursor-pointer">
+                        Ver solo activos
+                      </label>
+                    </div>
+
+                    {/* Tabla usuarios */}
+                    <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 shadow-sm overflow-hidden">
                     {loadingUsuarios ? (
                       <div className="flex items-center justify-center py-16 gap-3">
                         <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -1399,19 +1738,34 @@ export default function MainMenuPage() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-outline-variant/10">
-                            {usuarios.map((u) => (
-                              <tr key={u.id} className={`transition-colors ${u.activo === false ? 'bg-red-50/60' : 'hover:bg-surface-container/50'}`}>
-                                <td className={`px-6 py-4 font-body font-medium ${u.activo === false ? 'text-red-500 line-through decoration-red-400' : 'text-on-surface'}`}>{u.nombre}</td>
+                            {usuarios.filter(u => showOnlyActivos ? u.activo !== false : true).map((u) => (
+                              <tr key={u.id} className={`transition-colors ${u.activo === false ? 'bg-red-50/60' : 'even:bg-surface-container-lowest/50 hover:bg-surface-container/50'}`}>
+                                <td className={`px-6 py-4 font-body font-medium ${u.activo === false ? 'text-red-500 line-through decoration-red-400' : 'text-on-surface'}`}>
+                                  {editingUserId === u.id ? (
+                                    <input
+                                      type="text"
+                                      value={editNombreValue}
+                                      onChange={e => { setEditNombreValue(e.target.value); setEditUserError(null) }}
+                                      className="bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none focus:ring-1 focus:ring-primary w-36"
+                                      placeholder="Nombre completo"
+                                    />
+                                  ) : u.nombre}
+                                </td>
                                 <td className="px-6 py-4 font-body text-on-surface-variant">
                                   {editingUserId === u.id ? (
-                                    <div className="flex items-center gap-2">
-                                      <input type="email" value={editEmailValue} onChange={e => setEditEmailValue(e.target.value)} className="bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none focus:ring-1 focus:ring-primary w-44" autoFocus />
-                                      <button onClick={() => handleSaveEmail(u.id)} disabled={savingEmail} className="p-1 rounded hover:bg-green-100 text-green-600 disabled:opacity-50">
-                                        {savingEmail ? <span className="h-3 w-3 animate-spin rounded-full border border-green-600 border-t-transparent inline-block" /> : <span className="material-symbols-outlined text-[16px]">check</span>}
-                                      </button>
-                                      <button onClick={() => setEditingUserId(null)} className="p-1 rounded hover:bg-red-50 text-red-500">
-                                        <span className="material-symbols-outlined text-[16px]">close</span>
-                                      </button>
+                                    <div className="flex flex-col gap-1">
+                                      <div className="flex items-center gap-2">
+                                        <input type="email" value={editEmailValue} onChange={e => { setEditEmailValue(e.target.value); setEditUserError(null) }} className="bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none focus:ring-1 focus:ring-primary w-44" autoFocus placeholder="correo@ejemplo.com" />
+                                        <button onClick={() => handleSaveEmail(u.id)} disabled={savingEmail} className="p-1 rounded hover:bg-green-100 text-green-600 disabled:opacity-50">
+                                          {savingEmail ? <span className="h-3 w-3 animate-spin rounded-full border border-green-600 border-t-transparent inline-block" /> : <span className="material-symbols-outlined text-[16px]">check</span>}
+                                        </button>
+                                        <button onClick={() => { setEditingUserId(null); setEditUserError(null) }} className="p-1 rounded hover:bg-red-50 text-red-500">
+                                          <span className="material-symbols-outlined text-[16px]">close</span>
+                                        </button>
+                                      </div>
+                                      {editUserError && (
+                                        <span className="text-xs text-red-500 font-body">{editUserError}</span>
+                                      )}
                                     </div>
                                   ) : u.correo}
                                 </td>
@@ -1440,7 +1794,7 @@ export default function MainMenuPage() {
                                 <td className="px-6 py-4">
                                   <div className="flex items-center gap-1">
                                     {editingUserId !== u.id && (
-                                      <button onClick={() => { setEditingUserId(u.id); setEditEmailValue(u.correo) }} title="Editar correo" className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors">
+                                      <button onClick={() => { setEditingUserId(u.id); setEditEmailValue(u.correo); setEditNombreValue(u.nombre) }} title="Editar usuario" className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors">
                                         <span className="material-symbols-outlined text-[16px]">edit</span>
                                       </button>
                                     )}
@@ -1472,138 +1826,535 @@ export default function MainMenuPage() {
                         </table>
                       </div>
                     )}
+                    </div>
                   </div>
                 </div>
               )}
 
               {/* ─── HU-07: Gestión de equipos ──────────────────────── */}
-              {adminSubTab === 'equipment' && (
-                <div className="space-y-4">
-                  {/* Botón agregar */}
-                  <div className="flex justify-end">
-                    <button
-                      onClick={() => setShowEquipoForm(v => !v)}
-                      className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label text-sm font-medium hover:bg-primary-container transition-colors"
-                    >
-                      <span className="material-symbols-outlined text-[18px]">{showEquipoForm ? 'close' : 'add'}</span>
-                      {showEquipoForm ? 'Cancelar' : 'Agregar Equipo'}
-                    </button>
-                  </div>
+              {adminSubTab === 'equipment' && (() => {
+                const filteredEquipos = equipos.filter(eq =>
+                  equipoSearch.trim() === '' ||
+                  eq.nombre.toLowerCase().includes(equipoSearch.toLowerCase()) ||
+                  eq.marca.toLowerCase().includes(equipoSearch.toLowerCase()) ||
+                  eq.tipo_equipo.toLowerCase().includes(equipoSearch.toLowerCase()) ||
+                  eq.categoria.toLowerCase().includes(equipoSearch.toLowerCase())
+                )
+                const totalEquipos       = equipos.length
+                const disponiblesCount   = equipos.filter(e => e.estado === 'disponible').length
+                const reservadosCount    = equipos.filter(e => e.estado === 'reservado').length
+                const mantenimientoCount = equipos.filter(e => e.estado === 'mantenimiento').length
 
-                  {/* Formulario agregar */}
-                  {showEquipoForm && (
-                    <form onSubmit={handleAddEquipo} className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-5 shadow-sm">
-                      <h4 className="font-headline font-bold text-on-surface mb-4">Nuevo Equipo</h4>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div>
-                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Nombre *</label>
-                          <input
-                            type="text"
-                            value={equipoForm.nombre}
-                            onChange={(e) => setEquipoForm(f => ({ ...f, nombre: e.target.value }))}
-                            placeholder="Ej: Proyector Laser 4K"
-                            className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
-                            required
-                          />
+                return (
+                  <div className="space-y-6">
+
+                    {/* KPI Cards */}
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="bg-surface-container-lowest rounded-xl p-4 border border-outline-variant/20 shadow-sm flex flex-col justify-between">
+                        <div className="flex justify-between items-start">
+                          <span className="font-label text-xs uppercase tracking-widest text-on-surface-variant">Total Equipos</span>
+                          <span className="material-symbols-outlined text-primary bg-primary/10 p-1.5 rounded-lg text-[18px]">devices</span>
                         </div>
-                        <div>
-                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Tipo *</label>
-                          <input
-                            type="text"
-                            value={equipoForm.tipo}
-                            onChange={(e) => setEquipoForm(f => ({ ...f, tipo: e.target.value }))}
-                            placeholder="Ej: Audiovisual"
-                            className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
-                            required
-                          />
-                        </div>
-                        <div>
-                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">URL Imagen</label>
-                          <input
-                            type="text"
-                            value={equipoForm.imagen_url}
-                            onChange={(e) => setEquipoForm(f => ({ ...f, imagen_url: e.target.value }))}
-                            placeholder="/tech/imagen.jpg"
-                            className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
-                          />
+                        <div className="mt-3">
+                          <span className="font-headline text-3xl font-bold text-on-surface">{totalEquipos}</span>
                         </div>
                       </div>
-                      <div className="mt-4 flex justify-end">
-                        <button
-                          type="submit"
-                          disabled={addingEquipo}
-                          className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2 rounded-lg font-label text-sm font-medium hover:bg-primary-container disabled:opacity-60 transition-colors"
-                        >
-                          {addingEquipo ? (
-                            <><span className="h-4 w-4 animate-spin rounded-full border-2 border-on-primary border-t-transparent" /> Guardando…</>
-                          ) : (
-                            <><span className="material-symbols-outlined text-[18px]">save</span> Guardar</>
+                      <div className="bg-surface-container-lowest rounded-xl p-4 border border-outline-variant/20 shadow-sm flex flex-col justify-between">
+                        <div className="flex justify-between items-start">
+                          <span className="font-label text-xs uppercase tracking-widest text-on-surface-variant">Disponibles</span>
+                          <span className="material-symbols-outlined text-green-600 bg-green-50 p-1.5 rounded-lg text-[18px]">check_circle</span>
+                        </div>
+                        <div className="mt-3">
+                          <span className="font-headline text-3xl font-bold text-on-surface">{disponiblesCount}</span>
+                          <p className="font-label text-[11px] text-on-surface-variant mt-0.5">
+                            {totalEquipos > 0 ? Math.round((disponiblesCount / totalEquipos) * 100) : 0}% del inventario
+                          </p>
+                        </div>
+                      </div>
+                      <div className="bg-surface-container-lowest rounded-xl p-4 border border-outline-variant/20 shadow-sm flex flex-col justify-between">
+                        <div className="flex justify-between items-start">
+                          <span className="font-label text-xs uppercase tracking-widest text-on-surface-variant">Reservados</span>
+                          <span className="material-symbols-outlined text-primary bg-primary/10 p-1.5 rounded-lg text-[18px]">event_available</span>
+                        </div>
+                        <div className="mt-3">
+                          <span className="font-headline text-3xl font-bold text-on-surface">{reservadosCount}</span>
+                        </div>
+                      </div>
+                      <div className="bg-surface-container-lowest rounded-xl p-4 border border-outline-variant/20 shadow-sm flex flex-col justify-between">
+                        <div className="flex justify-between items-start">
+                          <span className="font-label text-xs uppercase tracking-widest text-on-surface-variant">Mantenimiento</span>
+                          <span className="material-symbols-outlined text-orange-500 bg-orange-50 p-1.5 rounded-lg text-[18px]">build</span>
+                        </div>
+                        <div className="mt-3">
+                          <span className="font-headline text-3xl font-bold text-on-surface">{mantenimientoCount}</span>
+                          {mantenimientoCount > 0 && (
+                            <p className="font-label text-[11px] text-orange-500 flex items-center gap-0.5 mt-0.5">
+                              <span className="material-symbols-outlined text-[12px]">warning</span>
+                              Requiere atención
+                            </p>
                           )}
-                        </button>
+                        </div>
                       </div>
-                    </form>
-                  )}
+                    </div>
 
-                  {/* Lista de equipos */}
-                  <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 shadow-sm overflow-hidden">
-                    {loadingEquipos ? (
-                      <div className="flex items-center justify-center py-16 gap-3">
-                        <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                        <span className="font-body text-sm text-on-surface-variant">Cargando equipos…</span>
+                    {/* Toolbar: search + register button */}
+                    <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+                      <div className="relative w-full sm:max-w-xs">
+                        <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">search</span>
+                        <input
+                          type="text"
+                          value={equipoSearch}
+                          onChange={e => setEquipoSearch(e.target.value)}
+                          placeholder="Buscar por nombre, marca, tipo…"
+                          className="w-full pl-9 pr-3 py-2 bg-surface-container-low border border-outline-variant/30 rounded-lg text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
+                        />
                       </div>
-                    ) : equipos.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
-                        <span className="material-symbols-outlined text-on-surface-variant text-4xl">devices_off</span>
-                        <p className="font-body text-sm text-on-surface-variant">No hay equipos registrados.</p>
-                        <p className="font-body text-xs text-on-surface-variant/60">Agrega el primer equipo con el botón de arriba.</p>
-                      </div>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead className="bg-surface-container border-b border-outline-variant/20">
-                            <tr>
-                              <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-6 py-3">Nombre</th>
-                              <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-6 py-3">Tipo</th>
-                              <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-6 py-3">Estado</th>
-                              <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-6 py-3">Acciones</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-outline-variant/10">
-                            {equipos.map((eq) => (
-                              <tr key={eq.id} className="hover:bg-surface-container/50 transition-colors">
-                                <td className="px-6 py-4 font-body font-medium text-on-surface">{eq.nombre}</td>
-                                <td className="px-6 py-4 font-label text-xs uppercase tracking-wider text-primary">{eq.tipo}</td>
-                                <td className="px-6 py-4">
-                                  <button
-                                    onClick={() => handleToggleEquipo(eq.id, !eq.disponible)}
-                                    className={`inline-flex items-center gap-1.5 text-xs font-label font-bold px-2.5 py-1 rounded-md transition-colors ${
-                                      eq.disponible
-                                        ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                                        : 'bg-red-100 text-red-700 hover:bg-red-200'
-                                    }`}
+                      <button
+                        onClick={() => { setShowEquipoForm(v => !v); setEquipoFormStage('form') }}
+                        className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label text-sm font-medium hover:bg-primary-container transition-colors shrink-0"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">{showEquipoForm ? 'close' : 'add'}</span>
+                        {showEquipoForm ? 'Cancelar' : 'Registrar Equipo'}
+                      </button>
+                    </div>
+
+                    {/* Registration form — 3 stages */}
+                    {showEquipoForm && (
+                      <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 shadow-sm overflow-hidden">
+
+                        {/* Stage: processing */}
+                        {equipoFormStage === 'processing' && (
+                          <div className="flex flex-col items-center justify-center py-16 gap-4">
+                            <div className="h-12 w-12 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+                            <p className="font-headline font-bold text-on-surface text-lg">Registrando equipo…</p>
+                            <p className="font-body text-sm text-on-surface-variant">Procesando los datos del nuevo activo.</p>
+                          </div>
+                        )}
+
+                        {/* Stage: success */}
+                        {equipoFormStage === 'success' && (
+                          <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+                            <div className="bg-primary/10 text-primary rounded-full w-16 h-16 flex items-center justify-center">
+                              <span className="material-symbols-outlined text-4xl" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
+                            </div>
+                            <div>  <p className="font-headline font-bold text-on-surface text-xl">¡Equipo{equipoCantidad > 1 ? `s` : ''} Registrado{equipoCantidad > 1 ? `s` : ''}!</p>
+                              <p className="font-body text-sm text-on-surface-variant mt-1">{equipoCantidad > 1 ? `${equipoCantidad} unidades han sido añadidas` : 'El nuevo equipo ha sido añadido'} al inventario con códigos de activo únicos.</p>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Stage: form */}
+                        {equipoFormStage === 'form' && (
+                          <form onSubmit={handleAddEquipo} className="p-5">
+                            <h4 className="font-headline font-bold text-on-surface mb-4 flex items-center gap-2">
+                              <span className="material-symbols-outlined text-primary text-[20px]">add_box</span>
+                              Registrar Nuevo Equipo
+                            </h4>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+
+                              {/* Nombre */}
+                              <div className="sm:col-span-2 lg:col-span-3">
+                                <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Nombre / Modelo *</label>
+                                <input
+                                  type="text"
+                                  value={equipoForm.nombre}
+                                  onChange={(e) => setEquipoField('nombre', e.target.value)}
+                                  placeholder="Ej: Dell Latitude 5520 #3"
+                                  className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
+                                  required
+                                />
+                              </div>
+
+                              {/* Categoría */}
+                              <div>
+                                <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Categoría *</label>
+                                <select
+                                  value={equipoForm.categoria}
+                                  onChange={(e) => setEquipoField('categoria', e.target.value)}
+                                  className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
+                                  required
+                                >
+                                  <option value="">Selecciona categoría</option>
+                                  <option value="ordenador">Ordenador</option>
+                                  <option value="movil">Móvil</option>
+                                </select>
+                              </div>
+
+                              {/* Sistema Operativo */}
+                              <div>
+                                <label className={`font-label text-xs uppercase tracking-widest block mb-1.5 ${equipoForm.categoria ? 'text-on-surface-variant' : 'text-on-surface-variant/40'}`}>
+                                  Sistema Operativo *
+                                </label>
+                                <select
+                                  value={equipoForm.sistema_operativo}
+                                  onChange={(e) => setEquipoField('sistema_operativo', e.target.value)}
+                                  disabled={!equipoForm.categoria}
+                                  className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-40 disabled:cursor-not-allowed"
+                                  required
+                                >
+                                  <option value="">Selecciona SO</option>
+                                  {getSistemas(equipoForm.categoria).map(o => (
+                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              {/* Marca */}
+                              <div>
+                                <label className={`font-label text-xs uppercase tracking-widest block mb-1.5 ${equipoForm.sistema_operativo ? 'text-on-surface-variant' : 'text-on-surface-variant/40'}`}>
+                                  Marca *
+                                </label>
+                                <select
+                                  value={equipoForm.marca}
+                                  onChange={(e) => setEquipoField('marca', e.target.value)}
+                                  disabled={!equipoForm.sistema_operativo}
+                                  className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-40 disabled:cursor-not-allowed"
+                                  required
+                                >
+                                  <option value="">Selecciona marca</option>
+                                  {getMarcas(equipoForm.categoria, equipoForm.sistema_operativo).map(o => (
+                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              {/* Tipo de equipo */}
+                              <div>
+                                <label className={`font-label text-xs uppercase tracking-widest block mb-1.5 ${equipoForm.marca ? 'text-on-surface-variant' : 'text-on-surface-variant/40'}`}>
+                                  Tipo de Equipo *
+                                </label>
+                                <select
+                                  value={equipoForm.tipo_equipo}
+                                  onChange={(e) => setEquipoField('tipo_equipo', e.target.value)}
+                                  disabled={!equipoForm.marca}
+                                  className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-40 disabled:cursor-not-allowed"
+                                  required
+                                >
+                                  <option value="">Selecciona tipo</option>
+                                  {getTipos(equipoForm.categoria, equipoForm.sistema_operativo, equipoForm.marca).map(o => (
+                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              {/* Estado inicial */}
+                              <div>
+                                <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Estado Inicial</label>
+                                <div className="flex items-center gap-3 bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2">
+                                  <span className={`inline-flex items-center gap-1 text-xs font-label font-bold px-2 py-0.5 rounded ${
+                                    equipoForm.estado === 'disponible' ? 'bg-green-100 text-green-700' :
+                                    equipoForm.estado === 'reservado'  ? 'bg-primary/10 text-primary' :
+                                    'bg-orange-100 text-orange-700'
+                                  }`}>
+                                    <span className={`w-1.5 h-1.5 rounded-full ${
+                                      equipoForm.estado === 'disponible' ? 'bg-green-500' :
+                                      equipoForm.estado === 'reservado'  ? 'bg-primary' :
+                                      'bg-orange-500'
+                                    }`} />
+                                    {equipoForm.estado === 'disponible' ? 'Disponible' : equipoForm.estado === 'reservado' ? 'Reservado' : 'Mantenimiento'}
+                                  </span>
+                                  <select
+                                    value={equipoForm.estado}
+                                    onChange={(e) => setEquipoField('estado', e.target.value)}
+                                    className="flex-1 bg-transparent text-sm font-body text-on-surface focus:outline-none"
                                   >
-                                    <span className={`w-1.5 h-1.5 rounded-full ${eq.disponible ? 'bg-green-500' : 'bg-red-500'}`} />
-                                    {eq.disponible ? 'Disponible' : 'No disponible'}
-                                  </button>
-                                </td>
-                                <td className="px-6 py-4">
-                                  <button
-                                    onClick={() => handleDeleteEquipo(eq.id)}
-                                    className="p-1.5 rounded-lg text-on-surface-variant hover:bg-red-50 hover:text-red-600 transition-colors"
-                                    title="Eliminar equipo"
-                                  >
-                                    <span className="material-symbols-outlined text-[18px]">delete</span>
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                                    <option value="disponible">Disponible</option>
+                                    <option value="reservado">Reservado</option>
+                                    <option value="mantenimiento">Mantenimiento</option>
+                                  </select>
+                                </div>
+                              </div>
+
+                              {/* Cantidad de unidades */}
+                              <div className="sm:col-span-2 lg:col-span-3">
+                                <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Cantidad de unidades</label>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={20}
+                                  value={equipoCantidad}
+                                  onChange={(e) => {
+                                    const n = Math.max(1, Math.min(20, parseInt(e.target.value) || 1))
+                                    setEquipoCantidad(n)
+                                    setEquipoSeriales(prev => {
+                                      const next = [...prev]
+                                      while (next.length < n) next.push('')
+                                      return next.slice(0, n)
+                                    })
+                                  }}
+                                  className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
+                                />
+                              </div>
+
+                              {/* Números de serie por unidad */}
+                              <div className="sm:col-span-2 lg:col-span-3">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <span className="material-symbols-outlined text-primary text-[16px]">tag</span>
+                                  <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant">
+                                    {equipoCantidad === 1 ? 'Número de serie / IMEI *' : `Números de serie / IMEI * — ${equipoCantidad} unidades`}
+                                  </label>
+                                </div>
+                                <div className="space-y-2">
+                                  {Array.from({ length: equipoCantidad }).map((_, i) => {
+                                    const val = equipoSeriales[i] ?? ''
+                                    const isDuplicate = val.trim().length >= 4 &&
+                                      equipoSeriales.some((s, j) => j !== i && s.trim() === val.trim())
+                                    return (
+                                      <div key={i} className="flex items-center gap-2">
+                                        {equipoCantidad > 1 && (
+                                          <span className="shrink-0 w-6 h-6 rounded-full bg-surface-container flex items-center justify-center text-[10px] font-label font-bold text-on-surface-variant">{i + 1}</span>
+                                        )}
+                                        <div className="relative flex-1">
+                                          <input
+                                            type="text"
+                                            value={val}
+                                            onChange={ev => {
+                                              const next = [...equipoSeriales]
+                                              next[i] = ev.target.value
+                                              setEquipoSeriales(next)
+                                            }}
+                                            placeholder={equipoForm.categoria === 'movil' ? 'IMEI: 123456789012345' : 'S/N: A1B2C3D4E5'}
+                                            maxLength={30}
+                                            className={`w-full bg-surface-container-low border rounded-lg px-3 py-2 text-sm font-mono text-on-surface placeholder:font-body placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 transition ${
+                                              isDuplicate
+                                                ? 'border-red-400 focus:ring-red-300/40'
+                                                : val.trim().length > 0 && val.trim().length < 4
+                                                ? 'border-amber-400 focus:ring-amber-300/40'
+                                                : val.trim().length >= 4
+                                                ? 'border-green-400 focus:ring-green-300/40'
+                                                : 'border-outline-variant/30 focus:ring-primary/40'
+                                            }`}
+                                            required
+                                          />
+                                          {val.trim().length >= 4 && !isDuplicate && (
+                                            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 material-symbols-outlined text-green-500 text-[16px]" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
+                                          )}
+                                          {isDuplicate && (
+                                            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 material-symbols-outlined text-red-500 text-[16px]">error</span>
+                                          )}
+                                        </div>
+                                        {isDuplicate && (
+                                          <p className="text-[10px] text-red-500 font-body">Duplicado</p>
+                                        )}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                                <p className="mt-1.5 text-xs font-body text-on-surface-variant flex items-center gap-1">
+                                  <span className="material-symbols-outlined text-[13px]">info</span>
+                                  {equipoForm.categoria === 'movil' ? 'Para móviles usa el IMEI (15 dígitos). Lo encuentras en *#06#.' : 'Usa el número de serie del fabricante (etiqueta inferior del equipo).'}
+                                </p>
+                              </div>
+
+                              {/* Imagen */}
+                              <div className="sm:col-span-2">
+                                <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Imagen</label>
+                                <div className="flex items-center gap-3">
+                                  {equipoImageFile && (
+                                    <img src={URL.createObjectURL(equipoImageFile)} alt="preview" className="w-12 h-12 rounded-lg object-cover border border-outline-variant/20 shrink-0" />
+                                  )}
+                                  <label className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-outline-variant/50 cursor-pointer hover:border-primary/60 transition-colors text-sm font-body text-on-surface-variant w-full">
+                                    <span className="material-symbols-outlined text-[18px]">upload</span>
+                                    <span className="truncate">{equipoImageFile ? equipoImageFile.name : 'Seleccionar imagen…'}</span>
+                                    <input type="file" accept="image/*" className="hidden" onChange={e => setEquipoImageFile(e.target.files?.[0] ?? null)} />
+                                  </label>
+                                  {equipoImageFile && (
+                                    <button type="button" onClick={() => setEquipoImageFile(null)} className="p-1 rounded text-red-400 hover:bg-red-50 shrink-0">
+                                      <span className="material-symbols-outlined text-[16px]">close</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="mt-5 flex items-center justify-end gap-3 pt-4 border-t border-outline-variant/15">
+                              <button
+                                type="button"
+                                onClick={() => { setShowEquipoForm(false); setEquipoFormStage('form'); setEquipoImageFile(null); setEquipoSeriales(['']); setEquipoCantidad(1) }}
+                                className="px-4 py-2 rounded-lg border border-outline-variant/30 text-sm font-label font-medium text-on-surface hover:bg-surface-container transition-colors"
+                              >
+                                Cancelar
+                              </button>
+                              <button
+                                type="submit"
+                                disabled={addingEquipo}
+                                className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2 rounded-lg font-label text-sm font-medium hover:bg-primary-container disabled:opacity-60 transition-colors"
+                              >
+                                <span className="material-symbols-outlined text-[18px]">save</span>
+                                Registrar Equipo
+                              </button>
+                            </div>
+                          </form>
+                        )}
                       </div>
                     )}
+
+                    {/* Equipment table */}
+                    <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 shadow-sm overflow-hidden">
+                      {loadingEquipos ? (
+                        <div className="flex items-center justify-center py-16 gap-3">
+                          <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                          <span className="font-body text-sm text-on-surface-variant">Cargando equipos…</span>
+                        </div>
+                      ) : filteredEquipos.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+                          <span className="material-symbols-outlined text-on-surface-variant text-4xl">devices_off</span>
+                          <p className="font-body text-sm text-on-surface-variant">
+                            {equipoSearch ? 'Sin resultados para tu búsqueda.' : 'No hay equipos registrados.'}
+                          </p>
+                          {!equipoSearch && (
+                            <p className="font-body text-xs text-on-surface-variant/60">Registra el primer equipo con el botón de arriba.</p>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead className="bg-surface-container border-b border-outline-variant/20">
+                              <tr>
+                                <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-5 py-3">Nombre</th>
+                                <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-5 py-3 hidden md:table-cell">Categoría</th>
+                                <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-5 py-3 hidden lg:table-cell">Marca</th>
+                                <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-5 py-3 hidden lg:table-cell">SO</th>
+                                <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-5 py-3">Tipo</th>
+                                <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-5 py-3">Estado</th>
+                                <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-5 py-3">Acciones</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-outline-variant/10">
+                              {filteredEquipos.map((eq) => (
+                                <tr key={eq.id} className="even:bg-surface-container-lowest/50 hover:bg-surface-container/40 transition-colors">
+                                  {editingEquipoId === eq.id ? (
+                                    <>
+                                      <td className="px-5 py-3">
+                                        <div className="flex flex-col gap-1">
+                                          <input type="text" value={editEquipoForm.nombre} onChange={e => setEditEquipoField('nombre', e.target.value)} className="w-full bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none min-w-[120px]" />
+                                          <label className="flex items-center gap-1 cursor-pointer text-xs text-on-surface-variant hover:text-primary transition-colors">
+                                            {editEquipoImageFile
+                                              ? <img src={URL.createObjectURL(editEquipoImageFile)} alt="" className="w-5 h-5 rounded object-cover shrink-0" />
+                                              : <span className="material-symbols-outlined text-[14px]">image</span>}
+                                            <span className="truncate max-w-[100px]">{editEquipoImageFile ? editEquipoImageFile.name : 'Cambiar imagen…'}</span>
+                                            <input type="file" accept="image/*" className="hidden" onChange={e => setEditEquipoImageFile(e.target.files?.[0] ?? null)} />
+                                          </label>
+                                        </div>
+                                      </td>
+                                      <td className="px-5 py-3 hidden md:table-cell">
+                                        <select value={editEquipoForm.categoria} onChange={e => setEditEquipoField('categoria', e.target.value)} className="bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none">
+                                          <option value="">—</option>
+                                          <option value="ordenador">Ordenador</option>
+                                          <option value="movil">Móvil</option>
+                                        </select>
+                                      </td>
+                                      <td className="px-5 py-3 hidden lg:table-cell">
+                                        <select value={editEquipoForm.marca} onChange={e => setEditEquipoField('marca', e.target.value)} disabled={!editEquipoForm.sistema_operativo} className="bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none disabled:opacity-40">
+                                          <option value="">—</option>
+                                          {getMarcas(editEquipoForm.categoria, editEquipoForm.sistema_operativo).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                        </select>
+                                      </td>
+                                      <td className="px-5 py-3 hidden lg:table-cell">
+                                        <select value={editEquipoForm.sistema_operativo} onChange={e => setEditEquipoField('sistema_operativo', e.target.value)} disabled={!editEquipoForm.categoria} className="bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none disabled:opacity-40">
+                                          <option value="">—</option>
+                                          {getSistemas(editEquipoForm.categoria).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                        </select>
+                                      </td>
+                                      <td className="px-5 py-3">
+                                        <select value={editEquipoForm.tipo_equipo} onChange={e => setEditEquipoField('tipo_equipo', e.target.value)} disabled={!editEquipoForm.marca} className="bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none disabled:opacity-40">
+                                          <option value="">—</option>
+                                          {getTipos(editEquipoForm.categoria, editEquipoForm.sistema_operativo, editEquipoForm.marca).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                        </select>
+                                      </td>
+                                      <td className="px-5 py-3">
+                                        <select value={editEquipoForm.estado} onChange={e => setEditEquipoField('estado', e.target.value)} className="bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none">
+                                          <option value="disponible">Disponible</option>
+                                          <option value="reservado">Reservado</option>
+                                          <option value="mantenimiento">Mantenimiento</option>
+                                        </select>
+                                      </td>
+                                      <td className="px-5 py-3">
+                                        <div className="flex items-center gap-1">
+                                          <button onClick={() => handleSaveEquipo(eq.id)} disabled={savingEquipo} className="p-1.5 rounded-lg text-green-600 hover:bg-green-50 transition-colors disabled:opacity-50">
+                                            {savingEquipo ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-green-600 border-t-transparent inline-block" /> : <span className="material-symbols-outlined text-[16px]">check</span>}
+                                          </button>
+                                          <button onClick={() => { setEditingEquipoId(null); setEditEquipoImageFile(null) }} className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors">
+                                            <span className="material-symbols-outlined text-[16px]">close</span>
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <td className="px-5 py-4 font-body font-medium text-on-surface">
+                                        <div className="flex items-center gap-3">
+                                          {eq.imagen_url && (
+                                            <img src={eq.imagen_url} alt={eq.nombre} className="w-8 h-8 rounded-lg object-cover shrink-0 border border-outline-variant/20" />
+                                          )}
+                                          <div>
+                                            <span className="line-clamp-1">{eq.nombre}</span>
+                                            {eq.numero_serie && (
+                                              <code className="text-[10px] font-mono text-on-surface-variant bg-surface-container px-1.5 py-0.5 rounded mt-0.5 block tracking-wider">{eq.numero_serie}</code>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </td>
+                                      <td className="px-5 py-4 font-body text-on-surface-variant capitalize hidden md:table-cell">{eq.categoria}</td>
+                                      <td className="px-5 py-4 font-body text-on-surface-variant capitalize hidden lg:table-cell">{eq.marca}</td>
+                                      <td className="px-5 py-4 font-body text-on-surface-variant capitalize hidden lg:table-cell">{eq.sistema_operativo}</td>
+                                      <td className="px-5 py-4 font-label text-xs uppercase tracking-wider text-primary">{TIPO_EQUIPO_LABELS[eq.tipo_equipo] ?? eq.tipo_equipo}</td>
+                                      <td className="px-5 py-4">
+                                        <span className={`inline-flex items-center gap-1 text-xs font-label font-bold px-2 py-0.5 rounded ${
+                                          eq.estado === 'disponible'   ? 'bg-green-100 text-green-700' :
+                                          eq.estado === 'reservado'    ? 'bg-primary/10 text-primary' :
+                                          'bg-orange-100 text-orange-700'
+                                        }`}>
+                                          <span className={`w-1.5 h-1.5 rounded-full ${
+                                            eq.estado === 'disponible' ? 'bg-green-500' :
+                                            eq.estado === 'reservado'  ? 'bg-primary' :
+                                            'bg-orange-500'
+                                          }`} />
+                                          {eq.estado === 'disponible' ? 'Disponible' : eq.estado === 'reservado' ? 'Reservado' : 'Mantenimiento'}
+                                        </span>
+                                      </td>
+                                      <td className="px-5 py-4">
+                                        <div className="flex items-center gap-1">
+                                          <button
+                                            onClick={() => {
+                                              setEditingEquipoId(eq.id)
+                                              setEditEquipoForm({
+                                                nombre: eq.nombre,
+                                                categoria: eq.categoria,
+                                                sistema_operativo: eq.sistema_operativo,
+                                                marca: eq.marca,
+                                                tipo_equipo: eq.tipo_equipo,
+                                                estado: eq.estado,
+                                                imagen_url: eq.imagen_url ?? '',
+                                              })
+                                            }}
+                                            title="Editar equipo"
+                                            className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors"
+                                          >
+                                            <span className="material-symbols-outlined text-[16px]">edit</span>
+                                          </button>
+                                          <button
+                                            onClick={() => handleDeleteEquipo(eq.id)}
+                                            title="Eliminar equipo"
+                                            className="p-1.5 rounded-lg text-on-surface-variant hover:bg-red-50 hover:text-red-600 transition-colors"
+                                          >
+                                            <span className="material-symbols-outlined text-[16px]">delete</span>
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </>
+                                  )}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+
                   </div>
-                </div>
-              )}
+                )
+              })()}
 
               {/* ─── Admin: Gestión de salas ──────────────────────────── */}
               {adminSubTab === 'rooms' && (
@@ -1649,8 +2400,22 @@ export default function MainMenuPage() {
                           </select>
                         </div>
                         <div className="sm:col-span-2 lg:col-span-3">
-                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">URL Imagen</label>
-                          <input type="text" value={salaForm.imagen_url} onChange={e => setSalaForm(f => ({ ...f, imagen_url: e.target.value }))} placeholder="/rooms/imagen.jpg" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Imagen</label>
+                          <div className="flex items-center gap-3">
+                            {salaImageFile && (
+                              <img src={URL.createObjectURL(salaImageFile)} alt="preview" className="w-12 h-12 rounded-lg object-cover border border-outline-variant/20 shrink-0" />
+                            )}
+                            <label className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-outline-variant/50 cursor-pointer hover:border-primary/60 transition-colors text-sm font-body text-on-surface-variant w-full">
+                              <span className="material-symbols-outlined text-[18px]">upload</span>
+                              <span className="truncate">{salaImageFile ? salaImageFile.name : 'Seleccionar imagen…'}</span>
+                              <input type="file" accept="image/*" className="hidden" onChange={e => setSalaImageFile(e.target.files?.[0] ?? null)} />
+                            </label>
+                            {salaImageFile && (
+                              <button type="button" onClick={() => setSalaImageFile(null)} className="p-1 rounded text-red-400 hover:bg-red-50 shrink-0">
+                                <span className="material-symbols-outlined text-[16px]">close</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                       <div className="flex justify-end">
@@ -1691,7 +2456,18 @@ export default function MainMenuPage() {
                               <tr key={s.id} className="hover:bg-surface-container/50 transition-colors">
                                 {editingSalaId === s.id ? (
                                   <>
-                                    <td className="px-6 py-3"><input type="text" value={editSalaForm.nombre} onChange={e => setEditSalaForm(f => ({ ...f, nombre: e.target.value }))} className="w-full bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none" /></td>
+                                    <td className="px-6 py-3">
+                                      <div className="flex flex-col gap-1">
+                                        <input type="text" value={editSalaForm.nombre} onChange={e => setEditSalaForm(f => ({ ...f, nombre: e.target.value }))} className="w-full bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none" />
+                                        <label className="flex items-center gap-1 cursor-pointer text-xs text-on-surface-variant hover:text-primary transition-colors">
+                                          {editSalaImageFile
+                                            ? <img src={URL.createObjectURL(editSalaImageFile)} alt="" className="w-5 h-5 rounded object-cover shrink-0" />
+                                            : <span className="material-symbols-outlined text-[14px]">image</span>}
+                                          <span className="truncate max-w-[100px]">{editSalaImageFile ? editSalaImageFile.name : 'Cambiar imagen…'}</span>
+                                          <input type="file" accept="image/*" className="hidden" onChange={e => setEditSalaImageFile(e.target.files?.[0] ?? null)} />
+                                        </label>
+                                      </div>
+                                    </td>
                                     <td className="px-6 py-3"><input type="number" min="1" value={editSalaForm.capacidad} onChange={e => setEditSalaForm(f => ({ ...f, capacidad: e.target.value }))} className="w-16 bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none" /></td>
                                     <td className="px-6 py-3"><input type="text" value={editSalaForm.ubicacion} onChange={e => setEditSalaForm(f => ({ ...f, ubicacion: e.target.value }))} className="w-full bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none" /></td>
                                     <td className="px-6 py-3">
@@ -1706,7 +2482,7 @@ export default function MainMenuPage() {
                                         <button onClick={() => handleSaveSala(s.id)} disabled={savingSala} className="p-1.5 rounded-lg text-green-600 hover:bg-green-50 transition-colors disabled:opacity-50">
                                           {savingSala ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-green-600 border-t-transparent inline-block" /> : <span className="material-symbols-outlined text-[16px]">check</span>}
                                         </button>
-                                        <button onClick={() => setEditingSalaId(null)} className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors">
+                                        <button onClick={() => { setEditingSalaId(null); setEditSalaImageFile(null) }} className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors">
                                           <span className="material-symbols-outlined text-[16px]">close</span>
                                         </button>
                                       </div>
@@ -1766,7 +2542,7 @@ export default function MainMenuPage() {
         {navItems.map((item) => (
           <button
             key={item.id}
-            onClick={() => setActiveTab(item.id)}
+            onClick={() => { setActiveTab(item.id); if (item.id === 'tech') loadEquipos() }}
             className={`flex flex-col items-center justify-center w-full h-full gap-0.5 transition-colors
               ${activeTab === item.id ? 'text-primary' : 'text-secondary hover:text-primary'}`}
           >
@@ -1786,12 +2562,12 @@ export default function MainMenuPage() {
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
           {/* Backdrop */}
           <div
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
             onClick={() => !submitting && setModalOpen(false)}
           />
 
           {/* Panel */}
-          <div className="relative w-full max-w-md bg-surface rounded-2xl shadow-2xl border border-outline-variant/20 overflow-hidden">
+          <div className="relative w-full max-w-xl bg-surface rounded-2xl shadow-2xl border border-outline-variant/20 flex flex-col max-h-[90vh]">
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-5 border-b border-outline-variant/15">
               <div className="flex items-center gap-3">
@@ -1812,7 +2588,7 @@ export default function MainMenuPage() {
             </div>
 
             {/* Form */}
-            <form onSubmit={handleSubmitReserva} className="px-6 py-5 space-y-4">
+            <form onSubmit={handleSubmitReserva} className="px-6 py-5 space-y-4 overflow-y-auto flex-1">
               {/* Título */}
               <div>
                 <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">
@@ -1823,7 +2599,7 @@ export default function MainMenuPage() {
                   value={form.titulo}
                   onChange={(e) => setForm({ ...form, titulo: e.target.value })}
                   placeholder="Ej: Reunión de equipo Q3"
-                  className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-4 py-2.5 text-sm font-body text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:ring-2 focus:ring-primary/40 transition"
+                  className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition"
                   disabled={submitting}
                 />
               </div>
@@ -1836,7 +2612,7 @@ export default function MainMenuPage() {
                 <select
                   value={form.sala_id}
                   onChange={(e) => setForm({ ...form, sala_id: e.target.value })}
-                  className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-4 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40 transition appearance-none"
+                  className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition appearance-none"
                   disabled={submitting || loadingSalas}
                 >
                   <option value="">Selecciona una sala…</option>
@@ -1863,9 +2639,66 @@ export default function MainMenuPage() {
                   value={form.fecha}
                   min={new Date().toISOString().split('T')[0]}
                   onChange={(e) => setForm({ ...form, fecha: e.target.value })}
-                  className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-4 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40 transition"
+                  className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition"
                   disabled={submitting}
                 />
+              </div>
+
+              {/* Duración preestablecida */}
+              <div>
+                <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">
+                  Duración
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {([0.5, 1, 2, 4, 6, 8] as const).map((h) => (
+                    <button
+                      key={h}
+                      type="button"
+                      disabled={submitting}
+                      onClick={() => {
+                        setDuracionPreset(h)
+                        if (form.hora_inicio) {
+                          const fin = addHoras(form.hora_inicio, h)
+                          setForm(f => ({ ...f, hora_fin: fin }))
+                        }
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-label font-medium border transition-colors ${
+                        duracionPreset === h
+                          ? 'bg-primary text-on-primary border-primary'
+                          : 'border-outline-variant/40 text-on-surface hover:bg-surface-container'
+                      }`}
+                    >
+                      {h === 0.5 ? '30 min' : h === 1 ? '1 h' : `${h} h`}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={() => {
+                      setDuracionPreset('dia')
+                      setForm(f => ({ ...f, hora_inicio: '00:00', hora_fin: '23:59' }))
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-label font-medium border transition-colors ${
+                      duracionPreset === 'dia'
+                        ? 'bg-primary text-on-primary border-primary'
+                        : 'border-outline-variant/40 text-on-surface hover:bg-surface-container'
+                    }`}
+                  >
+                    Día completo
+                  </button>
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={() => setDuracionPreset('libre')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-label font-medium border transition-colors ${
+                      duracionPreset === 'libre'
+                        ? 'bg-primary text-on-primary border-primary'
+                        : 'border-outline-variant/40 text-on-surface hover:bg-surface-container'
+                    }`}
+                  >
+                    Libre
+                  </button>
+                </div>
               </div>
 
               {/* Horas */}
@@ -1877,8 +2710,20 @@ export default function MainMenuPage() {
                   <input
                     type="time"
                     value={form.hora_inicio}
-                    onChange={(e) => setForm({ ...form, hora_inicio: e.target.value })}
-                    className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-4 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40 transition"
+                    onChange={(e) => {
+                      const inicio = e.target.value
+                      setForm(f => {
+                        const next = { ...f, hora_inicio: inicio }
+                        if (duracionPreset !== 'libre' && duracionPreset !== 'dia' && inicio) {
+                          next.hora_fin = addHoras(inicio, duracionPreset as number)
+                        } else if (duracionPreset === 'dia') {
+                          next.hora_inicio = '00:00'
+                          next.hora_fin = '23:59'
+                        }
+                        return next
+                      })
+                    }}
+                    className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition"
                     disabled={submitting}
                   />
                 </div>
@@ -1889,12 +2734,51 @@ export default function MainMenuPage() {
                   <input
                     type="time"
                     value={form.hora_fin}
-                    onChange={(e) => setForm({ ...form, hora_fin: e.target.value })}
-                    className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-4 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40 transition"
+                    onChange={(e) => {
+                      const fin = e.target.value
+                      setForm(f => {
+                        // Si el usuario cambia la hora de fin manualmente, recalcular duración real
+                        // y cambiar preset a 'libre' si no coincide
+                        if (f.hora_inicio && fin > f.hora_inicio) {
+                          const diff = diffHoras(f.hora_inicio, fin)
+                          const isFullDay = f.hora_inicio === '00:00' && fin === '23:59'
+                          if (isFullDay) {
+                            setDuracionPreset('dia')
+                          } else {
+                            const match = ([0.5, 1, 2, 4, 6, 8] as number[]).find(h => Math.abs(h - diff) < 0.1)
+                            setDuracionPreset(match ?? 'libre')
+                          }
+                        } else {
+                          setDuracionPreset('libre')
+                        }
+                        return { ...f, hora_fin: fin }
+                      })
+                    }}
+                    className={`w-full rounded-lg border bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition ${
+                      form.hora_fin && form.hora_inicio && form.hora_fin <= form.hora_inicio
+                        ? 'border-red-400 bg-red-50/40'
+                        : 'border-outline-variant/40'
+                    }`}
                     disabled={submitting}
                   />
                 </div>
               </div>
+
+              {/* Resumen de duración */}
+              {form.hora_inicio && form.hora_fin && form.hora_fin > form.hora_inicio && (
+                <div className="flex items-center gap-2 text-xs font-body text-on-surface-variant bg-surface-container rounded-lg px-3 py-2">
+                  <span className="material-symbols-outlined text-[15px] text-primary">schedule</span>
+                  <span>Duración: <strong className="text-on-surface">{formatDuracion(diffHoras(form.hora_inicio, form.hora_fin))}</strong></span>
+                  <span className="mx-1 text-outline-variant">·</span>
+                  <span>{form.hora_inicio} → {form.hora_fin}</span>
+                </div>
+              )}
+              {form.hora_fin && form.hora_inicio && form.hora_fin <= form.hora_inicio && (
+                <p className="text-xs text-red-500 font-body flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[14px]">error</span>
+                  La hora de fin debe ser posterior a la de inicio.
+                </p>
+              )}
 
               {/* Error */}
               {modalError && (
@@ -1904,11 +2788,98 @@ export default function MainMenuPage() {
                 </div>
               )}
 
-              {/* Success */}
+              {/* ── Equipo tecnológico (opcional) ─────────────────── */}
+              <div className="border-t border-outline-variant/15 pt-4">
+                <label className="flex items-center gap-3 cursor-pointer select-none group">
+                  <div className={`relative w-10 h-6 rounded-full transition-colors shrink-0 ${necesitaEquipo ? 'bg-primary' : 'bg-outline-variant/40 group-hover:bg-outline-variant/60'}`}>
+                    <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${necesitaEquipo ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                    <input
+                      type="checkbox"
+                      className="sr-only"
+                      checked={necesitaEquipo}
+                      onChange={e => {
+                        setNecesitaEquipo(e.target.checked)
+                        if (!e.target.checked) setEquiposSeleccionados([])
+                      }}
+                      disabled={submitting}
+                    />
+                  </div>
+                  <div>
+                    <p className="font-label text-sm font-medium text-on-surface">¿Necesitas equipo tecnológico?</p>
+                    <p className="font-body text-xs text-on-surface-variant">Selecciona los dispositivos disponibles para esta reserva</p>
+                  </div>
+                </label>
+
+                {necesitaEquipo && (
+                  <div className="mt-3 space-y-2">
+                    {loadingEquipos ? (
+                      <div className="flex items-center justify-center gap-2 text-sm font-body text-on-surface-variant py-6">
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                        Cargando equipos…
+                      </div>
+                    ) : equipos.filter(e => e.estado === 'disponible').length === 0 ? (
+                      <div className="flex items-center gap-2 text-sm font-body text-on-surface-variant bg-surface-container rounded-lg px-4 py-3">
+                        <span className="material-symbols-outlined text-[18px]">devices_off</span>
+                        No hay equipos disponibles en este momento.
+                      </div>
+                    ) : (
+                      <div className="max-h-44 overflow-y-auto space-y-1.5 pr-0.5">
+                        {equipos.filter(e => e.estado === 'disponible').map(eq => {
+                          const sel = equiposSeleccionados.includes(eq.id)
+                          return (
+                            <label
+                              key={eq.id}
+                              className={`flex items-center gap-3 p-2.5 rounded-lg cursor-pointer border transition-colors ${sel ? 'border-primary/50 bg-primary/5' : 'border-outline-variant/20 hover:bg-surface-container'}`}
+                            >
+                              <input
+                                type="checkbox"
+                                className="sr-only"
+                                checked={sel}
+                                onChange={() => setEquiposSeleccionados(prev =>
+                                  sel ? prev.filter(id => id !== eq.id) : [...prev, eq.id]
+                                )}
+                                disabled={submitting}
+                              />
+                              <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${sel ? 'bg-primary border-primary' : 'border-outline-variant'}`}>
+                                {sel && <span className="material-symbols-outlined text-on-primary" style={{ fontSize: '11px' }}>check</span>}
+                              </div>
+                              {eq.imagen_url ? (
+                                <img src={eq.imagen_url} alt={eq.nombre} className="w-8 h-8 rounded-md object-cover shrink-0 border border-outline-variant/20" />
+                              ) : (
+                                <div className="w-8 h-8 rounded-md bg-surface-container flex items-center justify-center shrink-0">
+                                  <span className="material-symbols-outlined text-on-surface-variant text-[16px]">devices</span>
+                                </div>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-body font-medium text-on-surface truncate">{eq.nombre}</p>
+                                <p className="text-xs font-body text-on-surface-variant">{TIPO_EQUIPO_LABELS[eq.tipo_equipo] ?? eq.tipo_equipo} · {eq.marca}</p>
+                                {eq.numero_serie && (
+                                  <code className="text-[10px] font-mono text-primary">{eq.numero_serie}</code>
+                                )}
+                              </div>
+                            </label>
+                          )
+                        })}
+                      </div>
+                    )}
+                    {equiposSeleccionados.length > 0 && (
+                      <p className="text-xs font-body text-primary flex items-center gap-1 pt-0.5">
+                        <span className="material-symbols-outlined text-[14px]" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
+                        {equiposSeleccionados.length} equipo{equiposSeleccionados.length > 1 ? 's' : ''} seleccionado{equiposSeleccionados.length > 1 ? 's' : ''}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Coming soon */}
               {modalSuccess && (
-                <div className="flex items-center gap-2 bg-green-50 text-green-700 rounded-lg px-4 py-3 text-sm font-body">
-                  <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
-                  ¡Reserva creada con éxito!
+                <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                  <span className="material-symbols-outlined text-[22px] text-amber-500 shrink-0 mt-0.5" style={{ fontVariationSettings: "'FILL' 1" }}>rocket_launch</span>
+                  <div>
+                    <p className="font-label text-sm font-bold text-amber-800">Disponible en el próximo sprint</p>
+                    <p className="font-body text-xs text-amber-700 mt-0.5">La creación de reservas estará habilitada muy pronto.</p>
+                  </div>
                 </div>
               )}
 
@@ -1925,7 +2896,7 @@ export default function MainMenuPage() {
                 <button
                   type="submit"
                   disabled={submitting || modalSuccess}
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-primary text-on-primary font-label text-sm font-medium hover:bg-primary-container transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-primary text-on-primary font-label text-sm font-medium hover:brightness-105 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {submitting ? (
                     <>
@@ -1949,7 +2920,7 @@ export default function MainMenuPage() {
       {previewSala && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
           <div
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
             onClick={() => setPreviewSala(null)}
           />
           <div className="relative w-full max-w-sm bg-surface rounded-2xl shadow-2xl border border-outline-variant/20 overflow-hidden">

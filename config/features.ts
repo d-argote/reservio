@@ -6,7 +6,7 @@
  */
 export const FEATURES = {
   /** Sprint 2 — Crear / editar / cancelar reservas */
-  reservations: false,
+  reservations: true,
 
   /** Sprint 2 — Reservar sala directamente desde el catálogo */
   roomBooking: false,

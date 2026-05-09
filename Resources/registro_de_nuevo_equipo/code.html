@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Asset Registration Form</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+                "on-primary": "#ffffff",
+                "on-primary-container": "#fefcff",
+                "primary": "#0058be",
+                "background": "#f9f9ff",
+                "on-error-container": "#93000a",
+                "inverse-primary": "#adc6ff",
+                "on-tertiary": "#ffffff",
+                "secondary-fixed-dim": "#bcc7de",
+                "surface-container-lowest": "#ffffff",
+                "on-secondary-fixed": "#111c2d",
+                "tertiary-fixed-dim": "#ffb786",
+                "inverse-on-surface": "#eff0fa",
+                "on-tertiary-fixed": "#311400",
+                "on-secondary-fixed-variant": "#3c475a",
+                "secondary-container": "#d5e0f8",
+                "tertiary": "#924700",
+                "on-primary-fixed-variant": "#004395",
+                "primary-fixed": "#d8e2ff",
+                "surface-container-low": "#f2f3fd",
+                "on-secondary-container": "#586377",
+                "on-tertiary-container": "#fffbff",
+                "outline": "#727785",
+                "on-tertiary-fixed-variant": "#723600",
+                "primary-container": "#2170e4",
+                "on-background": "#191b23",
+                "surface-bright": "#f9f9ff",
+                "surface": "#f9f9ff",
+                "surface-variant": "#e1e2ec",
+                "surface-tint": "#005ac2",
+                "error": "#ba1a1a",
+                "on-error": "#ffffff",
+                "on-primary-fixed": "#001a42",
+                "on-surface": "#191b23",
+                "error-container": "#ffdad6",
+                "inverse-surface": "#2e3038",
+                "tertiary-container": "#b75b00",
+                "surface-container": "#ecedf7",
+                "secondary-fixed": "#d8e3fb",
+                "on-surface-variant": "#424754",
+                "on-secondary": "#ffffff",
+                "tertiary-fixed": "#ffdcc6",
+                "outline-variant": "#c2c6d6",
+                "surface-container-high": "#e6e7f2",
+                "secondary": "#545f73",
+                "surface-dim": "#d8d9e3",
+                "surface-container-highest": "#e1e2ec",
+                "primary-fixed-dim": "#adc6ff"
+        },
+        "borderRadius": {
+                "DEFAULT": "0.125rem",
+                "lg": "0.25rem",
+                "xl": "0.5rem",
+                "full": "0.75rem"
+        },
+        "spacing": {
+                "xl": "32px",
+                "lg": "24px",
+                "unit": "4px",
+                "xs": "4px",
+                "md": "16px",
+                "sm": "8px",
+                "margin": "24px",
+                "gutter": "16px"
+        },
+        "fontFamily": {
+                "table-header": ["Inter"],
+                "data-tabular": ["Inter"],
+                "body-md": ["Inter"],
+                "h1": ["Inter"],
+                "h2": ["Inter"],
+                "body-sm": ["Inter"],
+                "badge": ["Inter"]
+        },
+        "fontSize": {
+                "table-header": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                "data-tabular": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                "h1": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                "h2": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                "body-sm": ["13px", { "lineHeight": "18px", "fontWeight": "400" }],
+                "badge": ["12px", { "lineHeight": "16px", "fontWeight": "500" }]
+        }
+      }
+    }
+  }
+</script>
+<style>
+  body {
+    font-family: 'Inter', sans-serif;
+  }
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  }
+  /* Tabular figures for data density fields */
+  .tabular-nums {
+    font-feature-settings: "tnum" 1;
+  }
+</style>
+</head>
+<body class="bg-background text-on-surface min-h-screen flex flex-col antialiased">
+<!-- Header for Focused View (Form) -->
+<header class="bg-surface-container-lowest border-b border-surface-variant px-margin py-sm flex items-center sticky top-0 z-10">
+<button class="flex items-center gap-sm text-on-surface-variant hover:text-primary transition-colors focus:outline-none focus:ring-2 focus:ring-primary rounded p-xs">
+<span class="material-symbols-outlined text-[20px]" data-icon="arrow_back">arrow_back</span>
+<span class="font-body-md font-semibold">Back to Inventory</span>
+</button>
+</header>
+<!-- Main Form Content -->
+<main class="flex-1 w-full max-w-4xl mx-auto px-margin py-xl">
+<div class="mb-lg">
+<h1 class="font-h1 text-h1 text-on-surface mb-xs">Asset Registration Form</h1>
+<p class="font-body-md text-body-md text-on-surface-variant">Enter the details to add new equipment to the system. Required fields are marked with an asterisk (*).</p>
+</div>
+<form class="bg-surface-container-lowest border border-outline-variant rounded-lg shadow-sm">
+<div class="p-lg grid grid-cols-1 md:grid-cols-2 gap-x-gutter gap-y-lg">
+<!-- Asset Tag -->
+<div class="flex flex-col gap-xs">
+<label class="font-body-sm text-body-sm font-semibold text-on-surface" for="asset-tag">Asset Tag <span class="text-error">*</span></label>
+<input class="h-[36px] px-sm rounded border border-outline-variant bg-surface-container-lowest text-data-tabular font-data-tabular tabular-nums focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary placeholder:text-outline" id="asset-tag" placeholder="e.g. AST-10001" required="" type="text"/>
+</div>
+<!-- Serial Number -->
+<div class="flex flex-col gap-xs">
+<label class="font-body-sm text-body-sm font-semibold text-on-surface" for="serial-number">Serial Number <span class="text-error">*</span></label>
+<input class="h-[36px] px-sm rounded border border-outline-variant bg-surface-container-lowest text-data-tabular font-data-tabular tabular-nums focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary placeholder:text-outline" id="serial-number" placeholder="Enter alphanumeric serial number" required="" type="text"/>
+<p class="font-body-sm text-[12px] text-on-surface-variant mt-1">Must exactly match the manufacturer's physical label.</p>
+</div>
+<!-- MAC Address -->
+<div class="flex flex-col gap-xs">
+<label class="font-body-sm text-body-sm font-semibold text-on-surface" for="mac-address">MAC Address</label>
+<input class="h-[36px] px-sm rounded border border-outline-variant bg-surface-container-lowest text-data-tabular font-data-tabular tabular-nums focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary placeholder:text-outline" id="mac-address" placeholder="XX:XX:XX:XX:XX:XX" type="text"/>
+</div>
+<!-- Category -->
+<div class="flex flex-col gap-xs">
+<label class="font-body-sm text-body-sm font-semibold text-on-surface" for="category">Category <span class="text-error">*</span></label>
+<select class="h-[36px] px-sm rounded border border-outline-variant bg-surface-container-lowest text-body-md font-body-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary text-on-surface" id="category" required="">
+<option disabled="" selected="" value="">Select Category</option>
+<option value="laptop">Laptop / Workstation</option>
+<option value="desktop">Desktop PC</option>
+<option value="server">Server</option>
+<option value="network">Network Equipment</option>
+<option value="mobile">Mobile Device</option>
+</select>
+</div>
+<!-- Operating System -->
+<div class="flex flex-col gap-xs">
+<label class="font-body-sm text-body-sm font-semibold text-on-surface" for="os">Operating System</label>
+<select class="h-[36px] px-sm rounded border border-outline-variant bg-surface-container-lowest text-body-md font-body-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary text-on-surface" id="os">
+<option disabled="" selected="" value="">Select OS (Dependent on Category)</option>
+<option value="win11">Windows 11 Pro</option>
+<option value="macos">macOS Sonoma</option>
+<option value="ubuntu">Ubuntu 22.04 LTS</option>
+<option value="ios">iOS 17</option>
+<option value="android">Android 14</option>
+</select>
+</div>
+<!-- Brand -->
+<div class="flex flex-col gap-xs">
+<label class="font-body-sm text-body-sm font-semibold text-on-surface" for="brand">Brand / Manufacturer <span class="text-error">*</span></label>
+<input class="h-[36px] px-sm rounded border border-outline-variant bg-surface-container-lowest text-body-md font-body-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary placeholder:text-outline" id="brand" placeholder="e.g. Dell, Apple, Cisco" required="" type="text"/>
+</div>
+<!-- Model Type -->
+<div class="flex flex-col gap-xs">
+<label class="font-body-sm text-body-sm font-semibold text-on-surface" for="model">Model Type <span class="text-error">*</span></label>
+<input class="h-[36px] px-sm rounded border border-outline-variant bg-surface-container-lowest text-body-md font-body-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary placeholder:text-outline" id="model" placeholder="e.g. Latitude 7420" required="" type="text"/>
+</div>
+<!-- Status Toggle -->
+<div class="flex flex-col gap-xs col-span-1 md:col-span-2 mt-sm pt-md border-t border-surface-variant">
+<div class="flex items-center justify-between p-md bg-surface-container-low rounded border border-outline-variant">
+<div class="flex flex-col">
+<span class="font-body-sm text-body-sm font-semibold text-on-surface">Initial Status</span>
+<span class="font-body-sm text-[12px] text-on-surface-variant">Set whether this asset is ready for immediate deployment.</span>
+</div>
+<div class="flex items-center gap-md">
+<span class="font-badge text-badge text-primary bg-primary-fixed px-2 py-1 rounded">Available</span>
+<!-- Custom Toggle UI -->
+<label class="flex items-center cursor-pointer" for="status-toggle">
+<div class="relative">
+<input checked="" class="sr-only" id="status-toggle" type="checkbox"/>
+<div class="block bg-primary w-10 h-6 rounded-full transition-colors"></div>
+<div class="dot absolute left-1 top-1 bg-on-primary w-4 h-4 rounded-full transition-transform translate-x-4 shadow-sm"></div>
+</div>
+</label>
+</div>
+</div>
+</div>
+</div>
+<!-- Form Actions -->
+<div class="px-lg py-md bg-surface-container-low border-t border-outline-variant flex items-center justify-end gap-sm rounded-b-lg">
+<button class="h-[36px] px-md rounded border border-outline-variant bg-surface-container-lowest text-on-surface font-body-md font-semibold hover:bg-surface-variant focus:outline-none focus:ring-2 focus:ring-primary transition-colors" type="button">
+          Cancel
+        </button>
+<button class="h-[36px] px-md rounded bg-primary text-on-primary font-body-md font-semibold hover:bg-primary-container focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1 transition-colors flex items-center gap-xs" type="submit">
+<span class="material-symbols-outlined text-[18px]" data-icon="save">save</span>
+          Register Asset
+        </button>
+</div>
+</form>
+</main>
+</body></html>
