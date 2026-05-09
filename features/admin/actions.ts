@@ -34,6 +34,7 @@ export interface Equipo {
   tipo_equipo: string
   estado: 'disponible' | 'reservado' | 'mantenimiento'
   imagen_url: string | null
+  numero_serie: string | null
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -163,6 +164,27 @@ export async function updateUsuarioEmail(
   return { success: true }
 }
 
+export async function updateUsuarioNombre(
+  userId: string,
+  newNombre: string,
+): Promise<{ success?: boolean; error?: string }> {
+  const guard = await assertAdmin()
+  if (guard) return { error: guard.error }
+
+  const supabase = getSupabaseAdmin()
+  if (!supabase) return { error: 'Error interno del servidor' }
+  const nombre = newNombre.trim()
+  if (!nombre) return { error: 'El nombre no puede estar vacío' }
+
+  const { error } = await supabase
+    .from('usuarios')
+    .update({ nombre })
+    .eq('id', userId)
+
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
 export async function sendPasswordResetAdmin(
   correo: string,
 ): Promise<{ success?: boolean; error?: string }> {
@@ -186,7 +208,7 @@ export async function getEquipos(): Promise<{ data?: Equipo[]; error?: string }>
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('equipos')
-    .select('id, nombre, categoria, sistema_operativo, marca, tipo_equipo, estado, imagen_url')
+    .select('id, nombre, categoria, sistema_operativo, marca, tipo_equipo, estado, imagen_url, numero_serie')
     .order('nombre')
 
   if (error) return { error: error.message }
