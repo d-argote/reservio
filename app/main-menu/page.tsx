@@ -25,7 +25,15 @@ import {
   type Equipo,
   type SalaAdmin,
 } from '@/features/admin/actions'
-import { getSistemas, getMarcas, getTipos, TIPO_EQUIPO_LABELS } from '@/lib/equipo-catalogo'
+import { getSistemas, getMarcas, getTipos, getTiposDirectos, isTechCategory, TIPO_EQUIPO_LABELS, CATEGORIA_LABELS } from '@/lib/equipo-catalogo'
+import {
+  createReserva,
+  updateReserva,
+  cancelarReserva,
+  deleteReserva,
+  getReportData,
+  type ReportData,
+} from '@/features/reservas/actions'
 
 // ── Types
 
@@ -55,7 +63,7 @@ interface Reserva {
 }
 
 type ActiveTab = 'reservations' | 'rooms' | 'tech' | 'profile' | 'admin'
-type AdminSubTab = 'users' | 'equipment' | 'rooms'
+type AdminSubTab = 'users' | 'equipment' | 'rooms' | 'reports'
 
 interface ReservaForm {
   titulo: string
@@ -264,6 +272,23 @@ function AdminPasswordRequirements({ password }: { password: string }) {
   )
 }
 
+// ── Zona horaria fija: Bogotá (America/Bogota, UTC-5, sin DST) ────────
+function getBogotaNow() {
+  const now = new Date()
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Bogota',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  })
+  const parts = fmt.formatToParts(now)
+  const get = (type: string) => parts.find(p => p.type === type)?.value ?? '00'
+  const dateStr = `${get('year')}-${get('month')}-${get('day')}`
+  const h = parseInt(get('hour'))
+  const m = parseInt(get('minute'))
+  const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+  return { dateStr, timeStr, totalMinutes: h * 60 + m }
+}
+
 export default function MainMenuPage() {
   const router = useRouter()
 
@@ -370,22 +395,33 @@ export default function MainMenuPage() {
   const [salaImageFile, setSalaImageFile] = useState<File | null>(null)
   const [editSalaImageFile, setEditSalaImageFile] = useState<File | null>(null)
 
-  useEffect(() => {
-    const fetchReservas = async (userId: string) => {
-      const todayStr = new Date().toISOString().split('T')[0]
-      const { data } = await supabase
-        .from('reservas')
-        .select('id, titulo, fecha, hora_inicio, hora_fin, estado, salas(id, nombre, capacidad, ubicacion)')
-        .eq('usuario_id', userId)
-        .gte('fecha', todayStr)
-        .in('estado', ['pendiente', 'confirmada'])
-        .order('fecha',       { ascending: true })
-        .order('hora_inicio', { ascending: true })
-        .limit(3)
-      if (data) setReservas(data as unknown as Reserva[])
-      setLoadingReservas(false)
-    }
+  // ── Sprint 3: Usuario actual + operaciones reservas ───────────────
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [editingReservaId, setEditingReservaId] = useState<string | null>(null)
+  const [cancelingReservaId, setCancelingReservaId] = useState<string | null>(null)
+  const [deletingReservaId, setDeletingReservaId] = useState<string | null>(null)
 
+  // ── Sprint 3: Reportes ────────────────────────────────────────────
+  const [reportData, setReportData] = useState<ReportData | null>(null)
+  const [loadingReports, setLoadingReports] = useState(false)
+
+  const fetchReservas = useCallback(async (uid: string) => {
+    setLoadingReservas(true)
+    const { dateStr: todayStr } = getBogotaNow()
+    const { data } = await supabase
+      .from('reservas')
+      .select('id, titulo, fecha, hora_inicio, hora_fin, estado, salas(id, nombre, capacidad, ubicacion)')
+      .eq('usuario_id', uid)
+      .gte('fecha', todayStr)
+      .in('estado', ['pendiente', 'confirmada'])
+      .order('fecha',       { ascending: true })
+      .order('hora_inicio', { ascending: true })
+      .limit(10)
+    if (data) setReservas(data as unknown as Reserva[])
+    setLoadingReservas(false)
+  }, [])
+
+  useEffect(() => {
     const init = async () => {
       // 1. Verificar sesión activa
       const { data: { session } } = await supabase.auth.getSession()
@@ -411,10 +447,11 @@ export default function MainMenuPage() {
       setIsLoading(false) // muestra el layout sin esperar los datos
 
       // 3. Fetch de datos en paralelo
-      const userId = session.user.id
+      const uid = session.user.id
+      setCurrentUserId(uid)
 
       const [, salasResult] = await Promise.allSettled([
-        fetchReservas(userId),
+        fetchReservas(uid),
 
         supabase
           .from('salas')
@@ -429,7 +466,7 @@ export default function MainMenuPage() {
     }
 
     init()
-  }, [router])
+  }, [router, fetchReservas])
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
@@ -588,7 +625,8 @@ export default function MainMenuPage() {
     setEquipoForm(prev => {
       const next = { ...prev, [field]: value }
       if (field === 'categoria') {
-        next.sistema_operativo = ''
+        // Para categorías no-tech, el SO no aplica; usar 'N/A' como valor
+        next.sistema_operativo = isTechCategory(value) ? '' : 'N/A'
         next.marca             = ''
         next.tipo_equipo       = ''
       }
@@ -775,7 +813,7 @@ export default function MainMenuPage() {
   }
 
   const openModal = (salaId?: string) => {
-    const todayStr = new Date().toISOString().split('T')[0]
+    const { dateStr: todayStr } = getBogotaNow()
     setForm({ ...EMPTY_FORM, fecha: todayStr, sala_id: salaId ?? '' })
     setModalError(null)
     setModalSuccess(false)
@@ -803,7 +841,8 @@ export default function MainMenuPage() {
     if (form.titulo.trim().length < 3) { setModalError('El título debe tener al menos 3 caracteres.'); return }
     if (!form.sala_id)         { setModalError('Selecciona una sala.'); return }
     if (!form.fecha)           { setModalError('Selecciona una fecha.'); return }
-    if (form.fecha < new Date().toISOString().split('T')[0]) { setModalError('No puedes reservar en una fecha pasada.'); return }
+    const { dateStr: _localToday } = getBogotaNow()
+    if (form.fecha < _localToday) { setModalError('No puedes reservar en una fecha pasada.'); return }
     if (!form.hora_inicio)     { setModalError('Indica la hora de inicio.'); return }
     if (!form.hora_fin)        { setModalError('Indica la hora de fin.'); return }
     if (form.hora_fin <= form.hora_inicio) {
@@ -814,9 +853,108 @@ export default function MainMenuPage() {
     if (durMin < 30) { setModalError('La reserva debe durar al menos 30 minutos.'); return }
     if (durMin > 24 * 60) { setModalError('La reserva no puede durar más de 24 horas.'); return }
 
-    // 🚀 Próximo Sprint — la creación real estará disponible en el siguiente sprint
+    // Validación estricta de hora en zona horaria Bogotá (UTC-5)
+    if (form.fecha === _localToday) {
+      const [h, m] = form.hora_inicio.split(':').map(Number)
+      const selectedMinutes = h * 60 + m
+      const { totalMinutes: currentTotalMinutes } = getBogotaNow()
+      if (selectedMinutes < currentTotalMinutes) {
+        setModalError('La hora de inicio ya pasó. Por favor, selecciona una hora válida.')
+        return
+      }
+    }
+
+    setSubmitting(true)
+
+    if (editingReservaId) {
+      // Modo edición
+      const result = await updateReserva(editingReservaId, {
+        titulo:      form.titulo.trim(),
+        sala_id:     form.sala_id,
+        fecha:       form.fecha,
+        hora_inicio: form.hora_inicio,
+        hora_fin:    form.hora_fin,
+      })
+      if (result.error) {
+        setModalError(result.error)
+        setSubmitting(false)
+        return
+      }
+    } else {
+      // Modo creación
+      const result = await createReserva(
+        {
+          titulo:      form.titulo.trim(),
+          sala_id:     form.sala_id,
+          fecha:       form.fecha,
+          hora_inicio: form.hora_inicio,
+          hora_fin:    form.hora_fin,
+        },
+        necesitaEquipo ? equiposSeleccionados : [],
+      )
+      if (result.error) {
+        setModalError(result.error)
+        setSubmitting(false)
+        return
+      }
+    }
+
+    setSubmitting(false)
     setModalSuccess(true)
+    if (currentUserId) fetchReservas(currentUserId)
+
+    setTimeout(() => {
+      setModalOpen(false)
+      setModalSuccess(false)
+      setEditingReservaId(null)
+    }, 1500)
   }
+
+  // ── Sprint 3: Editar reserva ──────────────────────────────────────
+  const handleEditReserva = (reserva: Reserva) => {
+    setEditingReservaId(reserva.id)
+    setForm({
+      titulo:      reserva.titulo,
+      sala_id:     reserva.salas?.id ?? '',
+      fecha:       reserva.fecha,
+      hora_inicio: reserva.hora_inicio.slice(0, 5),
+      hora_fin:    reserva.hora_fin.slice(0, 5),
+    })
+    setModalError(null)
+    setModalSuccess(false)
+    setDuracionPreset('libre')
+    setNecesitaEquipo(false)
+    setEquiposSeleccionados([])
+    setModalOpen(true)
+  }
+
+  // ── Sprint 3: Cancelar reserva ────────────────────────────────────
+  const handleCancelReserva = async (reservaId: string) => {
+    setCancelingReservaId(reservaId)
+    const result = await cancelarReserva(reservaId)
+    if (!result.error) {
+      setReservas(prev => prev.filter(r => r.id !== reservaId))
+    }
+    setCancelingReservaId(null)
+  }
+
+  // ── Sprint 3: Eliminar reserva ────────────────────────────────────
+  const handleDeleteReserva = async (reservaId: string) => {
+    setDeletingReservaId(reservaId)
+    const result = await deleteReserva(reservaId)
+    if (!result.error) {
+      setReservas(prev => prev.filter(r => r.id !== reservaId))
+    }
+    setDeletingReservaId(null)
+  }
+
+  // ── Sprint 3: Cargar reportes ─────────────────────────────────────
+  const loadReports = useCallback(async () => {
+    setLoadingReports(true)
+    const result = await getReportData()
+    if (result.data) setReportData(result.data)
+    setLoadingReports(false)
+  }, [])
 
   if (isLoading) {
     return (
@@ -933,6 +1071,17 @@ export default function MainMenuPage() {
                 <span className="material-symbols-outlined text-[20px]" style={activeTab === 'admin' && adminSubTab === 'rooms' ? { fontVariationSettings: "'FILL' 1" } : undefined}>meeting_room</span>
                 <span>Salas</span>
               </button>
+              <button
+                onClick={() => { handleAdminTab(); setAdminSubTab('reports'); loadReports() }}
+                className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200 ${
+                  activeTab === 'admin' && adminSubTab === 'reports'
+                    ? 'border-l-[3px] border-primary bg-surface-container-lowest text-primary font-semibold'
+                    : 'text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[20px]" style={activeTab === 'admin' && adminSubTab === 'reports' ? { fontVariationSettings: "'FILL' 1" } : undefined}>analytics</span>
+                <span>Reportes</span>
+              </button>
             </>
           )}
         </div>
@@ -1044,6 +1193,17 @@ export default function MainMenuPage() {
                     <span className="material-symbols-outlined text-[20px]">meeting_room</span>
                     <span>Salas</span>
                   </button>
+                  <button
+                    onClick={() => { handleAdminTab(); setAdminSubTab('reports'); loadReports(); setMobileMenuOpen(false) }}
+                    className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200 ${
+                      activeTab === 'admin' && adminSubTab === 'reports'
+                        ? 'bg-surface-container-lowest text-primary font-semibold'
+                        : 'text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[20px]">analytics</span>
+                    <span>Reportes</span>
+                  </button>
                 </>
               )}
             </div>
@@ -1075,6 +1235,7 @@ export default function MainMenuPage() {
                 {activeTab === 'admin' && adminSubTab === 'users'     && 'Gestión de Usuarios'}
                 {activeTab === 'admin' && adminSubTab === 'equipment' && 'Gestión de Equipos'}
                 {activeTab === 'admin' && adminSubTab === 'rooms'     && 'Gestión de Salas'}
+                {activeTab === 'admin' && adminSubTab === 'reports'   && 'Reportes'}
               </h2>
               <p className="font-body text-sm text-on-surface-variant">
                 {activeTab === 'reservations' && 'Reserva espacios y equipos fácilmente.'}
@@ -1084,6 +1245,7 @@ export default function MainMenuPage() {
                 {activeTab === 'admin' && adminSubTab === 'users'     && 'Administra los roles y accesos de todos los usuarios.'}
                 {activeTab === 'admin' && adminSubTab === 'equipment' && 'Registra y controla la disponibilidad del equipamiento.'}
                 {activeTab === 'admin' && adminSubTab === 'rooms'     && 'Crea y administra las salas disponibles.'}
+                {activeTab === 'admin' && adminSubTab === 'reports'   && 'Estadísticas de uso de equipos, salas y reservas.'}
               </p>
             </div>
             {activeTab === 'reservations' && (
@@ -1253,9 +1415,30 @@ export default function MainMenuPage() {
                           }`}>
                             {reserva.estado}
                           </span>
-                          <button className="font-label text-sm text-primary font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-                            Editar
-                          </button>
+                          <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => handleEditReserva(reserva)}
+                              className="font-label text-xs text-primary font-medium hover:underline"
+                            >
+                              Editar
+                            </button>
+                            <span className="text-outline-variant/50">·</span>
+                            <button
+                              onClick={() => handleCancelReserva(reserva.id)}
+                              disabled={cancelingReservaId === reserva.id}
+                              className="font-label text-xs text-error font-medium hover:underline disabled:opacity-50"
+                            >
+                              {cancelingReservaId === reserva.id ? '…' : 'Cancelar'}
+                            </button>
+                            <span className="text-outline-variant/50">·</span>
+                            <button
+                              onClick={() => handleDeleteReserva(reserva.id)}
+                              disabled={deletingReservaId === reserva.id}
+                              className="font-label text-xs text-on-surface-variant font-medium hover:underline disabled:opacity-50"
+                            >
+                              {deletingReservaId === reserva.id ? '…' : 'Eliminar'}
+                            </button>
+                          </div>
                         </div>
                       </div>
                     )
@@ -1425,6 +1608,9 @@ export default function MainMenuPage() {
                       { value: '', label: 'Todos' },
                       { value: 'ordenador', label: 'Ordenadores' },
                       { value: 'movil', label: 'Móviles' },
+                      { value: 'periferico', label: 'Periféricos' },
+                      { value: 'mobiliario', label: 'Mobiliario' },
+                      { value: 'climatizacion', label: 'Climatización' },
                     ].map(f => (
                       <button
                         key={f.value}
@@ -1625,6 +1811,19 @@ export default function MainMenuPage() {
                   <span className="flex items-center gap-2">
                     <span className="material-symbols-outlined text-[18px]">meeting_room</span>
                     Salas
+                  </span>
+                </button>
+                <button
+                  onClick={() => { setAdminSubTab('reports'); loadReports() }}
+                  className={`px-5 py-2.5 text-sm font-label font-semibold rounded-t-lg border-b-2 transition-colors ${
+                    adminSubTab === 'reports'
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-on-surface-variant hover:text-on-surface'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[18px]">analytics</span>
+                    Reportes
                   </span>
                 </button>
               </div>
@@ -1975,12 +2174,14 @@ export default function MainMenuPage() {
                                   required
                                 >
                                   <option value="">Selecciona categoría</option>
-                                  <option value="ordenador">Ordenador</option>
-                                  <option value="movil">Móvil</option>
+                                  {Object.entries(CATEGORIA_LABELS).map(([val, lbl]) => (
+                                    <option key={val} value={val}>{lbl}</option>
+                                  ))}
                                 </select>
                               </div>
 
-                              {/* Sistema Operativo */}
+                              {/* Sistema Operativo - solo para categorías tech */}
+                              {isTechCategory(equipoForm.categoria) && (
                               <div>
                                 <label className={`font-label text-xs uppercase tracking-widest block mb-1.5 ${equipoForm.categoria ? 'text-on-surface-variant' : 'text-on-surface-variant/40'}`}>
                                   Sistema Operativo *
@@ -1998,42 +2199,60 @@ export default function MainMenuPage() {
                                   ))}
                                 </select>
                               </div>
+                              )}
 
                               {/* Marca */}
                               <div>
-                                <label className={`font-label text-xs uppercase tracking-widest block mb-1.5 ${equipoForm.sistema_operativo ? 'text-on-surface-variant' : 'text-on-surface-variant/40'}`}>
+                                <label className={`font-label text-xs uppercase tracking-widest block mb-1.5 ${isTechCategory(equipoForm.categoria) ? (equipoForm.sistema_operativo ? 'text-on-surface-variant' : 'text-on-surface-variant/40') : (equipoForm.categoria ? 'text-on-surface-variant' : 'text-on-surface-variant/40')}`}>
                                   Marca *
                                 </label>
-                                <select
-                                  value={equipoForm.marca}
-                                  onChange={(e) => setEquipoField('marca', e.target.value)}
-                                  disabled={!equipoForm.sistema_operativo}
-                                  className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-40 disabled:cursor-not-allowed"
-                                  required
-                                >
-                                  <option value="">Selecciona marca</option>
-                                  {getMarcas(equipoForm.categoria, equipoForm.sistema_operativo).map(o => (
-                                    <option key={o.value} value={o.value}>{o.label}</option>
-                                  ))}
-                                </select>
+                                {isTechCategory(equipoForm.categoria) ? (
+                                  <select
+                                    value={equipoForm.marca}
+                                    onChange={(e) => setEquipoField('marca', e.target.value)}
+                                    disabled={!equipoForm.sistema_operativo}
+                                    className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    required
+                                  >
+                                    <option value="">Selecciona marca</option>
+                                    {getMarcas(equipoForm.categoria, equipoForm.sistema_operativo).map(o => (
+                                      <option key={o.value} value={o.value}>{o.label}</option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <input
+                                    type="text"
+                                    value={equipoForm.marca}
+                                    onChange={(e) => setEquipoField('marca', e.target.value)}
+                                    disabled={!equipoForm.categoria}
+                                    placeholder="Ej: Samsung, Genérica…"
+                                    className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    required
+                                  />
+                                )}
                               </div>
 
                               {/* Tipo de equipo */}
                               <div>
-                                <label className={`font-label text-xs uppercase tracking-widest block mb-1.5 ${equipoForm.marca ? 'text-on-surface-variant' : 'text-on-surface-variant/40'}`}>
+                                <label className={`font-label text-xs uppercase tracking-widest block mb-1.5 ${(isTechCategory(equipoForm.categoria) ? equipoForm.marca : equipoForm.categoria) ? 'text-on-surface-variant' : 'text-on-surface-variant/40'}`}>
                                   Tipo de Equipo *
                                 </label>
                                 <select
                                   value={equipoForm.tipo_equipo}
                                   onChange={(e) => setEquipoField('tipo_equipo', e.target.value)}
-                                  disabled={!equipoForm.marca}
+                                  disabled={isTechCategory(equipoForm.categoria) ? !equipoForm.marca : !equipoForm.categoria}
                                   className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-40 disabled:cursor-not-allowed"
                                   required
                                 >
                                   <option value="">Selecciona tipo</option>
-                                  {getTipos(equipoForm.categoria, equipoForm.sistema_operativo, equipoForm.marca).map(o => (
-                                    <option key={o.value} value={o.value}>{o.label}</option>
-                                  ))}
+                                  {isTechCategory(equipoForm.categoria)
+                                    ? getTipos(equipoForm.categoria, equipoForm.sistema_operativo, equipoForm.marca).map(o => (
+                                        <option key={o.value} value={o.value}>{o.label}</option>
+                                      ))
+                                    : getTiposDirectos(equipoForm.categoria).map(o => (
+                                        <option key={o.value} value={o.value}>{o.label}</option>
+                                      ))
+                                  }
                                 </select>
                               </div>
 
@@ -2142,7 +2361,7 @@ export default function MainMenuPage() {
                                 </div>
                                 <p className="mt-1.5 text-xs font-body text-on-surface-variant flex items-center gap-1">
                                   <span className="material-symbols-outlined text-[13px]">info</span>
-                                  {equipoForm.categoria === 'movil' ? 'Para móviles usa el IMEI (15 dígitos). Lo encuentras en *#06#.' : 'Usa el número de serie del fabricante (etiqueta inferior del equipo).'}
+                                  {equipoForm.categoria === 'movil' ? 'Para móviles usa el IMEI (15 dígitos). Lo encuentras en *#06#.' : isTechCategory(equipoForm.categoria) ? 'Usa el número de serie del fabricante (etiqueta inferior del equipo).' : 'Usa un código interno o número de serie si el equipo lo tiene.'}
                                 </p>
                               </div>
 
@@ -2531,6 +2750,131 @@ export default function MainMenuPage() {
                   </div>
                 </div>
               )}
+
+              {/* ─── Sprint 3: Módulo de Reportes ─────────────────────── */}
+              {adminSubTab === 'reports' && (
+                <div className="space-y-8">
+                  {loadingReports ? (
+                    <div className="flex items-center justify-center py-20 gap-3">
+                      <span className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                      <span className="font-body text-sm text-on-surface-variant">Generando reportes…</span>
+                    </div>
+                  ) : !reportData ? (
+                    <div className="flex flex-col items-center py-20 gap-3 text-center">
+                      <span className="material-symbols-outlined text-4xl text-on-surface-variant">analytics</span>
+                      <p className="font-body text-sm text-on-surface-variant">No hay datos disponibles</p>
+                      <button onClick={loadReports} className="font-label text-sm text-primary hover:underline">Cargar datos</button>
+                    </div>
+                  ) : (
+                    <>
+                      <section>
+                        <h3 className="font-headline text-lg font-bold text-on-surface mb-4 flex items-center gap-2">
+                          <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>devices</span>
+                          Reporte de Equipos
+                        </h3>
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                          {[
+                            { label: 'Total', value: reportData.equipos.total, icon: 'devices', color: 'text-primary bg-primary/10' },
+                            { label: 'Disponibles', value: reportData.equipos.disponibles, icon: 'check_circle', color: 'text-green-600 bg-green-50' },
+                            { label: 'Reservados', value: reportData.equipos.reservados, icon: 'event_available', color: 'text-primary bg-primary/10' },
+                            { label: 'Mantenimiento', value: reportData.equipos.mantenimiento, icon: 'build', color: 'text-orange-500 bg-orange-50' },
+                          ].map(stat => (
+                            <div key={stat.label} className="bg-surface-container-lowest rounded-xl p-4 border border-outline-variant/20 shadow-sm">
+                              <div className="flex justify-between items-start mb-2">
+                                <span className="font-label text-xs uppercase tracking-widest text-on-surface-variant">{stat.label}</span>
+                                <span className={`material-symbols-outlined p-1.5 rounded-lg text-[18px] ${stat.color}`}>{stat.icon}</span>
+                              </div>
+                              <span className="font-headline text-3xl font-bold text-on-surface">{stat.value}</span>
+                            </div>
+                          ))}
+                        </div>
+                        {reportData.equipos.porCategoria.length > 0 && (
+                          <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-5 shadow-sm">
+                            <h4 className="font-label text-xs uppercase tracking-widest text-on-surface-variant mb-4">Por Categoría</h4>
+                            <div className="space-y-3">
+                              {reportData.equipos.porCategoria.map(cat => (
+                                <div key={cat.categoria}>
+                                  <div className="flex justify-between items-center mb-1">
+                                    <span className="font-body text-sm text-on-surface capitalize">{CATEGORIA_LABELS[cat.categoria] ?? cat.categoria}</span>
+                                    <span className="font-label text-xs text-on-surface-variant">{cat.disponibles}/{cat.total}</span>
+                                  </div>
+                                  <div className="h-2 bg-surface-container rounded-full overflow-hidden">
+                                    <div className="h-full bg-primary rounded-full" style={{ width: cat.total > 0 ? `${(cat.disponibles / cat.total) * 100}%` : '0%' }} />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </section>
+                      <section>
+                        <h3 className="font-headline text-lg font-bold text-on-surface mb-4 flex items-center gap-2">
+                          <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>meeting_room</span>
+                          Reporte de Salas
+                        </h3>
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                          {[
+                            { label: 'Total', value: reportData.salas.total, icon: 'meeting_room', color: 'text-primary bg-primary/10' },
+                            { label: 'Disponibles', value: reportData.salas.disponibles, icon: 'check_circle', color: 'text-green-600 bg-green-50' },
+                            { label: 'Ocupadas', value: reportData.salas.ocupadas, icon: 'do_not_disturb_on', color: 'text-red-500 bg-red-50' },
+                            { label: 'Mantenimiento', value: reportData.salas.mantenimiento, icon: 'build', color: 'text-orange-500 bg-orange-50' },
+                          ].map(stat => (
+                            <div key={stat.label} className="bg-surface-container-lowest rounded-xl p-4 border border-outline-variant/20 shadow-sm">
+                              <div className="flex justify-between items-start mb-2">
+                                <span className="font-label text-xs uppercase tracking-widest text-on-surface-variant">{stat.label}</span>
+                                <span className={`material-symbols-outlined p-1.5 rounded-lg text-[18px] ${stat.color}`}>{stat.icon}</span>
+                              </div>
+                              <span className="font-headline text-3xl font-bold text-on-surface">{stat.value}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                      <section>
+                        <h3 className="font-headline text-lg font-bold text-on-surface mb-4 flex items-center gap-2">
+                          <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>event_note</span>
+                          Reporte de Reservas
+                        </h3>
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                          {[
+                            { label: 'Total', value: reportData.reservas.total, icon: 'event_note', color: 'text-primary bg-primary/10' },
+                            { label: 'Confirmadas', value: reportData.reservas.confirmadas, icon: 'event_available', color: 'text-green-600 bg-green-50' },
+                            { label: 'Pendientes', value: reportData.reservas.pendientes, icon: 'pending', color: 'text-amber-500 bg-amber-50' },
+                            { label: 'Canceladas', value: reportData.reservas.canceladas, icon: 'event_busy', color: 'text-red-500 bg-red-50' },
+                          ].map(stat => (
+                            <div key={stat.label} className="bg-surface-container-lowest rounded-xl p-4 border border-outline-variant/20 shadow-sm">
+                              <div className="flex justify-between items-start mb-2">
+                                <span className="font-label text-xs uppercase tracking-widest text-on-surface-variant">{stat.label}</span>
+                                <span className={`material-symbols-outlined p-1.5 rounded-lg text-[18px] ${stat.color}`}>{stat.icon}</span>
+                              </div>
+                              <span className="font-headline text-3xl font-bold text-on-surface">{stat.value}</span>
+                            </div>
+                          ))}
+                        </div>
+                        {reportData.reservas.porMes.length > 0 && (
+                          <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-5 shadow-sm">
+                            <h4 className="font-label text-xs uppercase tracking-widest text-on-surface-variant mb-4">Reservas por Mes</h4>
+                            <div className="space-y-3">
+                              {reportData.reservas.porMes.map(entry => {
+                                const maxVal = Math.max(...reportData.reservas.porMes.map(e => e.total), 1)
+                                return (
+                                  <div key={entry.mes} className="flex items-center gap-3">
+                                    <span className="font-mono text-xs text-on-surface-variant w-16 shrink-0">{entry.mes}</span>
+                                    <div className="flex-1 h-2 bg-surface-container rounded-full overflow-hidden">
+                                      <div className="h-full bg-secondary rounded-full" style={{ width: `${(entry.total / maxVal) * 100}%` }} />
+                                    </div>
+                                    <span className="font-label text-xs font-bold text-on-surface w-6 text-right shrink-0">{entry.total}</span>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </section>
+                    </>
+                  )}
+                </div>
+              )}
+
             </div>
           )}
 
@@ -2563,7 +2907,7 @@ export default function MainMenuPage() {
           {/* Backdrop */}
           <div
             className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
-            onClick={() => !submitting && setModalOpen(false)}
+            onClick={() => { if (!submitting) { setModalOpen(false); setEditingReservaId(null) } }}
           />
 
           {/* Panel */}
@@ -2576,10 +2920,10 @@ export default function MainMenuPage() {
                     event_available
                   </span>
                 </div>
-                <h2 className="font-headline text-lg font-bold text-on-surface">Nueva Reserva</h2>
+                <h2 className="font-headline text-lg font-bold text-on-surface">{editingReservaId ? 'Editar Reserva' : 'Nueva Reserva'}</h2>
               </div>
               <button
-                onClick={() => !submitting && setModalOpen(false)}
+                onClick={() => { if (!submitting) { setModalOpen(false); setEditingReservaId(null) } }}
                 className="p-1.5 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant"
                 aria-label="Cerrar"
               >
@@ -2637,8 +2981,18 @@ export default function MainMenuPage() {
                 <input
                   type="date"
                   value={form.fecha}
-                  min={new Date().toISOString().split('T')[0]}
-                  onChange={(e) => setForm({ ...form, fecha: e.target.value })}
+                  min={getBogotaNow().dateStr}
+                  onChange={(e) => {
+                    const newFecha = e.target.value
+                    const { dateStr: localToday } = getBogotaNow()
+                    // Si cambia a hoy, limpiar las horas para forzar selección válida
+                    if (newFecha === localToday) {
+                      setForm(f => ({ ...f, fecha: newFecha, hora_inicio: '', hora_fin: '' }))
+                      setDuracionPreset('libre')
+                    } else {
+                      setForm(f => ({ ...f, fecha: newFecha }))
+                    }
+                  }}
                   className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition"
                   disabled={submitting}
                 />
@@ -2710,6 +3064,10 @@ export default function MainMenuPage() {
                   <input
                     type="time"
                     value={form.hora_inicio}
+                    min={(() => {
+                      const { dateStr: localToday, timeStr } = getBogotaNow()
+                      return form.fecha === localToday ? timeStr : undefined
+                    })()}
                     onChange={(e) => {
                       const inicio = e.target.value
                       setForm(f => {
@@ -2872,13 +3230,13 @@ export default function MainMenuPage() {
                 )}
               </div>
 
-              {/* Coming soon */}
+              {/* Éxito */}
               {modalSuccess && (
-                <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-                  <span className="material-symbols-outlined text-[22px] text-amber-500 shrink-0 mt-0.5" style={{ fontVariationSettings: "'FILL' 1" }}>rocket_launch</span>
+                <div className="flex items-start gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
+                  <span className="material-symbols-outlined text-[22px] text-green-500 shrink-0 mt-0.5" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
                   <div>
-                    <p className="font-label text-sm font-bold text-amber-800">Disponible en el próximo sprint</p>
-                    <p className="font-body text-xs text-amber-700 mt-0.5">La creación de reservas estará habilitada muy pronto.</p>
+                    <p className="font-label text-sm font-bold text-green-800">¡Reserva {editingReservaId ? 'actualizada' : 'creada'} con éxito!</p>
+                    <p className="font-body text-xs text-green-700 mt-0.5">Tu reserva ha sido confirmada correctamente.</p>
                   </div>
                 </div>
               )}
@@ -2887,7 +3245,7 @@ export default function MainMenuPage() {
               <div className="flex gap-3 pt-1">
                 <button
                   type="button"
-                  onClick={() => !submitting && setModalOpen(false)}
+                  onClick={() => { if (!submitting) { setModalOpen(false); setEditingReservaId(null) } }}
                   disabled={submitting}
                   className="flex-1 py-2.5 rounded-lg border border-outline-variant/40 text-on-surface font-label text-sm font-medium hover:bg-surface-container transition-colors disabled:opacity-50"
                 >
@@ -2905,8 +3263,8 @@ export default function MainMenuPage() {
                     </>
                   ) : (
                     <>
-                      <span className="material-symbols-outlined text-[18px]">add</span>
-                      Confirmar
+                      <span className="material-symbols-outlined text-[18px]">{editingReservaId ? 'save' : 'add'}</span>
+                      {editingReservaId ? 'Guardar Cambios' : 'Confirmar'}
                     </>
                   )}
                 </button>
@@ -2958,23 +3316,26 @@ export default function MainMenuPage() {
                 </div>
               </div>
 
-              {/* Mensaje próximo sprint */}
-              <div className="flex items-start gap-3 bg-[#001529]/5 border border-[#001529]/10 rounded-xl px-4 py-3">
-                <span className="material-symbols-outlined text-[22px] text-yellow-500 shrink-0" style={{ fontVariationSettings: "'FILL' 1" }}>
-                  rocket_launch
-                </span>
-                <div>
-                  <p className="font-label text-sm font-bold text-on-surface">Disponible para reservar en el próximo sprint</p>
-                  <p className="font-body text-xs text-on-surface-variant mt-0.5">Esta funcionalidad estará habilitada pronto.</p>
-                </div>
+              {/* Acciones */}
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={() => {
+                    setPreviewSala(null)
+                    openModal(previewSala?.id)
+                  }}
+                  disabled={previewSala?.estado !== 'disponible'}
+                  className="w-full py-3 rounded-xl bg-primary text-on-primary font-label text-sm font-bold hover:brightness-105 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  <span className="material-symbols-outlined text-[18px]">calendar_add_on</span>
+                  {previewSala?.estado === 'disponible' ? 'Reservar esta sala' : 'No disponible'}
+                </button>
+                <button
+                  onClick={() => setPreviewSala(null)}
+                  className="w-full py-3 rounded-xl bg-surface-container text-on-surface font-label text-sm font-medium hover:bg-surface-container-high transition-colors"
+                >
+                  Cerrar
+                </button>
               </div>
-
-              <button
-                onClick={() => setPreviewSala(null)}
-                className="w-full py-3 rounded-xl bg-surface-container text-on-surface font-label text-sm font-medium hover:bg-surface-container-high transition-colors"
-              >
-                Entendido
-              </button>
             </div>
           </div>
         </div>
