@@ -12,5 +12,5 @@ export const FEATURES = {
   roomBooking: false,
 
   /** Sprint 3 — Solicitar equipamiento tecnológico */
-  techRequests: false,
+  techRequests: true,
 } as const

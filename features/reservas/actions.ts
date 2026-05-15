@@ -198,6 +198,8 @@ export async function cancelarReserva(id: string): Promise<{ success?: boolean; 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ELIMINAR RESERVA
 // ═══════════════════════════════════════════════════════════════════════════════
+// ELIMINAR RESERVA
+// ═══════════════════════════════════════════════════════════════════════════════
 
 export async function deleteReserva(id: string): Promise<{ success?: boolean; error?: string }> {
   const { user, supabase } = await getAuthUser()
@@ -301,4 +303,134 @@ export async function getReportData(): Promise<{ data?: ReportData; error?: stri
       },
     },
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PRÉSTAMOS DE EQUIPO
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface PrestamoEquipo {
+  id: string
+  equipo_id: string
+  sala_id: string | null
+  fecha_inicio: string
+  fecha_fin_esperada: string
+  fecha_devolucion: string | null
+  estado: 'activo' | 'devuelto' | 'vencido'
+  notas: string | null
+  equipos: {
+    id: string
+    nombre: string
+    tipo_equipo: string
+    marca: string
+    imagen_url: string | null
+  } | null
+  salas: { id: string; nombre: string } | null
+}
+
+export async function createPrestamoEquipo(
+  equipoId: string,
+  salaId: string | null,
+  fechaFinEsperada: string, // ISO string e.g. '2026-05-15T17:00:00'
+  notas: string | null,
+): Promise<{ data?: { id: string }; error?: string }> {
+  const { user, supabase } = await getAuthUser()
+  if (!user) return { error: 'No autenticado' }
+
+  // Validar que la fecha de devolución sea futura (interpretada como hora Bogotá UTC-5)
+  const fechaFinDate = new Date(fechaFinEsperada + '-05:00')
+  if (isNaN(fechaFinDate.getTime()) || fechaFinDate <= new Date()) {
+    return { error: 'La fecha y hora de devolución debe ser posterior al momento actual.' }
+  }
+
+  // Verificar que el equipo esté disponible
+  const { data: equipo } = await supabase
+    .from('equipos')
+    .select('estado')
+    .eq('id', equipoId)
+    .single()
+
+  if (!equipo) return { error: 'Equipo no encontrado' }
+  if (equipo.estado !== 'disponible') {
+    return { error: 'El equipo ya no está disponible. Puede que alguien más lo haya solicitado.' }
+  }
+
+  const { data: prestamo, error } = await supabase
+    .from('prestamos_equipo')
+    .insert({
+      equipo_id: equipoId,
+      usuario_id: user.id,
+      sala_id: salaId,
+      fecha_fin_esperada: fechaFinEsperada,
+      notas,
+    })
+    .select('id')
+    .single()
+
+  if (error) return { error: error.message }
+  if (!prestamo) return { error: 'Error al registrar el préstamo' }
+
+  // Marcar equipo como reservado
+  await supabase
+    .from('equipos')
+    .update({ estado: 'reservado' })
+    .eq('id', equipoId)
+
+  return { data: { id: prestamo.id } }
+}
+
+export async function getMisPrestamos(): Promise<{ data?: PrestamoEquipo[]; error?: string }> {
+  const { user, supabase } = await getAuthUser()
+  if (!user) return { data: [] }
+
+  const { data, error } = await supabase
+    .from('prestamos_equipo')
+    .select(`
+      id, equipo_id, sala_id, fecha_inicio, fecha_fin_esperada, fecha_devolucion, estado, notas,
+      equipos:equipo_id ( id, nombre, tipo_equipo, marca, imagen_url ),
+      salas:sala_id ( id, nombre )
+    `)
+    .eq('usuario_id', user.id)
+    .eq('estado', 'activo')
+    .order('fecha_fin_esperada', { ascending: true })
+
+  if (error) {
+    // Si la tabla aún no existe (migración pendiente), retornar vacío silenciosamente
+    if (error.code === '42P01') return { data: [] }
+    return { error: error.message }
+  }
+  return { data: (data ?? []) as unknown as PrestamoEquipo[] }
+}
+
+export async function devolverEquipo(
+  prestamoId: string,
+): Promise<{ success?: boolean; equipoId?: string; error?: string }> {
+  const { user, supabase } = await getAuthUser()
+  if (!user) return { error: 'No autenticado' }
+
+  const { data: prestamo } = await supabase
+    .from('prestamos_equipo')
+    .select('equipo_id, estado')
+    .eq('id', prestamoId)
+    .eq('usuario_id', user.id)
+    .single()
+
+  if (!prestamo) return { error: 'Préstamo no encontrado o sin permiso' }
+  if (prestamo.estado !== 'activo') return { error: 'Este préstamo ya no está activo' }
+
+  const { error } = await supabase
+    .from('prestamos_equipo')
+    .update({ estado: 'devuelto', fecha_devolucion: new Date().toISOString() })
+    .eq('id', prestamoId)
+    .eq('usuario_id', user.id)
+
+  if (error) return { error: error.message }
+
+  // Liberar el equipo
+  await supabase
+    .from('equipos')
+    .update({ estado: 'disponible' })
+    .eq('id', prestamo.equipo_id)
+
+  return { success: true, equipoId: prestamo.equipo_id }
 }
