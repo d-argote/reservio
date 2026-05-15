@@ -34,6 +34,7 @@ import {
   getReportData,
   type ReportData,
 } from '@/features/reservas/actions'
+import { ReservasCalendar } from '@/components/ui/ReservasCalendar'
 
 // ── Types
 
@@ -401,9 +402,22 @@ export default function MainMenuPage() {
   const [cancelingReservaId, setCancelingReservaId] = useState<string | null>(null)
   const [deletingReservaId, setDeletingReservaId] = useState<string | null>(null)
 
+  // ── Reservas calendar view ────────────────────────────────────────
+  const [reservaView, setReservaView] = useState<'list' | 'calendar'>('calendar')
+  const [calendarReservas, setCalendarReservas] = useState<Reserva[]>([])
+  const [loadingCalendar, setLoadingCalendar] = useState(false)
+
   // ── Sprint 3: Reportes ────────────────────────────────────────────
   const [reportData, setReportData] = useState<ReportData | null>(null)
   const [loadingReports, setLoadingReports] = useState(false)
+  const [reportSubTab, setReportSubTab] = useState<'overview' | 'salas' | 'reservas' | 'equipos'>('overview')
+  const [reportSearchReservas, setReportSearchReservas] = useState('')
+  const [reportSearchSalas, setReportSearchSalas] = useState('')
+  const [reportSearchEquipos, setReportSearchEquipos] = useState('')
+  const [reportPageReservas, setReportPageReservas] = useState(1)
+  const [reportPageSalas, setReportPageSalas] = useState(1)
+  const [reportPageEquipos, setReportPageEquipos] = useState(1)
+  const REPORT_PAGE_SIZE = 10
 
   const fetchReservas = useCallback(async (uid: string) => {
     setLoadingReservas(true)
@@ -419,6 +433,26 @@ export default function MainMenuPage() {
       .limit(10)
     if (data) setReservas(data as unknown as Reserva[])
     setLoadingReservas(false)
+  }, [])
+
+  const fetchCalendarReservas = useCallback(async (uid: string) => {
+    setLoadingCalendar(true)
+    const now   = new Date()
+    const start = new Date(now.getFullYear(), now.getMonth() - 2, 1)
+    const end   = new Date(now.getFullYear(), now.getMonth() + 5, 0)
+    const p     = (n: number) => String(n).padStart(2, '0')
+    const startStr = `${start.getFullYear()}-${p(start.getMonth() + 1)}-01`
+    const endStr   = `${end.getFullYear()}-${p(end.getMonth() + 1)}-${p(end.getDate())}`
+    const { data } = await supabase
+      .from('reservas')
+      .select('id, titulo, fecha, hora_inicio, hora_fin, estado, salas(id, nombre, capacidad, ubicacion)')
+      .eq('usuario_id', uid)
+      .gte('fecha', startStr)
+      .lte('fecha', endStr)
+      .order('fecha',       { ascending: true })
+      .order('hora_inicio', { ascending: true })
+    if (data) setCalendarReservas(data as unknown as Reserva[])
+    setLoadingCalendar(false)
   }, [])
 
   useEffect(() => {
@@ -459,6 +493,8 @@ export default function MainMenuPage() {
           .order('nombre'),
       ])
 
+      fetchCalendarReservas(uid)
+
       if (salasResult.status === 'fulfilled' && salasResult.value.data) {
         setSalas(salasResult.value.data as Sala[])
       }
@@ -466,7 +502,7 @@ export default function MainMenuPage() {
     }
 
     init()
-  }, [router, fetchReservas])
+  }, [router, fetchReservas, fetchCalendarReservas])
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
@@ -812,9 +848,9 @@ export default function MainMenuPage() {
     setSavingSala(false)
   }
 
-  const openModal = (salaId?: string) => {
+  const openModal = (salaId?: string, fechaInicial?: string) => {
     const { dateStr: todayStr } = getBogotaNow()
-    setForm({ ...EMPTY_FORM, fecha: todayStr, sala_id: salaId ?? '' })
+    setForm({ ...EMPTY_FORM, fecha: fechaInicial ?? todayStr, sala_id: salaId ?? '' })
     setModalError(null)
     setModalSuccess(false)
     setDuracionPreset('libre')
@@ -901,7 +937,7 @@ export default function MainMenuPage() {
 
     setSubmitting(false)
     setModalSuccess(true)
-    if (currentUserId) fetchReservas(currentUserId)
+    if (currentUserId) { fetchReservas(currentUserId); fetchCalendarReservas(currentUserId) }
 
     setTimeout(() => {
       setModalOpen(false)
@@ -934,6 +970,7 @@ export default function MainMenuPage() {
     const result = await cancelarReserva(reservaId)
     if (!result.error) {
       setReservas(prev => prev.filter(r => r.id !== reservaId))
+      setCalendarReservas(prev => prev.map(r => r.id === reservaId ? { ...r, estado: 'cancelada' as const } : r))
     }
     setCancelingReservaId(null)
   }
@@ -944,6 +981,7 @@ export default function MainMenuPage() {
     const result = await deleteReserva(reservaId)
     if (!result.error) {
       setReservas(prev => prev.filter(r => r.id !== reservaId))
+      setCalendarReservas(prev => prev.filter(r => r.id !== reservaId))
     }
     setDeletingReservaId(null)
   }
@@ -1249,13 +1287,40 @@ export default function MainMenuPage() {
               </p>
             </div>
             {activeTab === 'reservations' && (
-              <button
-                onClick={handleNuevaReserva}
-                className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label font-medium text-sm shadow-sm hover:shadow-md hover:brightness-105 transition-all duration-200"
-              >
-                <span className="material-symbols-outlined text-[20px]">add</span>
-                Nueva Reserva
-              </button>
+              <div className="flex items-center gap-2">
+                {/* List / Calendar toggle */}
+                <div className="flex items-center gap-0.5 bg-surface-container rounded-xl p-1 border border-outline-variant/20">
+                  <button
+                    onClick={() => setReservaView('list')}
+                    title="Vista lista"
+                    className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                      reservaView === 'list'
+                        ? 'bg-primary text-on-primary shadow-sm'
+                        : 'text-on-surface-variant hover:bg-surface-container-high'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">view_list</span>
+                  </button>
+                  <button
+                    onClick={() => setReservaView('calendar')}
+                    title="Vista calendario"
+                    className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                      reservaView === 'calendar'
+                        ? 'bg-primary text-on-primary shadow-sm'
+                        : 'text-on-surface-variant hover:bg-surface-container-high'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">calendar_month</span>
+                  </button>
+                </div>
+                <button
+                  onClick={handleNuevaReserva}
+                  className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label font-medium text-sm shadow-sm hover:shadow-md hover:brightness-105 transition-all duration-200"
+                >
+                  <span className="material-symbols-outlined text-[20px]">add</span>
+                  Nueva Reserva
+                </button>
+              </div>
             )}
             {activeTab === 'rooms' && (
               <button
@@ -1348,7 +1413,22 @@ export default function MainMenuPage() {
             </div>
           </div>
 
-          {/* Bento grid */}
+          {/* Calendar view */}
+          {reservaView === 'calendar' && (
+            <ReservasCalendar
+              reservas={calendarReservas}
+              loading={loadingCalendar}
+              onNewReserva={(fecha) => openModal(undefined, fecha)}
+              onEditReserva={handleEditReserva}
+              onCancelReserva={handleCancelReserva}
+              onDeleteReserva={handleDeleteReserva}
+              cancelingId={cancelingReservaId}
+              deletingId={deletingReservaId}
+            />
+          )}
+
+          {/* Bento grid (list view) */}
+          {reservaView === 'list' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
             {/* Mis próximas reservas (2 cols) */}
@@ -1498,6 +1578,7 @@ export default function MainMenuPage() {
               </div>
             </div>
           </div>
+          )}
             </>
           )}
 
@@ -2470,7 +2551,7 @@ export default function MainMenuPage() {
                                         </select>
                                       </td>
                                       <td className="px-5 py-3 hidden lg:table-cell">
-                                        <select value={editEquipoForm.sistema_operativo} onChange={e => setEditEquipoField('sistema_operativo', e.target.value)} disabled={!editEquipoForm.categoria} className="bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none disabled:opacity-40">
+                                        <select value={editEquipoForm.sistema_operativo ?? ''} onChange={e => setEditEquipoField('sistema_operativo', e.target.value)} disabled={!editEquipoForm.categoria} className="bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none disabled:opacity-40">
                                           <option value="">—</option>
                                           {getSistemas(editEquipoForm.categoria).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                                         </select>
@@ -2678,11 +2759,22 @@ export default function MainMenuPage() {
                                     <td className="px-6 py-3">
                                       <div className="flex flex-col gap-1">
                                         <input type="text" value={editSalaForm.nombre} onChange={e => setEditSalaForm(f => ({ ...f, nombre: e.target.value }))} className="w-full bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none" />
+                                        {/* Preview: nuevo archivo seleccionado, o imagen actual de BD */}
+                                        {(editSalaImageFile || editSalaForm.imagen_url) && (
+                                          <div className="relative w-full h-20 rounded-lg overflow-hidden bg-surface-container">
+                                            <img
+                                              src={editSalaImageFile ? URL.createObjectURL(editSalaImageFile) : editSalaForm.imagen_url}
+                                              alt="Vista previa"
+                                              className="w-full h-full object-cover"
+                                            />
+                                            {!editSalaImageFile && (
+                                              <span className="absolute bottom-1 left-1 text-[9px] font-label font-bold uppercase tracking-wider bg-black/50 text-white px-1.5 py-0.5 rounded">Actual</span>
+                                            )}
+                                          </div>
+                                        )}
                                         <label className="flex items-center gap-1 cursor-pointer text-xs text-on-surface-variant hover:text-primary transition-colors">
-                                          {editSalaImageFile
-                                            ? <img src={URL.createObjectURL(editSalaImageFile)} alt="" className="w-5 h-5 rounded object-cover shrink-0" />
-                                            : <span className="material-symbols-outlined text-[14px]">image</span>}
-                                          <span className="truncate max-w-[100px]">{editSalaImageFile ? editSalaImageFile.name : 'Cambiar imagen…'}</span>
+                                          <span className="material-symbols-outlined text-[14px]">{editSalaImageFile ? 'check_circle' : 'upload'}</span>
+                                          <span className="truncate max-w-[120px]">{editSalaImageFile ? editSalaImageFile.name : editSalaForm.imagen_url ? 'Cambiar imagen…' : 'Subir imagen…'}</span>
                                           <input type="file" accept="image/*" className="hidden" onChange={e => setEditSalaImageFile(e.target.files?.[0] ?? null)} />
                                         </label>
                                       </div>
@@ -2709,7 +2801,15 @@ export default function MainMenuPage() {
                                   </>
                                 ) : (
                                   <>
-                                    <td className="px-6 py-4 font-body font-medium text-on-surface">{s.nombre}</td>
+                                    <td className="px-6 py-4">
+                                      <div className="flex items-center gap-3">
+                                        {s.imagen_url
+                                          ? <img src={s.imagen_url} alt={s.nombre} className="w-10 h-10 rounded-lg object-cover shrink-0 border border-outline-variant/30" />
+                                          : <div className="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center shrink-0"><span className="material-symbols-outlined text-[18px] text-on-surface-variant">meeting_room</span></div>
+                                        }
+                                        <span className="font-body font-medium text-on-surface">{s.nombre}</span>
+                                      </div>
+                                    </td>
                                     <td className="px-6 py-4 font-body text-on-surface-variant">{s.capacidad}</td>
                                     <td className="px-6 py-4 font-body text-on-surface-variant">{s.ubicacion ?? '—'}</td>
                                     <td className="px-6 py-4">
@@ -2752,128 +2852,711 @@ export default function MainMenuPage() {
               )}
 
               {/* ─── Sprint 3: Módulo de Reportes ─────────────────────── */}
-              {adminSubTab === 'reports' && (
-                <div className="space-y-8">
+              {adminSubTab === 'reports' && (() => {
+                // ── PDF export helper ─────────────────────────────────────
+                const handleExportPDF = () => {
+                  if (!reportData) return
+                  const printWin = window.open('', '_blank', 'width=1000,height=800')
+                  if (!printWin) { alert('Permite ventanas emergentes para exportar el PDF.'); return }
+                  const now = new Date().toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' })
+                  const fmtEstado = (e: string) => ({ confirmada: 'Confirmada', pendiente: 'Pendiente', cancelada: 'Cancelada', disponible: 'Disponible', ocupada: 'Ocupada', mantenimiento: 'Mantenimiento', reservado: 'Reservado' }[e] ?? e)
+                  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"/>
+                    <title>Reporte ITAM Reservio</title>
+                    <style>
+                      *{box-sizing:border-box;margin:0;padding:0}
+                      body{font-family:'Segoe UI',Arial,sans-serif;color:#1a1a2e;background:#fff;font-size:12px}
+                      .page{max-width:900px;margin:0 auto;padding:40px 48px}
+                      .header{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #00288e;padding-bottom:20px;margin-bottom:28px}
+                      .logo-area h1{font-size:22px;font-weight:700;color:#00288e;letter-spacing:-0.5px}
+                      .logo-area p{font-size:11px;color:#757684;margin-top:2px}
+                      .meta{text-align:right;font-size:11px;color:#757684}
+                      .meta strong{display:block;color:#1a1a2e;font-size:13px;margin-bottom:2px}
+                      .section{margin-bottom:32px}
+                      .section-title{font-size:14px;font-weight:700;color:#00288e;border-bottom:1px solid #dce2f3;padding-bottom:6px;margin-bottom:14px;display:flex;align-items:center;gap:6px}
+                      .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+                      .kpi-card{background:#f0f3ff;border-radius:8px;padding:14px;text-align:center}
+                      .kpi-card .num{font-size:28px;font-weight:700;color:#00288e}
+                      .kpi-card .lbl{font-size:10px;color:#757684;text-transform:uppercase;letter-spacing:.05em;margin-top:3px}
+                      table{width:100%;border-collapse:collapse;font-size:11px}
+                      thead tr{background:#f0f3ff}
+                      th{text-align:left;padding:8px 10px;font-weight:600;color:#444653;font-size:10px;text-transform:uppercase;letter-spacing:.05em}
+                      td{padding:7px 10px;border-bottom:1px solid #e7eefe;color:#1a1a2e}
+                      tr:last-child td{border-bottom:none}
+                      .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600}
+                      .badge-green{background:#dcfce7;color:#166534}
+                      .badge-amber{background:#fef3c7;color:#92400e}
+                      .badge-red{background:#fee2e2;color:#991b1b}
+                      .badge-blue{background:#dbeafe;color:#1e40af}
+                      .bar-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+                      .bar-label{width:110px;font-size:10px;color:#444653;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+                      .bar-track{flex:1;height:10px;background:#e7eefe;border-radius:5px;overflow:hidden}
+                      .bar-fill{height:100%;background:#00288e;border-radius:5px}
+                      .bar-val{width:28px;text-align:right;font-size:10px;font-weight:600;color:#1a1a2e}
+                      .footer{margin-top:40px;border-top:1px solid #dce2f3;padding-top:14px;text-align:center;font-size:10px;color:#757684}
+                      @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+                    </style></head><body><div class="page">
+                    <div class="header">
+                      <div class="logo-area"><h1>ITAM Reservio</h1><p>Sistema de Reservas y Control de Préstamos</p></div>
+                      <div class="meta"><strong>Reporte Ejecutivo</strong>${now}</div>
+                    </div>
+                    <div class="section">
+                      <div class="section-title">📊 Resumen General</div>
+                      <div class="kpi-row">
+                        <div class="kpi-card"><div class="num">${reportData.reservas.total}</div><div class="lbl">Total Reservas</div></div>
+                        <div class="kpi-card"><div class="num">${reportData.salas.total}</div><div class="lbl">Total Salas</div></div>
+                        <div class="kpi-card"><div class="num">${reportData.equipos.total}</div><div class="lbl">Total Equipos</div></div>
+                        <div class="kpi-card"><div class="num">${reportData.equipos.disponibles}</div><div class="lbl">Equipos Disponibles</div></div>
+                      </div>
+                    </div>
+                    <div class="section">
+                      <div class="section-title">📅 Reservas — Estado</div>
+                      <div class="kpi-row">
+                        <div class="kpi-card"><div class="num" style="color:#166534">${reportData.reservas.confirmadas}</div><div class="lbl">Confirmadas</div></div>
+                        <div class="kpi-card"><div class="num" style="color:#92400e">${reportData.reservas.pendientes}</div><div class="lbl">Pendientes</div></div>
+                        <div class="kpi-card"><div class="num" style="color:#991b1b">${reportData.reservas.canceladas}</div><div class="lbl">Canceladas</div></div>
+                        <div class="kpi-card"><div class="num">${reportData.salas.disponibles}</div><div class="lbl">Salas Disponibles</div></div>
+                      </div>
+                      ${reportData.reservas.porMes.length > 0 ? `
+                      <div style="margin-top:12px">
+                        <div style="font-size:11px;font-weight:600;color:#444653;margin-bottom:8px">Reservas por Mes</div>
+                        ${(() => {
+                          const mx = Math.max(...reportData.reservas.porMes.map(e => e.total), 1)
+                          return reportData.reservas.porMes.map(e => `
+                          <div class="bar-row">
+                            <div class="bar-label">${e.mes}</div>
+                            <div class="bar-track"><div class="bar-fill" style="width:${Math.round((e.total/mx)*100)}%"></div></div>
+                            <div class="bar-val">${e.total}</div>
+                          </div>`).join('')
+                        })()}
+                      </div>` : ''}
+                    </div>
+                    ${reportData.reservas.lista.length > 0 ? `
+                    <div class="section">
+                      <div class="section-title">📋 Últimas Reservas</div>
+                      <table><thead><tr><th>Título</th><th>Fecha</th><th>Sala</th><th>Usuario</th><th>Hora Inicio</th><th>Estado</th></tr></thead>
+                      <tbody>${reportData.reservas.lista.slice(0, 30).map(r => `
+                        <tr><td>${r.titulo}</td><td>${r.fecha}</td><td>${r.sala_nombre ?? '—'}</td><td>${r.usuario_nombre ?? '—'}</td>
+                        <td>${r.hora_inicio.slice(0,5)}</td>
+                        <td><span class="badge ${r.estado==='confirmada'?'badge-green':r.estado==='pendiente'?'badge-amber':'badge-red'}">${fmtEstado(r.estado)}</span></td></tr>
+                      `).join('')}</tbody></table>
+                    </div>` : ''}
+                    <div class="section">
+                      <div class="section-title">🏢 Salas</div>
+                      <table><thead><tr><th>Nombre</th><th>Capacidad</th><th>Ubicación</th><th>Estado</th></tr></thead>
+                      <tbody>${reportData.salas.lista.map(s => `
+                        <tr><td>${s.nombre}</td><td>${s.capacidad} personas</td><td>${s.ubicacion ?? '—'}</td>
+                        <td><span class="badge ${s.estado==='disponible'?'badge-green':s.estado==='ocupada'?'badge-red':'badge-amber'}">${fmtEstado(s.estado)}</span></td></tr>
+                      `).join('')}</tbody></table>
+                    </div>
+                    <div class="section">
+                      <div class="section-title">💻 Equipos por Categoría</div>
+                      ${reportData.equipos.porCategoria.map(c => {
+                        const mx2 = Math.max(...reportData.equipos.porCategoria.map(x => x.total), 1)
+                        return `<div class="bar-row">
+                          <div class="bar-label">${c.categoria}</div>
+                          <div class="bar-track"><div class="bar-fill" style="width:${Math.round((c.total/mx2)*100)}%"></div></div>
+                          <div class="bar-val">${c.total}</div>
+                        </div>`
+                      }).join('')}
+                    </div>
+                    ${reportData.equipos.lista.length > 0 ? `
+                    <div class="section">
+                      <div class="section-title">💻 Inventario de Equipos</div>
+                      <table><thead><tr><th>Nombre</th><th>Categoría</th><th>Marca</th><th>Tipo</th><th>N/S</th><th>Estado</th></tr></thead>
+                      <tbody>${reportData.equipos.lista.slice(0, 50).map(e => `
+                        <tr><td>${e.nombre}</td><td>${e.categoria}</td><td>${e.marca||'—'}</td><td>${e.tipo_equipo||'—'}</td>
+                        <td style="font-family:monospace;font-size:10px">${e.numero_serie||'—'}</td>
+                        <td><span class="badge ${e.estado==='disponible'?'badge-green':e.estado==='reservado'?'badge-blue':'badge-amber'}">${fmtEstado(e.estado)}</span></td></tr>
+                      `).join('')}</tbody></table>
+                    </div>` : ''}
+                    <div class="footer">Generado por ITAM Reservio · ${now} · Sistema de Control de Préstamos y Reservas</div>
+                    </div></body></html>`
+                  printWin.document.write(html)
+                  printWin.document.close()
+                  printWin.focus()
+                  setTimeout(() => printWin.print(), 600)
+                }
+
+                // ── Donut chart helper ────────────────────────────────────
+                const donutData = [
+                  { label: 'Confirmadas', value: reportData?.reservas.confirmadas ?? 0, color: '#166534' },
+                  { label: 'Pendientes',  value: reportData?.reservas.pendientes  ?? 0, color: '#d97706' },
+                  { label: 'Canceladas',  value: reportData?.reservas.canceladas  ?? 0, color: '#dc2626' },
+                ]
+                const donutTotal = donutData.reduce((s, d) => s + d.value, 0)
+                const donutGradient = (() => {
+                  if (!donutTotal) return 'conic-gradient(#e7eefe 0% 100%)'
+                  let cur = 0
+                  const stops = donutData.map(d => {
+                    const p1 = (cur / donutTotal) * 100
+                    cur += d.value
+                    const p2 = (cur / donutTotal) * 100
+                    return `${d.color} ${p1.toFixed(1)}% ${p2.toFixed(1)}%`
+                  })
+                  return `conic-gradient(${stops.join(', ')})`
+                })()
+
+                return (
+                <div className="space-y-6">
                   {loadingReports ? (
-                    <div className="flex items-center justify-center py-20 gap-3">
-                      <span className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                    <div className="flex items-center justify-center py-24 gap-3">
+                      <span className="h-7 w-7 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                       <span className="font-body text-sm text-on-surface-variant">Generando reportes…</span>
                     </div>
                   ) : !reportData ? (
-                    <div className="flex flex-col items-center py-20 gap-3 text-center">
-                      <span className="material-symbols-outlined text-4xl text-on-surface-variant">analytics</span>
+                    <div className="flex flex-col items-center py-24 gap-4 text-center">
+                      <span className="material-symbols-outlined text-5xl text-on-surface-variant/40">analytics</span>
                       <p className="font-body text-sm text-on-surface-variant">No hay datos disponibles</p>
                       <button onClick={loadReports} className="font-label text-sm text-primary hover:underline">Cargar datos</button>
                     </div>
                   ) : (
                     <>
-                      <section>
-                        <h3 className="font-headline text-lg font-bold text-on-surface mb-4 flex items-center gap-2">
-                          <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>devices</span>
-                          Reporte de Equipos
-                        </h3>
-                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                          {[
-                            { label: 'Total', value: reportData.equipos.total, icon: 'devices', color: 'text-primary bg-primary/10' },
-                            { label: 'Disponibles', value: reportData.equipos.disponibles, icon: 'check_circle', color: 'text-green-600 bg-green-50' },
-                            { label: 'Reservados', value: reportData.equipos.reservados, icon: 'event_available', color: 'text-primary bg-primary/10' },
-                            { label: 'Mantenimiento', value: reportData.equipos.mantenimiento, icon: 'build', color: 'text-orange-500 bg-orange-50' },
-                          ].map(stat => (
-                            <div key={stat.label} className="bg-surface-container-lowest rounded-xl p-4 border border-outline-variant/20 shadow-sm">
-                              <div className="flex justify-between items-start mb-2">
-                                <span className="font-label text-xs uppercase tracking-widest text-on-surface-variant">{stat.label}</span>
-                                <span className={`material-symbols-outlined p-1.5 rounded-lg text-[18px] ${stat.color}`}>{stat.icon}</span>
-                              </div>
-                              <span className="font-headline text-3xl font-bold text-on-surface">{stat.value}</span>
-                            </div>
-                          ))}
+                      {/* ── Report header ─────────────────────────────────── */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div>
+                          <h3 className="font-headline text-xl font-bold text-on-surface">Reportes &amp; Análisis</h3>
+                          <p className="font-body text-sm text-on-surface-variant mt-0.5">Estadísticas de salas, reservas y equipos del sistema.</p>
                         </div>
-                        {reportData.equipos.porCategoria.length > 0 && (
+                        <button
+                          onClick={handleExportPDF}
+                          className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label text-sm font-semibold hover:opacity-90 transition-opacity whitespace-nowrap shrink-0"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">picture_as_pdf</span>
+                          Exportar PDF
+                        </button>
+                      </div>
+
+                      {/* ── Sub-tab navigation ────────────────────────────── */}
+                      <div className="flex overflow-x-auto gap-1 border-b border-outline-variant/20 pb-0">
+                        {([
+                          { id: 'overview',  label: 'Resumen',   icon: 'dashboard' },
+                          { id: 'reservas',  label: 'Reservas',  icon: 'event_note' },
+                          { id: 'salas',     label: 'Salas',     icon: 'meeting_room' },
+                          { id: 'equipos',   label: 'Equipos',   icon: 'devices' },
+                        ] as const).map(tab => (
+                          <button
+                            key={tab.id}
+                            onClick={() => setReportSubTab(tab.id)}
+                            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-label font-semibold whitespace-nowrap rounded-t-lg border-b-2 transition-colors ${
+                              reportSubTab === tab.id
+                                ? 'border-primary text-primary bg-primary/5'
+                                : 'border-transparent text-on-surface-variant hover:text-on-surface hover:bg-surface-container/50'
+                            }`}
+                          >
+                            <span className="material-symbols-outlined text-[17px]" style={reportSubTab === tab.id ? { fontVariationSettings: "'FILL' 1" } : undefined}>{tab.icon}</span>
+                            {tab.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* ══ OVERVIEW TAB ══════════════════════════════════════ */}
+                      {reportSubTab === 'overview' && (
+                        <div className="space-y-6">
+                          {/* KPI cards */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {[
+                              { label: 'Total Reservas',       value: reportData.reservas.total,    icon: 'event_note',    delta: reportData.reservas.confirmadas > 0 ? `+${reportData.reservas.confirmadas} confirmadas` : undefined, color: 'text-primary bg-primary/10' },
+                              { label: 'Tasa de Confirmación', value: reportData.reservas.total > 0 ? `${Math.round((reportData.reservas.confirmadas/reportData.reservas.total)*100)}%` : '0%', icon: 'verified', delta: `${reportData.reservas.confirmadas} de ${reportData.reservas.total}`, color: 'text-green-600 bg-green-50' },
+                              { label: 'Equipos en Mantenimiento', value: reportData.equipos.mantenimiento, icon: 'build', delta: reportData.equipos.mantenimiento > 0 ? 'Requiere atención' : 'Todo en orden', color: reportData.equipos.mantenimiento > 0 ? 'text-orange-500 bg-orange-50' : 'text-green-600 bg-green-50' },
+                            ].map(kpi => (
+                              <div key={kpi.label} className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-5 shadow-sm flex flex-col gap-2 relative overflow-hidden group">
+                                <div className="absolute top-0 right-0 w-20 h-20 bg-primary/3 rounded-bl-full -mr-3 -mt-3 transition-transform group-hover:scale-110" />
+                                <div className="flex justify-between items-start">
+                                  <span className="font-label text-xs uppercase tracking-widest text-on-surface-variant">{kpi.label}</span>
+                                  <span className={`material-symbols-outlined p-1.5 rounded-lg text-[18px] ${kpi.color}`} style={{ fontVariationSettings: "'FILL' 1" }}>{kpi.icon}</span>
+                                </div>
+                                <span className="font-headline text-3xl font-bold text-on-surface">{kpi.value}</span>
+                                {kpi.delta && <span className="font-body text-xs text-on-surface-variant">{kpi.delta}</span>}
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Charts row */}
+                          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                            {/* Donut chart — Reservation status */}
+                            <div className="lg:col-span-5 bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-5 shadow-sm flex flex-col gap-4">
+                              <div className="flex justify-between items-center">
+                                <h4 className="font-label text-sm font-semibold text-on-surface">Estado de Reservas</h4>
+                              </div>
+                              <div className="flex flex-col items-center gap-4">
+                                <div
+                                  className="relative w-44 h-44 rounded-full"
+                                  style={{ background: donutGradient }}
+                                >
+                                  <div className="absolute inset-[22%] bg-surface-container-lowest rounded-full flex flex-col items-center justify-center">
+                                    <span className="font-headline text-2xl font-bold text-on-surface">{donutTotal}</span>
+                                    <span className="font-body text-xs text-on-surface-variant">Total</span>
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap gap-x-4 gap-y-2 justify-center">
+                                  {donutData.map(d => (
+                                    <div key={d.label} className="flex items-center gap-1.5 text-xs font-body text-on-surface-variant">
+                                      <span className="w-3 h-3 rounded-full shrink-0" style={{ background: d.color }} />
+                                      {d.label} <span className="font-semibold text-on-surface">({d.value})</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Bar chart — Reservas por mes */}
+                            <div className="lg:col-span-7 bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-5 shadow-sm flex flex-col gap-4">
+                              <h4 className="font-label text-sm font-semibold text-on-surface">Reservas por Mes</h4>
+                              {reportData.reservas.porMes.length === 0 ? (
+                                <div className="flex-1 flex items-center justify-center text-on-surface-variant font-body text-sm">Sin datos</div>
+                              ) : (() => {
+                                const maxV = Math.max(...reportData.reservas.porMes.map(e => e.total), 1)
+                                return (
+                                  <div className="flex-1 flex flex-col gap-2">
+                                    {/* Vertical bars */}
+                                    <div className="flex items-end gap-2 h-40 border-b border-l border-outline-variant/30 pb-0 pl-0 relative">
+                                      {reportData.reservas.porMes.map((entry, i) => (
+                                        <div key={entry.mes} className="flex-1 flex flex-col items-center gap-1 h-full justify-end group">
+                                          <span className="font-label text-[10px] text-on-surface font-semibold opacity-0 group-hover:opacity-100 transition-opacity">{entry.total}</span>
+                                          <div
+                                            className={`w-full rounded-t transition-all ${i === reportData.reservas.porMes.length - 1 ? 'bg-primary' : 'bg-primary/50 hover:bg-primary/70'}`}
+                                            style={{ height: `${(entry.total / maxV) * 90}%`, minHeight: entry.total > 0 ? '4px' : '0' }}
+                                          />
+                                        </div>
+                                      ))}
+                                    </div>
+                                    <div className="flex gap-2">
+                                      {reportData.reservas.porMes.map(entry => (
+                                        <span key={entry.mes} className="flex-1 text-center font-mono text-[9px] text-on-surface-variant truncate">{entry.mes.slice(5)}/{entry.mes.slice(2,4)}</span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )
+                              })()}
+                            </div>
+                          </div>
+
+                          {/* Equipos por categoría — horizontal bars */}
+                          {reportData.equipos.porCategoria.length > 0 && (
+                            <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-5 shadow-sm">
+                              <h4 className="font-label text-sm font-semibold text-on-surface mb-4">Equipos por Categoría</h4>
+                              <div className="space-y-3">
+                                {reportData.equipos.porCategoria
+                                  .sort((a, b) => b.total - a.total)
+                                  .map(cat => {
+                                    const maxC = Math.max(...reportData.equipos.porCategoria.map(c => c.total), 1)
+                                    const pctTotal = (cat.total / maxC) * 100
+                                    const pctDisp  = cat.total > 0 ? (cat.disponibles / cat.total) * 100 : 0
+                                    return (
+                                      <div key={cat.categoria}>
+                                        <div className="flex justify-between items-center mb-1.5">
+                                          <span className="font-body text-sm text-on-surface capitalize">{CATEGORIA_LABELS[cat.categoria] ?? cat.categoria}</span>
+                                          <div className="flex items-center gap-2">
+                                            <span className="font-label text-xs text-on-surface-variant">{cat.disponibles}/{cat.total}</span>
+                                            <span className="font-label text-xs text-green-600">{cat.total > 0 ? Math.round(pctDisp) : 0}% disp.</span>
+                                          </div>
+                                        </div>
+                                        <div className="h-2.5 bg-surface-container rounded-full overflow-hidden">
+                                          <div className="h-full relative" style={{ width: `${pctTotal}%` }}>
+                                            <div className="h-full bg-primary/30 rounded-full absolute inset-0" />
+                                            <div className="h-full bg-primary rounded-full absolute inset-0" style={{ width: `${pctDisp}%` }} />
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )
+                                  })}
+                              </div>
+                              <div className="flex items-center gap-4 mt-4 pt-3 border-t border-outline-variant/20">
+                                <div className="flex items-center gap-1.5 font-body text-xs text-on-surface-variant"><span className="w-3 h-2.5 rounded bg-primary inline-block" /> Disponibles</div>
+                                <div className="flex items-center gap-1.5 font-body text-xs text-on-surface-variant"><span className="w-3 h-2.5 rounded bg-primary/30 inline-block" /> Total</div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Salas status mini-cards */}
                           <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-5 shadow-sm">
-                            <h4 className="font-label text-xs uppercase tracking-widest text-on-surface-variant mb-4">Por Categoría</h4>
-                            <div className="space-y-3">
-                              {reportData.equipos.porCategoria.map(cat => (
-                                <div key={cat.categoria}>
-                                  <div className="flex justify-between items-center mb-1">
-                                    <span className="font-body text-sm text-on-surface capitalize">{CATEGORIA_LABELS[cat.categoria] ?? cat.categoria}</span>
-                                    <span className="font-label text-xs text-on-surface-variant">{cat.disponibles}/{cat.total}</span>
-                                  </div>
-                                  <div className="h-2 bg-surface-container rounded-full overflow-hidden">
-                                    <div className="h-full bg-primary rounded-full" style={{ width: cat.total > 0 ? `${(cat.disponibles / cat.total) * 100}%` : '0%' }} />
-                                  </div>
+                            <h4 className="font-label text-sm font-semibold text-on-surface mb-4">Estado de Salas</h4>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                              {[
+                                { label: 'Total',         value: reportData.salas.total,         color: 'bg-primary/10 text-primary' },
+                                { label: 'Disponibles',   value: reportData.salas.disponibles,   color: 'bg-green-50 text-green-700' },
+                                { label: 'Ocupadas',      value: reportData.salas.ocupadas,      color: 'bg-red-50 text-red-700' },
+                                { label: 'Mantenimiento', value: reportData.salas.mantenimiento, color: 'bg-orange-50 text-orange-700' },
+                              ].map(s => (
+                                <div key={s.label} className={`rounded-lg p-3 text-center ${s.color}`}>
+                                  <div className="font-headline text-2xl font-bold">{s.value}</div>
+                                  <div className="font-label text-xs mt-0.5 opacity-80">{s.label}</div>
                                 </div>
                               ))}
                             </div>
                           </div>
-                        )}
-                      </section>
-                      <section>
-                        <h3 className="font-headline text-lg font-bold text-on-surface mb-4 flex items-center gap-2">
-                          <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>meeting_room</span>
-                          Reporte de Salas
-                        </h3>
-                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                          {[
-                            { label: 'Total', value: reportData.salas.total, icon: 'meeting_room', color: 'text-primary bg-primary/10' },
-                            { label: 'Disponibles', value: reportData.salas.disponibles, icon: 'check_circle', color: 'text-green-600 bg-green-50' },
-                            { label: 'Ocupadas', value: reportData.salas.ocupadas, icon: 'do_not_disturb_on', color: 'text-red-500 bg-red-50' },
-                            { label: 'Mantenimiento', value: reportData.salas.mantenimiento, icon: 'build', color: 'text-orange-500 bg-orange-50' },
-                          ].map(stat => (
-                            <div key={stat.label} className="bg-surface-container-lowest rounded-xl p-4 border border-outline-variant/20 shadow-sm">
-                              <div className="flex justify-between items-start mb-2">
-                                <span className="font-label text-xs uppercase tracking-widest text-on-surface-variant">{stat.label}</span>
-                                <span className={`material-symbols-outlined p-1.5 rounded-lg text-[18px] ${stat.color}`}>{stat.icon}</span>
-                              </div>
-                              <span className="font-headline text-3xl font-bold text-on-surface">{stat.value}</span>
-                            </div>
-                          ))}
                         </div>
-                      </section>
-                      <section>
-                        <h3 className="font-headline text-lg font-bold text-on-surface mb-4 flex items-center gap-2">
-                          <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>event_note</span>
-                          Reporte de Reservas
-                        </h3>
-                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                          {[
-                            { label: 'Total', value: reportData.reservas.total, icon: 'event_note', color: 'text-primary bg-primary/10' },
-                            { label: 'Confirmadas', value: reportData.reservas.confirmadas, icon: 'event_available', color: 'text-green-600 bg-green-50' },
-                            { label: 'Pendientes', value: reportData.reservas.pendientes, icon: 'pending', color: 'text-amber-500 bg-amber-50' },
-                            { label: 'Canceladas', value: reportData.reservas.canceladas, icon: 'event_busy', color: 'text-red-500 bg-red-50' },
-                          ].map(stat => (
-                            <div key={stat.label} className="bg-surface-container-lowest rounded-xl p-4 border border-outline-variant/20 shadow-sm">
-                              <div className="flex justify-between items-start mb-2">
-                                <span className="font-label text-xs uppercase tracking-widest text-on-surface-variant">{stat.label}</span>
-                                <span className={`material-symbols-outlined p-1.5 rounded-lg text-[18px] ${stat.color}`}>{stat.icon}</span>
-                              </div>
-                              <span className="font-headline text-3xl font-bold text-on-surface">{stat.value}</span>
-                            </div>
-                          ))}
-                        </div>
-                        {reportData.reservas.porMes.length > 0 && (
-                          <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-5 shadow-sm">
-                            <h4 className="font-label text-xs uppercase tracking-widest text-on-surface-variant mb-4">Reservas por Mes</h4>
-                            <div className="space-y-3">
-                              {reportData.reservas.porMes.map(entry => {
-                                const maxVal = Math.max(...reportData.reservas.porMes.map(e => e.total), 1)
-                                return (
-                                  <div key={entry.mes} className="flex items-center gap-3">
-                                    <span className="font-mono text-xs text-on-surface-variant w-16 shrink-0">{entry.mes}</span>
-                                    <div className="flex-1 h-2 bg-surface-container rounded-full overflow-hidden">
-                                      <div className="h-full bg-secondary rounded-full" style={{ width: `${(entry.total / maxVal) * 100}%` }} />
-                                    </div>
-                                    <span className="font-label text-xs font-bold text-on-surface w-6 text-right shrink-0">{entry.total}</span>
+                      )}
+
+                      {/* ══ RESERVAS TAB ══════════════════════════════════════ */}
+                      {reportSubTab === 'reservas' && (() => {
+                        const q = reportSearchReservas.toLowerCase()
+                        const filtered = reportData.reservas.lista.filter(r =>
+                          !q || r.titulo.toLowerCase().includes(q) || (r.sala_nombre ?? '').toLowerCase().includes(q) || (r.usuario_nombre ?? '').toLowerCase().includes(q) || r.estado.includes(q) || r.fecha.includes(q)
+                        )
+                        const totalPages = Math.max(1, Math.ceil(filtered.length / REPORT_PAGE_SIZE))
+                        const page = Math.min(reportPageReservas, totalPages)
+                        const paged = filtered.slice((page - 1) * REPORT_PAGE_SIZE, page * REPORT_PAGE_SIZE)
+                        return (
+                          <div className="space-y-5">
+                            {/* KPI row */}
+                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                              {[
+                                { label: 'Total', value: reportData.reservas.total, icon: 'event_note', color: 'text-primary bg-primary/10' },
+                                { label: 'Confirmadas', value: reportData.reservas.confirmadas, icon: 'event_available', color: 'text-green-600 bg-green-50' },
+                                { label: 'Pendientes', value: reportData.reservas.pendientes, icon: 'pending', color: 'text-amber-500 bg-amber-50' },
+                                { label: 'Canceladas', value: reportData.reservas.canceladas, icon: 'event_busy', color: 'text-red-500 bg-red-50' },
+                              ].map(s => (
+                                <div key={s.label} className="bg-surface-container-lowest rounded-xl p-4 border border-outline-variant/20 shadow-sm">
+                                  <div className="flex justify-between items-start mb-2">
+                                    <span className="font-label text-xs uppercase tracking-widest text-on-surface-variant">{s.label}</span>
+                                    <span className={`material-symbols-outlined p-1.5 rounded-lg text-[18px] ${s.color}`} style={{ fontVariationSettings: "'FILL' 1" }}>{s.icon}</span>
                                   </div>
-                                )
-                              })}
+                                  <span className="font-headline text-3xl font-bold text-on-surface">{s.value}</span>
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Bar chart por mes */}
+                            {reportData.reservas.porMes.length > 0 && (() => {
+                              const maxV = Math.max(...reportData.reservas.porMes.map(e => e.total), 1)
+                              return (
+                                <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-5 shadow-sm">
+                                  <h4 className="font-label text-sm font-semibold text-on-surface mb-4">Evolución Mensual de Reservas</h4>
+                                  <div className="space-y-2">
+                                    {reportData.reservas.porMes.map(entry => (
+                                      <div key={entry.mes} className="flex items-center gap-3">
+                                        <span className="font-mono text-xs text-on-surface-variant w-16 shrink-0">{entry.mes}</span>
+                                        <div className="flex-1 h-5 bg-surface-container rounded overflow-hidden">
+                                          <div
+                                            className="h-full bg-primary/70 rounded flex items-center justify-end pr-2 transition-all"
+                                            style={{ width: `${(entry.total / maxV) * 100}%`, minWidth: entry.total > 0 ? '20px' : '0' }}
+                                          >
+                                            <span className="font-label text-[10px] font-bold text-white">{entry.total}</span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )
+                            })()}
+
+                            {/* Search + table */}
+                            <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 shadow-sm overflow-hidden">
+                              <div className="p-4 border-b border-outline-variant/15 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-surface-bright">
+                                <h4 className="font-label text-sm font-semibold text-on-surface">Historial de Reservas</h4>
+                                <div className="relative w-full sm:w-64">
+                                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[16px]">search</span>
+                                  <input
+                                    type="text"
+                                    value={reportSearchReservas}
+                                    onChange={e => { setReportSearchReservas(e.target.value); setReportPageReservas(1) }}
+                                    placeholder="Buscar reservas…"
+                                    className="w-full pl-8 pr-3 py-2 border border-outline-variant/30 rounded-lg text-xs font-body text-on-surface bg-surface-container-lowest focus:outline-none focus:ring-2 focus:ring-primary/30"
+                                  />
+                                </div>
+                              </div>
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-left border-collapse min-w-[700px]">
+                                  <thead>
+                                    <tr className="bg-surface-container border-b border-outline-variant/20">
+                                      <th className="py-3 px-4 font-label text-xs uppercase tracking-widest text-on-surface-variant font-semibold">Título</th>
+                                      <th className="py-3 px-4 font-label text-xs uppercase tracking-widest text-on-surface-variant font-semibold">Fecha</th>
+                                      <th className="py-3 px-4 font-label text-xs uppercase tracking-widest text-on-surface-variant font-semibold">Sala</th>
+                                      <th className="py-3 px-4 font-label text-xs uppercase tracking-widest text-on-surface-variant font-semibold">Usuario</th>
+                                      <th className="py-3 px-4 font-label text-xs uppercase tracking-widest text-on-surface-variant font-semibold">Horario</th>
+                                      <th className="py-3 px-4 font-label text-xs uppercase tracking-widest text-on-surface-variant font-semibold">Estado</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {paged.length === 0 ? (
+                                      <tr><td colSpan={6} className="py-12 text-center font-body text-sm text-on-surface-variant">No se encontraron registros.</td></tr>
+                                    ) : paged.map(r => (
+                                      <tr key={r.id} className="border-b border-outline-variant/10 hover:bg-surface-container/50 transition-colors">
+                                        <td className="py-3 px-4 font-body text-sm text-on-surface font-medium max-w-[160px] truncate">{r.titulo}</td>
+                                        <td className="py-3 px-4 font-body text-sm text-on-surface-variant">{r.fecha}</td>
+                                        <td className="py-3 px-4 font-body text-sm text-on-surface">{r.sala_nombre ?? <span className="text-on-surface-variant/50">—</span>}</td>
+                                        <td className="py-3 px-4 font-body text-sm text-on-surface-variant">{r.usuario_nombre ?? '—'}</td>
+                                        <td className="py-3 px-4 font-body text-xs text-on-surface-variant">{r.hora_inicio.slice(0,5)} – {r.hora_fin.slice(0,5)}</td>
+                                        <td className="py-3 px-4">
+                                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-label text-xs font-semibold ${
+                                            r.estado === 'confirmada' ? 'bg-green-100 text-green-700'
+                                            : r.estado === 'pendiente' ? 'bg-amber-100 text-amber-700'
+                                            : 'bg-red-100 text-red-700'
+                                          }`}>
+                                            <span className={`w-1.5 h-1.5 rounded-full ${r.estado === 'confirmada' ? 'bg-green-500' : r.estado === 'pendiente' ? 'bg-amber-500' : 'bg-red-500'}`} />
+                                            {r.estado === 'confirmada' ? 'Confirmada' : r.estado === 'pendiente' ? 'Pendiente' : 'Cancelada'}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                              {/* Pagination */}
+                              <div className="p-4 flex justify-between items-center bg-surface-bright border-t border-outline-variant/10">
+                                <span className="font-body text-xs text-on-surface-variant">Mostrando {paged.length > 0 ? (page-1)*REPORT_PAGE_SIZE+1 : 0}–{Math.min(page*REPORT_PAGE_SIZE, filtered.length)} de {filtered.length}</span>
+                                <div className="flex gap-1">
+                                  <button disabled={page <= 1} onClick={() => setReportPageReservas(p => p-1)} className="p-1.5 rounded border border-outline-variant/30 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container disabled:opacity-40 transition-colors">
+                                    <span className="material-symbols-outlined text-[16px]">chevron_left</span>
+                                  </button>
+                                  {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                                    const pg = totalPages <= 5 ? i+1 : page <= 3 ? i+1 : page >= totalPages-2 ? totalPages-4+i : page-2+i
+                                    return <button key={pg} onClick={() => setReportPageReservas(pg)} className={`px-2.5 py-1 rounded border font-label text-xs transition-colors ${pg === page ? 'bg-primary border-primary text-on-primary' : 'border-outline-variant/30 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container'}`}>{pg}</button>
+                                  })}
+                                  <button disabled={page >= totalPages} onClick={() => setReportPageReservas(p => p+1)} className="p-1.5 rounded border border-outline-variant/30 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container disabled:opacity-40 transition-colors">
+                                    <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+                                  </button>
+                                </div>
+                              </div>
                             </div>
                           </div>
-                        )}
-                      </section>
+                        )
+                      })()}
+
+                      {/* ══ SALAS TAB ══════════════════════════════════════════ */}
+                      {reportSubTab === 'salas' && (() => {
+                        const q = reportSearchSalas.toLowerCase()
+                        const filtered = reportData.salas.lista.filter(s =>
+                          !q || s.nombre.toLowerCase().includes(q) || (s.ubicacion ?? '').toLowerCase().includes(q) || s.estado.includes(q)
+                        )
+                        const totalPages = Math.max(1, Math.ceil(filtered.length / REPORT_PAGE_SIZE))
+                        const page = Math.min(reportPageSalas, totalPages)
+                        const paged = filtered.slice((page - 1) * REPORT_PAGE_SIZE, page * REPORT_PAGE_SIZE)
+                        return (
+                          <div className="space-y-5">
+                            {/* KPI row */}
+                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                              {[
+                                { label: 'Total', value: reportData.salas.total, icon: 'meeting_room', color: 'text-primary bg-primary/10' },
+                                { label: 'Disponibles', value: reportData.salas.disponibles, icon: 'check_circle', color: 'text-green-600 bg-green-50' },
+                                { label: 'Ocupadas', value: reportData.salas.ocupadas, icon: 'do_not_disturb_on', color: 'text-red-500 bg-red-50' },
+                                { label: 'Mantenimiento', value: reportData.salas.mantenimiento, icon: 'build', color: 'text-orange-500 bg-orange-50' },
+                              ].map(s => (
+                                <div key={s.label} className="bg-surface-container-lowest rounded-xl p-4 border border-outline-variant/20 shadow-sm">
+                                  <div className="flex justify-between items-start mb-2">
+                                    <span className="font-label text-xs uppercase tracking-widest text-on-surface-variant">{s.label}</span>
+                                    <span className={`material-symbols-outlined p-1.5 rounded-lg text-[18px] ${s.color}`} style={{ fontVariationSettings: "'FILL' 1" }}>{s.icon}</span>
+                                  </div>
+                                  <span className="font-headline text-3xl font-bold text-on-surface">{s.value}</span>
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Ocupación visual */}
+                            {reportData.salas.total > 0 && (
+                              <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-5 shadow-sm">
+                                <h4 className="font-label text-sm font-semibold text-on-surface mb-3">Distribución de Estado</h4>
+                                <div className="flex h-5 rounded-full overflow-hidden gap-0.5">
+                                  {reportData.salas.disponibles > 0 && <div className="bg-green-400 transition-all" style={{ flex: reportData.salas.disponibles }} title={`Disponibles: ${reportData.salas.disponibles}`} />}
+                                  {reportData.salas.ocupadas > 0 && <div className="bg-red-400 transition-all" style={{ flex: reportData.salas.ocupadas }} title={`Ocupadas: ${reportData.salas.ocupadas}`} />}
+                                  {reportData.salas.mantenimiento > 0 && <div className="bg-orange-400 transition-all" style={{ flex: reportData.salas.mantenimiento }} title={`Mantenimiento: ${reportData.salas.mantenimiento}`} />}
+                                </div>
+                                <div className="flex items-center gap-4 mt-2">
+                                  {[{l:'Disponibles',c:'bg-green-400'},{l:'Ocupadas',c:'bg-red-400'},{l:'Mantenimiento',c:'bg-orange-400'}].map(x=>(
+                                    <div key={x.l} className="flex items-center gap-1.5"><span className={`w-3 h-2.5 rounded ${x.c}`}/><span className="font-body text-xs text-on-surface-variant">{x.l}</span></div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Search + table */}
+                            <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 shadow-sm overflow-hidden">
+                              <div className="p-4 border-b border-outline-variant/15 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-surface-bright">
+                                <h4 className="font-label text-sm font-semibold text-on-surface">Detalle de Salas</h4>
+                                <div className="relative w-full sm:w-64">
+                                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[16px]">search</span>
+                                  <input
+                                    type="text"
+                                    value={reportSearchSalas}
+                                    onChange={e => { setReportSearchSalas(e.target.value); setReportPageSalas(1) }}
+                                    placeholder="Buscar salas…"
+                                    className="w-full pl-8 pr-3 py-2 border border-outline-variant/30 rounded-lg text-xs font-body text-on-surface bg-surface-container-lowest focus:outline-none focus:ring-2 focus:ring-primary/30"
+                                  />
+                                </div>
+                              </div>
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-left border-collapse min-w-[500px]">
+                                  <thead>
+                                    <tr className="bg-surface-container border-b border-outline-variant/20">
+                                      <th className="py-3 px-4 font-label text-xs uppercase tracking-widest text-on-surface-variant font-semibold">Nombre</th>
+                                      <th className="py-3 px-4 font-label text-xs uppercase tracking-widest text-on-surface-variant font-semibold">Capacidad</th>
+                                      <th className="py-3 px-4 font-label text-xs uppercase tracking-widest text-on-surface-variant font-semibold">Ubicación</th>
+                                      <th className="py-3 px-4 font-label text-xs uppercase tracking-widest text-on-surface-variant font-semibold">Estado</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {paged.length === 0 ? (
+                                      <tr><td colSpan={4} className="py-12 text-center font-body text-sm text-on-surface-variant">No se encontraron salas.</td></tr>
+                                    ) : paged.map(s => (
+                                      <tr key={s.id} className="border-b border-outline-variant/10 hover:bg-surface-container/50 transition-colors">
+                                        <td className="py-3 px-4 font-body text-sm text-on-surface font-medium">{s.nombre}</td>
+                                        <td className="py-3 px-4 font-body text-sm text-on-surface-variant">{s.capacidad} personas</td>
+                                        <td className="py-3 px-4 font-body text-sm text-on-surface-variant">{s.ubicacion ?? '—'}</td>
+                                        <td className="py-3 px-4">
+                                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-label text-xs font-semibold ${
+                                            s.estado === 'disponible' ? 'bg-green-100 text-green-700'
+                                            : s.estado === 'ocupada' ? 'bg-red-100 text-red-700'
+                                            : 'bg-orange-100 text-orange-700'
+                                          }`}>
+                                            <span className={`w-1.5 h-1.5 rounded-full ${s.estado === 'disponible' ? 'bg-green-500' : s.estado === 'ocupada' ? 'bg-red-500' : 'bg-orange-500'}`} />
+                                            {s.estado.charAt(0).toUpperCase() + s.estado.slice(1)}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                              <div className="p-4 flex justify-between items-center bg-surface-bright border-t border-outline-variant/10">
+                                <span className="font-body text-xs text-on-surface-variant">Mostrando {paged.length > 0 ? (page-1)*REPORT_PAGE_SIZE+1 : 0}–{Math.min(page*REPORT_PAGE_SIZE, filtered.length)} de {filtered.length}</span>
+                                <div className="flex gap-1">
+                                  <button disabled={page <= 1} onClick={() => setReportPageSalas(p => p-1)} className="p-1.5 rounded border border-outline-variant/30 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container disabled:opacity-40 transition-colors">
+                                    <span className="material-symbols-outlined text-[16px]">chevron_left</span>
+                                  </button>
+                                  {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                                    const pg = totalPages <= 5 ? i+1 : page <= 3 ? i+1 : page >= totalPages-2 ? totalPages-4+i : page-2+i
+                                    return <button key={pg} onClick={() => setReportPageSalas(pg)} className={`px-2.5 py-1 rounded border font-label text-xs transition-colors ${pg === page ? 'bg-primary border-primary text-on-primary' : 'border-outline-variant/30 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container'}`}>{pg}</button>
+                                  })}
+                                  <button disabled={page >= totalPages} onClick={() => setReportPageSalas(p => p+1)} className="p-1.5 rounded border border-outline-variant/30 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container disabled:opacity-40 transition-colors">
+                                    <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })()}
+
+                      {/* ══ EQUIPOS TAB ════════════════════════════════════════ */}
+                      {reportSubTab === 'equipos' && (() => {
+                        const q = reportSearchEquipos.toLowerCase()
+                        const filtered = reportData.equipos.lista.filter(e =>
+                          !q || e.nombre.toLowerCase().includes(q) || e.categoria.toLowerCase().includes(q) || e.marca.toLowerCase().includes(q) || (e.numero_serie ?? '').toLowerCase().includes(q) || e.estado.includes(q)
+                        )
+                        const totalPages = Math.max(1, Math.ceil(filtered.length / REPORT_PAGE_SIZE))
+                        const page = Math.min(reportPageEquipos, totalPages)
+                        const paged = filtered.slice((page - 1) * REPORT_PAGE_SIZE, page * REPORT_PAGE_SIZE)
+                        return (
+                          <div className="space-y-5">
+                            {/* KPI row */}
+                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                              {[
+                                { label: 'Total', value: reportData.equipos.total, icon: 'devices', color: 'text-primary bg-primary/10' },
+                                { label: 'Disponibles', value: reportData.equipos.disponibles, icon: 'check_circle', color: 'text-green-600 bg-green-50' },
+                                { label: 'Reservados', value: reportData.equipos.reservados, icon: 'event_available', color: 'text-primary bg-primary/10' },
+                                { label: 'Mantenimiento', value: reportData.equipos.mantenimiento, icon: 'build', color: 'text-orange-500 bg-orange-50' },
+                              ].map(s => (
+                                <div key={s.label} className="bg-surface-container-lowest rounded-xl p-4 border border-outline-variant/20 shadow-sm">
+                                  <div className="flex justify-between items-start mb-2">
+                                    <span className="font-label text-xs uppercase tracking-widest text-on-surface-variant">{s.label}</span>
+                                    <span className={`material-symbols-outlined p-1.5 rounded-lg text-[18px] ${s.color}`} style={{ fontVariationSettings: "'FILL' 1" }}>{s.icon}</span>
+                                  </div>
+                                  <span className="font-headline text-3xl font-bold text-on-surface">{s.value}</span>
+                                  {s.label === 'Disponibles' && reportData.equipos.total > 0 && (
+                                    <p className="font-label text-[11px] text-on-surface-variant mt-0.5">{Math.round((reportData.equipos.disponibles/reportData.equipos.total)*100)}% del inventario</p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Category chart */}
+                            {reportData.equipos.porCategoria.length > 0 && (
+                              <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-5 shadow-sm">
+                                <h4 className="font-label text-sm font-semibold text-on-surface mb-4">Disponibilidad por Categoría</h4>
+                                <div className="space-y-3">
+                                  {reportData.equipos.porCategoria.sort((a, b) => b.total - a.total).map(cat => (
+                                    <div key={cat.categoria}>
+                                      <div className="flex justify-between items-center mb-1.5">
+                                        <span className="font-body text-sm text-on-surface capitalize">{CATEGORIA_LABELS[cat.categoria] ?? cat.categoria}</span>
+                                        <span className="font-label text-xs text-on-surface-variant">{cat.disponibles}/{cat.total} disp.</span>
+                                      </div>
+                                      <div className="h-2 bg-surface-container rounded-full overflow-hidden">
+                                        <div className="h-full bg-primary rounded-full transition-all" style={{ width: cat.total > 0 ? `${(cat.disponibles/cat.total)*100}%` : '0%' }} />
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Search + table */}
+                            <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 shadow-sm overflow-hidden">
+                              <div className="p-4 border-b border-outline-variant/15 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-surface-bright">
+                                <h4 className="font-label text-sm font-semibold text-on-surface">Inventario de Equipos</h4>
+                                <div className="relative w-full sm:w-64">
+                                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[16px]">search</span>
+                                  <input
+                                    type="text"
+                                    value={reportSearchEquipos}
+                                    onChange={e => { setReportSearchEquipos(e.target.value); setReportPageEquipos(1) }}
+                                    placeholder="Buscar equipos…"
+                                    className="w-full pl-8 pr-3 py-2 border border-outline-variant/30 rounded-lg text-xs font-body text-on-surface bg-surface-container-lowest focus:outline-none focus:ring-2 focus:ring-primary/30"
+                                  />
+                                </div>
+                              </div>
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-left border-collapse min-w-[650px]">
+                                  <thead>
+                                    <tr className="bg-surface-container border-b border-outline-variant/20">
+                                      <th className="py-3 px-4 font-label text-xs uppercase tracking-widest text-on-surface-variant font-semibold">Nombre</th>
+                                      <th className="py-3 px-4 font-label text-xs uppercase tracking-widest text-on-surface-variant font-semibold">Categoría</th>
+                                      <th className="py-3 px-4 font-label text-xs uppercase tracking-widest text-on-surface-variant font-semibold">Marca</th>
+                                      <th className="py-3 px-4 font-label text-xs uppercase tracking-widest text-on-surface-variant font-semibold">Tipo</th>
+                                      <th className="py-3 px-4 font-label text-xs uppercase tracking-widest text-on-surface-variant font-semibold">N/S</th>
+                                      <th className="py-3 px-4 font-label text-xs uppercase tracking-widest text-on-surface-variant font-semibold">Estado</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {paged.length === 0 ? (
+                                      <tr><td colSpan={6} className="py-12 text-center font-body text-sm text-on-surface-variant">No se encontraron equipos.</td></tr>
+                                    ) : paged.map(eq => (
+                                      <tr key={eq.id} className="border-b border-outline-variant/10 hover:bg-surface-container/50 transition-colors">
+                                        <td className="py-3 px-4 font-body text-sm text-on-surface font-medium max-w-[160px] truncate">{eq.nombre}</td>
+                                        <td className="py-3 px-4 font-body text-sm text-on-surface-variant capitalize">{CATEGORIA_LABELS[eq.categoria] ?? eq.categoria}</td>
+                                        <td className="py-3 px-4 font-body text-sm text-on-surface-variant">{eq.marca || '—'}</td>
+                                        <td className="py-3 px-4 font-body text-sm text-on-surface-variant">{eq.tipo_equipo || '—'}</td>
+                                        <td className="py-3 px-4 font-mono text-xs text-on-surface-variant">{eq.numero_serie ?? '—'}</td>
+                                        <td className="py-3 px-4">
+                                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-label text-xs font-semibold ${
+                                            eq.estado === 'disponible' ? 'bg-green-100 text-green-700'
+                                            : eq.estado === 'reservado' ? 'bg-blue-100 text-blue-700'
+                                            : 'bg-orange-100 text-orange-700'
+                                          }`}>
+                                            <span className={`w-1.5 h-1.5 rounded-full ${eq.estado === 'disponible' ? 'bg-green-500' : eq.estado === 'reservado' ? 'bg-blue-500' : 'bg-orange-500'}`} />
+                                            {eq.estado.charAt(0).toUpperCase() + eq.estado.slice(1)}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                              <div className="p-4 flex justify-between items-center bg-surface-bright border-t border-outline-variant/10">
+                                <span className="font-body text-xs text-on-surface-variant">Mostrando {paged.length > 0 ? (page-1)*REPORT_PAGE_SIZE+1 : 0}–{Math.min(page*REPORT_PAGE_SIZE, filtered.length)} de {filtered.length}</span>
+                                <div className="flex gap-1">
+                                  <button disabled={page <= 1} onClick={() => setReportPageEquipos(p => p-1)} className="p-1.5 rounded border border-outline-variant/30 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container disabled:opacity-40 transition-colors">
+                                    <span className="material-symbols-outlined text-[16px]">chevron_left</span>
+                                  </button>
+                                  {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                                    const pg = totalPages <= 5 ? i+1 : page <= 3 ? i+1 : page >= totalPages-2 ? totalPages-4+i : page-2+i
+                                    return <button key={pg} onClick={() => setReportPageEquipos(pg)} className={`px-2.5 py-1 rounded border font-label text-xs transition-colors ${pg === page ? 'bg-primary border-primary text-on-primary' : 'border-outline-variant/30 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container'}`}>{pg}</button>
+                                  })}
+                                  <button disabled={page >= totalPages} onClick={() => setReportPageEquipos(p => p+1)} className="p-1.5 rounded border border-outline-variant/30 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container disabled:opacity-40 transition-colors">
+                                    <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })()}
                     </>
                   )}
                 </div>
-              )}
+                )
+              })()}
 
             </div>
           )}
