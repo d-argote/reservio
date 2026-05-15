@@ -39,6 +39,7 @@ import {
   createPrestamoEquipo,
   getMisPrestamos,
   devolverEquipo,
+  updatePrestamoReserva,
   type ReportData,
   type PrestamoEquipo,
 } from '@/features/reservas/actions'
@@ -385,6 +386,10 @@ export default function MainMenuPage() {
   const [misPrestamos, setMisPrestamos] = useState<PrestamoEquipo[]>([])
   const [loadingPrestamos, setLoadingPrestamos] = useState(false)
   const [devolviendoPrestamo, setDevolviendoPrestamo] = useState<string | null>(null)
+  const [editandoPrestamoId, setEditandoPrestamoId] = useState<string | null>(null)
+  const [editPrestamoReservaId, setEditPrestamoReservaId] = useState('')
+  const [savingEditPrestamo, setSavingEditPrestamo] = useState(false)
+  const [editPrestamoError, setEditPrestamoError] = useState<string | null>(null)
   // ── Admin: préstamos activos ──────────────────────────────────────────────
   const [prestamosAdmin, setPrestamosAdmin] = useState<PrestamoEquipoAdmin[]>([])
   const [loadingPrestamosAdmin, setLoadingPrestamosAdmin] = useState(false)
@@ -587,7 +592,7 @@ export default function MainMenuPage() {
 
   const handleSubmitLoan = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!loanEquipo || !loanForm.fecha || !loanForm.hora_devolucion) return
+    if (!loanEquipo || !loanForm.reserva_id || !loanForm.fecha || !loanForm.hora_devolucion) return
     setLoanSubmitting(true)
     setLoanError(null)
 
@@ -607,7 +612,7 @@ export default function MainMenuPage() {
     const fechaFin = `${loanForm.fecha}T${loanForm.hora_devolucion}:00`
     const result = await createPrestamoEquipo(
       loanEquipo.id,
-      loanForm.sala_id || null,
+      loanForm.reserva_id,
       fechaFin,
       loanForm.notas || null,
     )
@@ -638,6 +643,21 @@ export default function MainMenuPage() {
       setEquipos(prev => prev.map(e => e.id === result.equipoId ? { ...e, estado: 'disponible' as const } : e))
     }
     setDevolviendoPrestamo(null)
+  }
+
+  const handleEditarPrestamo = async () => {
+    if (!editandoPrestamoId || !editPrestamoReservaId) return
+    setSavingEditPrestamo(true)
+    setEditPrestamoError(null)
+    const result = await updatePrestamoReserva(editandoPrestamoId, editPrestamoReservaId)
+    if (result.error) {
+      setEditPrestamoError(result.error)
+    } else {
+      await loadMisPrestamos()
+      setEditandoPrestamoId(null)
+      setEditPrestamoReservaId('')
+    }
+    setSavingEditPrestamo(false)
   }
 
   const handleAsignarSala = async (equipoId: string, salaId: string | null) => {
@@ -968,15 +988,45 @@ export default function MainMenuPage() {
     setSavingSala(false)
   }
 
-  const openModal = (salaId?: string, fecha?: string) => {
+  const openModal = async (salaId?: string, fecha?: string, equipoId?: string) => {
     const { dateStr: todayStr } = getBogotaNow()
     setForm({ ...EMPTY_FORM, fecha: fecha ?? todayStr, sala_id: salaId ?? '' })
     setModalError(null)
     setModalSuccess(false)
     setDuracionPreset('libre')
+
+    // Si se pasa un equipoId explícito (p.ej. desde el modal de préstamo), usarlo directamente
+    if (equipoId) {
+      setNecesitaEquipo(true)
+      setEquiposSeleccionados([equipoId])
+      if (equipos.length === 0) loadEquipos()
+      setModalOpen(true)
+      return
+    }
+
+    // Resolver lista de equipos (puede no estar cargada todavía)
+    let listaEquipos = equipos
+    if (listaEquipos.length === 0) {
+      const { data } = await getEquipos()
+      listaEquipos = data ?? []
+      if (data) setEquipos(data)
+    }
+
+    // Si hay sala, pre-seleccionar equipos asignados a ella
+    if (salaId) {
+      const asignados = listaEquipos
+        .filter(e => e.sala_id === salaId && e.estado === 'disponible')
+        .map(e => e.id)
+      if (asignados.length > 0) {
+        setNecesitaEquipo(true)
+        setEquiposSeleccionados(asignados)
+        setModalOpen(true)
+        return
+      }
+    }
+
     setNecesitaEquipo(false)
     setEquiposSeleccionados([])
-    if (equipos.length === 0) loadEquipos()
     setModalOpen(true)
   }
 
@@ -1053,11 +1103,24 @@ export default function MainMenuPage() {
         setSubmitting(false)
         return
       }
+      if (result.prestamosError) {
+        // La reserva se creó, pero el registro de préstamos falló.
+        // Esto ocurre si la migración de la tabla prestamos_equipo no se ha ejecutado en Supabase.
+        setModalError(`Reserva creada, pero no se pudieron registrar los préstamos de equipo: ${result.prestamosError}. Ejecuta la migración 003_prestamos_equipo.sql en Supabase.`)
+        setSubmitting(false)
+        if (currentUserId) { fetchReservas(currentUserId); fetchCalendarReservas(currentUserId) }
+        return
+      }
     }
 
     setSubmitting(false)
     setModalSuccess(true)
     if (currentUserId) { fetchReservas(currentUserId); fetchCalendarReservas(currentUserId) }
+    // Si se reservaron equipos, actualizar préstamos activos y estado de equipos
+    if (!editingReservaId && necesitaEquipo && equiposSeleccionados.length > 0) {
+      await loadMisPrestamos()
+      await loadEquipos()
+    }
 
     setTimeout(() => {
       setModalOpen(false)
@@ -1813,42 +1876,103 @@ export default function MainMenuPage() {
                           const finDate = new Date(p.fecha_fin_esperada)
                           const isOverdue = finDate < new Date()
                           return (
-                            <div key={p.id} className="flex items-center gap-3 px-5 py-3.5">
-                              {p.equipos?.imagen_url ? (
-                                <img src={p.equipos.imagen_url} alt={p.equipos.nombre} className="w-10 h-10 rounded-lg object-cover shrink-0 border border-outline-variant/15" />
-                              ) : (
-                                <div className="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center shrink-0">
-                                  <span className="material-symbols-outlined text-on-surface-variant text-[20px]">devices</span>
-                                </div>
-                              )}
-                              <div className="flex-1 min-w-0">
-                                <p className="font-body text-sm font-medium text-on-surface truncate">{p.equipos?.nombre ?? '—'}</p>
-                                <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
-                                  <span className={`flex items-center gap-1 font-body text-xs ${isOverdue ? 'text-red-500 font-semibold' : 'text-on-surface-variant'}`}>
-                                    <span className="material-symbols-outlined text-[13px]">{isOverdue ? 'warning' : 'schedule'}</span>
-                                    {isOverdue ? 'Vencido · ' : 'Hasta '}
-                                    {finDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} {finDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
-                                  </span>
-                                  {p.salas && (
-                                    <span className="flex items-center gap-1 font-body text-xs text-on-surface-variant">
-                                      <span className="material-symbols-outlined text-[13px]">meeting_room</span>
-                                      {p.salas.nombre}
+                            <div key={p.id} className="divide-y divide-outline-variant/10">
+                              <div className="flex items-center gap-3 px-5 py-3.5">
+                                {p.equipos?.imagen_url ? (
+                                  <img src={p.equipos.imagen_url} alt={p.equipos.nombre} className="w-10 h-10 rounded-lg object-cover shrink-0 border border-outline-variant/15" />
+                                ) : (
+                                  <div className="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center shrink-0">
+                                    <span className="material-symbols-outlined text-on-surface-variant text-[20px]">devices</span>
+                                  </div>
+                                )}
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-body text-sm font-medium text-on-surface truncate">{p.equipos?.nombre ?? '—'}</p>
+                                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
+                                    <span className={`flex items-center gap-1 font-body text-xs ${isOverdue ? 'text-red-500 font-semibold' : 'text-on-surface-variant'}`}>
+                                      <span className="material-symbols-outlined text-[13px]">{isOverdue ? 'warning' : 'schedule'}</span>
+                                      {isOverdue ? 'Venció el ' : 'Hasta '}
+                                      {finDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' })} {finDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })}
                                     </span>
-                                  )}
+                                    {p.salas && (
+                                      <span className="flex items-center gap-1 font-body text-xs text-on-surface-variant">
+                                        <span className="material-symbols-outlined text-[13px]">meeting_room</span>
+                                        {p.salas.nombre}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <button
+                                    onClick={() => {
+                                      if (editandoPrestamoId === p.id) {
+                                        setEditandoPrestamoId(null)
+                                        setEditPrestamoError(null)
+                                      } else {
+                                        setEditandoPrestamoId(p.id)
+                                        setEditPrestamoReservaId(p.reserva_id ?? '')
+                                        setEditPrestamoError(null)
+                                      }
+                                    }}
+                                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-label font-semibold border transition-colors ${editandoPrestamoId === p.id ? 'bg-primary/10 text-primary border-primary/30' : 'bg-surface-container text-on-surface-variant border-outline-variant/20 hover:bg-blue-50 hover:text-blue-700'}`}
+                                  >
+                                    <span className="material-symbols-outlined text-[14px]">edit</span>
+                                    Editar
+                                  </button>
+                                  <button
+                                    onClick={() => handleDevolverEquipo(p.id)}
+                                    disabled={devolviendoPrestamo === p.id}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container text-on-surface text-xs font-label font-semibold hover:bg-green-50 hover:text-green-700 border border-outline-variant/20 transition-colors disabled:opacity-50"
+                                  >
+                                    {devolviendoPrestamo === p.id ? (
+                                      <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                                    ) : (
+                                      <span className="material-symbols-outlined text-[14px]">assignment_return</span>
+                                    )}
+                                    Devolver
+                                  </button>
                                 </div>
                               </div>
-                              <button
-                                onClick={() => handleDevolverEquipo(p.id)}
-                                disabled={devolviendoPrestamo === p.id}
-                                className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container text-on-surface text-xs font-label font-semibold hover:bg-green-50 hover:text-green-700 border border-outline-variant/20 transition-colors disabled:opacity-50"
-                              >
-                                {devolviendoPrestamo === p.id ? (
-                                  <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                                ) : (
-                                  <span className="material-symbols-outlined text-[14px]">assignment_return</span>
-                                )}
-                                Devolver
-                              </button>
+
+                              {/* Inline edit form */}
+                              {editandoPrestamoId === p.id && (
+                                <div className="px-5 py-3 bg-surface-container/40 space-y-2.5">
+                                  <p className="font-label text-xs text-on-surface-variant uppercase tracking-widest">Cambiar reserva vinculada</p>
+                                  <select
+                                    value={editPrestamoReservaId}
+                                    onChange={e => setEditPrestamoReservaId(e.target.value)}
+                                    disabled={savingEditPrestamo}
+                                    className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition appearance-none"
+                                  >
+                                    <option value="">— Selecciona una reserva —</option>
+                                    {reservas.filter(r => r.estado !== 'cancelada').map(r => (
+                                      <option key={r.id} value={r.id}>
+                                        {r.titulo} · {r.salas?.nombre ?? 'Sin sala'} · {r.fecha} {r.hora_inicio.slice(0,5)}–{r.hora_fin.slice(0,5)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  {editPrestamoError && (
+                                    <p className="text-xs font-body text-error flex items-center gap-1">
+                                      <span className="material-symbols-outlined text-[13px]">error</span>
+                                      {editPrestamoError}
+                                    </p>
+                                  )}
+                                  <div className="flex gap-2">
+                                    <button
+                                      onClick={handleEditarPrestamo}
+                                      disabled={!editPrestamoReservaId || savingEditPrestamo}
+                                      className="flex-1 py-2 rounded-lg bg-primary text-on-primary text-xs font-label font-semibold hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                      {savingEditPrestamo ? 'Guardando…' : 'Guardar cambio'}
+                                    </button>
+                                    <button
+                                      onClick={() => { setEditandoPrestamoId(null); setEditPrestamoError(null) }}
+                                      className="px-4 py-2 rounded-lg border border-outline-variant/30 text-xs font-label text-on-surface-variant hover:bg-surface-container transition"
+                                    >
+                                      Cancelar
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           )
                         })}
@@ -2916,7 +3040,7 @@ export default function MainMenuPage() {
                                     <td className="px-5 py-3">
                                       <span className={`font-body text-sm flex items-center gap-1 ${isOverdue ? 'text-red-500 font-semibold' : 'text-on-surface-variant'}`}>
                                         {isOverdue && <span className="material-symbols-outlined text-[14px]">warning</span>}
-                                        {finDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} {finDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                                        {finDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' })} {finDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })}
                                       </span>
                                     </td>
                                     <td className="px-5 py-3">
@@ -4131,6 +4255,7 @@ export default function MainMenuPage() {
                       onChange={e => {
                         setNecesitaEquipo(e.target.checked)
                         if (!e.target.checked) setEquiposSeleccionados([])
+                        if (e.target.checked && equipos.length === 0) loadEquipos()
                       }}
                       disabled={submitting}
                     />
@@ -4367,100 +4492,99 @@ export default function MainMenuPage() {
             <form onSubmit={handleSubmitLoan} className="px-6 py-4 space-y-4 overflow-y-auto flex-1">
               <p className="font-label text-xs uppercase tracking-widest text-on-surface-variant">Detalles del préstamo</p>
 
-              {/* Vincular a reserva activa */}
-              {reservas.filter(r => r.estado !== 'cancelada').length > 0 && (
-                <div>
-                  <label className="font-label text-xs text-on-surface-variant block mb-1.5">
-                    Vincular a una reserva activa
-                    <span className="ml-1 text-on-surface-variant/50">(opcional)</span>
-                  </label>
-                  <select
-                    value={loanForm.reserva_id}
-                    onChange={e => {
-                      const rid = e.target.value
-                      if (!rid) {
-                        setLoanForm(f => ({ ...f, reserva_id: '', sala_id: '', fecha: getBogotaNow().dateStr, hora_devolucion: '' }))
-                        return
-                      }
-                      const r = reservas.find(x => x.id === rid)
-                      if (r) {
-                        setLoanForm(f => ({
-                          ...f,
-                          reserva_id: rid,
-                          sala_id: r.salas?.id ?? '',
-                          fecha: r.fecha,
-                          hora_devolucion: r.hora_fin.slice(0, 5),
-                        }))
-                      }
-                    }}
-                    disabled={loanSubmitting}
-                    className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition appearance-none"
-                  >
-                    <option value="">— Sin reserva vinculada —</option>
-                    {reservas.filter(r => r.estado !== 'cancelada').map(r => (
-                      <option key={r.id} value={r.id}>
-                        {r.titulo} · {r.salas?.nombre ?? 'Sin sala'} · {r.fecha} {r.hora_inicio.slice(0,5)}–{r.hora_fin.slice(0,5)}
-                      </option>
-                    ))}
-                  </select>
-                  {loanForm.reserva_id && (
-                    <p className="mt-1.5 text-[11px] font-body text-primary flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[14px]">link</span>
-                      Horario y sala pre-llenados desde la reserva seleccionada.
-                    </p>
-                  )}
-                </div>
-              )}
+              {/* Vincular a reserva activa — obligatorio */}
+              <div>
+                <label className="font-label text-xs text-on-surface-variant block mb-1.5">
+                  Vincular a una reserva activa <span className="text-error">*</span>
+                </label>
+                {reservas.filter(r => r.estado !== 'cancelada').length === 0 ? (
+                  <div className="space-y-2">
+                    <div className="flex items-start gap-2 bg-surface-container rounded-lg px-3 py-3 text-sm font-body text-on-surface-variant">
+                      <span className="material-symbols-outlined text-[18px] text-error shrink-0 mt-0.5">event_busy</span>
+                      <span>No tienes reservas activas. Para solicitar un equipo debes tener una sala reservada.</span>
+                    </div>
+                    {loanEquipo && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLoanModalOpen(false)
+                          openModal(undefined, undefined, loanEquipo.id)
+                        }}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-primary text-primary text-sm font-label font-semibold hover:bg-primary/5 transition"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                        Crear reserva con este equipo
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <select
+                      value={loanForm.reserva_id}
+                      onChange={e => {
+                        const rid = e.target.value
+                        const r = reservas.find(x => x.id === rid)
+                        if (r) {
+                          setLoanForm(f => ({
+                            ...f,
+                            reserva_id: rid,
+                            sala_id: r.salas?.id ?? '',
+                            fecha: r.fecha,
+                            hora_devolucion: r.hora_fin.slice(0, 5),
+                          }))
+                        } else {
+                          setLoanForm(f => ({ ...f, reserva_id: '', sala_id: '', fecha: '', hora_devolucion: '' }))
+                        }
+                      }}
+                      disabled={loanSubmitting}
+                      required
+                      className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition appearance-none"
+                    >
+                      <option value="">— Selecciona una reserva —</option>
+                      {reservas.filter(r => r.estado !== 'cancelada').map(r => (
+                        <option key={r.id} value={r.id}>
+                          {r.titulo} · {r.salas?.nombre ?? 'Sin sala'} · {r.fecha} {r.hora_inicio.slice(0,5)}–{r.hora_fin.slice(0,5)}
+                        </option>
+                      ))}
+                    </select>
+                    {loanForm.reserva_id && (
+                      <p className="mt-1.5 text-[11px] font-body text-primary flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[14px]">link</span>
+                        Sala y horario de devolución pre-llenados desde la reserva.
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
 
-              {/* Fecha y hora de devolución */}
+              {/* Fecha y hora de devolución — se llenan desde la reserva */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="font-label text-xs text-on-surface-variant block mb-1.5">
-                    Fecha de devolución *
+                    Fecha de devolución
                   </label>
                   <input
                     type="date"
                     value={loanForm.fecha}
-                    min={getBogotaNow().dateStr}
-                    onChange={e => setLoanForm(f => ({ ...f, fecha: e.target.value, reserva_id: '' }))}
+                    readOnly
                     disabled={loanSubmitting}
-                    className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition"
+                    className="w-full rounded-lg border border-outline-variant/40 bg-surface-container px-3 py-2.5 text-sm font-body text-on-surface-variant cursor-not-allowed"
                     required
                   />
                 </div>
                 <div>
                   <label className="font-label text-xs text-on-surface-variant block mb-1.5">
-                    Hora de devolución *
+                    Hora de devolución
                   </label>
                   <input
                     type="time"
                     value={loanForm.hora_devolucion}
-                    min={loanForm.fecha === getBogotaNow().dateStr ? getBogotaNow().timeStr : undefined}
-                    onChange={e => setLoanForm(f => ({ ...f, hora_devolucion: e.target.value, reserva_id: '' }))}
+                    readOnly
                     disabled={loanSubmitting}
-                    className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition"
+                    className="w-full rounded-lg border border-outline-variant/40 bg-surface-container px-3 py-2.5 text-sm font-body text-on-surface-variant cursor-not-allowed"
                     required
                   />
                 </div>
-              </div>
-
-              {/* Sala de uso */}
-              <div>
-                <label className="font-label text-xs text-on-surface-variant block mb-1.5">
-                  Sala donde lo usarás
-                  <span className="ml-1 text-on-surface-variant/50">(opcional)</span>
-                </label>
-                <select
-                  value={loanForm.sala_id}
-                  onChange={e => setLoanForm(f => ({ ...f, sala_id: e.target.value, reserva_id: '' }))}
-                  disabled={loanSubmitting}
-                  className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition appearance-none"
-                >
-                  <option value="">— Sin sala asignada —</option>
-                  {salas.filter(s => s.estado === 'disponible').map(s => (
-                    <option key={s.id} value={s.id}>{s.nombre}{s.ubicacion ? ` · ${s.ubicacion}` : ''}</option>
-                  ))}
-                </select>
               </div>
 
               {/* Notas */}
@@ -4517,7 +4641,7 @@ export default function MainMenuPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={loanSubmitting || loanSuccess}
+                  disabled={loanSubmitting || loanSuccess || !loanForm.reserva_id}
                   className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-primary text-on-primary font-label text-sm font-medium hover:brightness-105 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {loanSubmitting ? (
