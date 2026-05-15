@@ -35,6 +35,7 @@ export interface Equipo {
   estado: 'disponible' | 'reservado' | 'mantenimiento'
   imagen_url: string | null
   numero_serie: string | null
+  sala_id?: string | null
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -208,7 +209,7 @@ export async function getEquipos(): Promise<{ data?: Equipo[]; error?: string }>
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('equipos')
-    .select('id, nombre, categoria, sistema_operativo, marca, tipo_equipo, estado, imagen_url, numero_serie')
+    .select('id, nombre, categoria, sistema_operativo, marca, tipo_equipo, estado, imagen_url, numero_serie, sala_id')
     .order('nombre')
 
   if (error) return { error: error.message }
@@ -351,5 +352,92 @@ export async function deleteSala(id: string): Promise<{ success?: boolean; error
     .eq('id', id)
 
   if (error) return { error: error.message }
+  return { success: true }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ASIGNACIÓN DE SALA A EQUIPO + PRÉSTAMOS (ADMIN)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** Asigna (o desasigna) un equipo a una sala de forma permanente */
+export async function asignarEquipoASala(
+  equipoId: string,
+  salaId: string | null,
+): Promise<{ success?: boolean; error?: string }> {
+  const guard = await assertAdmin()
+  if (guard) return { error: guard.error }
+
+  const supabase = getSupabaseAdmin()
+  if (!supabase) return { error: 'Error interno del servidor' }
+  const { error } = await supabase
+    .from('equipos')
+    .update({ sala_id: salaId })
+    .eq('id', equipoId)
+
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
+export interface PrestamoEquipoAdmin {
+  id: string
+  equipo_id: string
+  usuario_id: string
+  sala_id: string | null
+  fecha_inicio: string
+  fecha_fin_esperada: string
+  estado: 'activo' | 'devuelto' | 'vencido'
+  notas: string | null
+  equipos: { id: string; nombre: string; tipo_equipo: string; imagen_url: string | null } | null
+  usuarios: { id: string; nombre: string; correo: string } | null
+  salas: { id: string; nombre: string } | null
+}
+
+export async function getPrestamosAdmin(): Promise<{ data?: PrestamoEquipoAdmin[]; error?: string }> {
+  const guard = await assertAdmin()
+  if (guard) return { error: guard.error }
+
+  const supabase = getSupabaseAdmin()
+  if (!supabase) return { error: 'Error interno del servidor' }
+
+  const { data, error } = await supabase
+    .from('prestamos_equipo')
+    .select(`
+      id, equipo_id, usuario_id, sala_id, fecha_inicio, fecha_fin_esperada, estado, notas,
+      equipos:equipo_id ( id, nombre, tipo_equipo, imagen_url ),
+      usuarios:usuario_id ( id, nombre, correo ),
+      salas:sala_id ( id, nombre )
+    `)
+    .eq('estado', 'activo')
+    .order('fecha_fin_esperada', { ascending: true })
+
+  if (error) {
+    if (error.code === '42P01') return { data: [] }
+    return { error: error.message }
+  }
+  return { data: (data ?? []) as unknown as PrestamoEquipoAdmin[] }
+}
+
+export async function devolverPrestamoAdmin(
+  prestamoId: string,
+  equipoId: string,
+): Promise<{ success?: boolean; error?: string }> {
+  const guard = await assertAdmin()
+  if (guard) return { error: guard.error }
+
+  const supabase = getSupabaseAdmin()
+  if (!supabase) return { error: 'Error interno del servidor' }
+
+  const { error } = await supabase
+    .from('prestamos_equipo')
+    .update({ estado: 'devuelto', fecha_devolucion: new Date().toISOString() })
+    .eq('id', prestamoId)
+
+  if (error) return { error: error.message }
+
+  await supabase
+    .from('equipos')
+    .update({ estado: 'disponible' })
+    .eq('id', equipoId)
+
   return { success: true }
 }

@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { getSupabaseAdmin } from '@/lib/supabase/admin'
 import nodemailer from 'nodemailer'
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -146,7 +147,7 @@ async function sendReservaEmail(opts: {
 export async function createReserva(
   data: ReservaInput,
   equiposIds: string[] = [],
-): Promise<{ data?: { id: string }; error?: string }> {
+): Promise<{ data?: { id: string }; error?: string; prestamosError?: string }> {
   const { user, supabase } = await getAuthUser()
   if (!user) return { error: 'No autenticado' }
 
@@ -183,18 +184,43 @@ export async function createReserva(
 
   // Vincular equipos si los hay
   if (equiposIds.length > 0) {
-    // Tabla pivote (best-effort — requiere ejecutar la migración SQL)
+    // Usar el cliente admin para bypassear RLS en operaciones privilegiadas
+    // (los usuarios normales no tienen permiso UPDATE en equipos ni INSERT en reserva_equipos)
+    const adminClient = getSupabaseAdmin()
+    const writeClient = adminClient ?? supabase   // fallback al usuario si falta service role key
+
+    // Tabla pivote reserva_equipos
     const pivotRows = equiposIds.map(equipoId => ({
       reserva_id: reserva.id,
       equipo_id: equipoId,
     }))
-    await supabase.from('reserva_equipos').insert(pivotRows)
+    await writeClient.from('reserva_equipos').insert(pivotRows)
 
     // Marcar equipos como reservados
-    await supabase
+    await writeClient
       .from('equipos')
       .update({ estado: 'reservado' })
       .in('id', equiposIds)
+
+    // Crear préstamos automáticos vinculados a esta reserva
+    // La hora de devolución esperada = fecha + hora_fin de la reserva (hora Bogotá UTC-5)
+    const fechaFinEsperada = `${data.fecha}T${data.hora_fin}-05:00`
+    const prestamoRows = equiposIds.map(equipoId => ({
+      equipo_id: equipoId,
+      usuario_id: user.id,
+      reserva_id: reserva.id,
+      sala_id: data.sala_id,
+      fecha_fin_esperada: fechaFinEsperada,
+      estado: 'activo',
+    }))
+    const { error: prestamosInsertError } = await writeClient
+      .from('prestamos_equipo')
+      .insert(prestamoRows)
+
+    if (prestamosInsertError) {
+      // La reserva ya se creó — no la revertimos, pero avisamos al cliente
+      return { data: { id: reserva.id }, prestamosError: prestamosInsertError.message }
+    }
   }
 
   // Email notification (best-effort)
@@ -360,6 +386,8 @@ export async function cancelarReserva(id: string): Promise<{ success?: boolean; 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ELIMINAR RESERVA
 // ═══════════════════════════════════════════════════════════════════════════════
+// ELIMINAR RESERVA
+// ═══════════════════════════════════════════════════════════════════════════════
 
 export async function deleteReserva(id: string): Promise<{ success?: boolean; error?: string }> {
   const { user, supabase } = await getAuthUser()
@@ -497,4 +525,177 @@ export async function getReportData(): Promise<{ data?: ReportData; error?: stri
       },
     },
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PRÉSTAMOS DE EQUIPO
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface PrestamoEquipo {
+  id: string
+  equipo_id: string
+  reserva_id: string | null
+  sala_id: string | null
+  fecha_inicio: string
+  fecha_fin_esperada: string
+  fecha_devolucion: string | null
+  estado: 'activo' | 'devuelto' | 'vencido'
+  notas: string | null
+  equipos: {
+    id: string
+    nombre: string
+    tipo_equipo: string
+    marca: string
+    imagen_url: string | null
+  } | null
+  salas: { id: string; nombre: string } | null
+}
+
+export async function createPrestamoEquipo(
+  equipoId: string,
+  reservaId: string,
+  fechaFinEsperada: string, // ISO string e.g. '2026-05-15T17:00:00'
+  notas: string | null,
+): Promise<{ data?: { id: string }; error?: string }> {
+  const { user, supabase } = await getAuthUser()
+  if (!user) return { error: 'No autenticado' }
+
+  if (!reservaId) return { error: 'Debes vincular el préstamo a una reserva activa.' }
+
+  // Validar que la fecha de devolución sea futura (interpretada como hora Bogotá UTC-5)
+  const fechaFinDate = new Date(fechaFinEsperada + '-05:00')
+  if (isNaN(fechaFinDate.getTime()) || fechaFinDate <= new Date()) {
+    return { error: 'La fecha y hora de devolución debe ser posterior al momento actual.' }
+  }
+
+  // Verificar que la reserva pertenece al usuario
+  const { data: reserva } = await supabase
+    .from('reservas')
+    .select('id, sala_id')
+    .eq('id', reservaId)
+    .eq('usuario_id', user.id)
+    .single()
+
+  if (!reserva) return { error: 'La reserva seleccionada no es válida o no te pertenece.' }
+
+  // Verificar que el equipo esté disponible
+  const { data: equipo } = await supabase
+    .from('equipos')
+    .select('estado')
+    .eq('id', equipoId)
+    .single()
+
+  if (!equipo) return { error: 'Equipo no encontrado' }
+  if (equipo.estado !== 'disponible') {
+    return { error: 'El equipo ya no está disponible. Puede que alguien más lo haya solicitado.' }
+  }
+
+  const { data: prestamo, error } = await supabase
+    .from('prestamos_equipo')
+    .insert({
+      equipo_id: equipoId,
+      usuario_id: user.id,
+      reserva_id: reservaId,
+      sala_id: reserva.sala_id,
+      fecha_fin_esperada: fechaFinEsperada + '-05:00',
+      notas,
+    })
+    .select('id')
+    .single()
+
+  if (error) return { error: error.message }
+  if (!prestamo) return { error: 'Error al registrar el préstamo' }
+
+  // Marcar equipo como reservado
+  await supabase
+    .from('equipos')
+    .update({ estado: 'reservado' })
+    .eq('id', equipoId)
+
+  return { data: { id: prestamo.id } }
+}
+
+export async function getMisPrestamos(): Promise<{ data?: PrestamoEquipo[]; error?: string }> {
+  const { user, supabase } = await getAuthUser()
+  if (!user) return { data: [] }
+
+  const { data, error } = await supabase
+    .from('prestamos_equipo')
+    .select(`
+      id, equipo_id, reserva_id, sala_id, fecha_inicio, fecha_fin_esperada, fecha_devolucion, estado, notas,
+      equipos:equipo_id ( id, nombre, tipo_equipo, marca, imagen_url ),
+      salas:sala_id ( id, nombre )
+    `)
+    .eq('usuario_id', user.id)
+    .eq('estado', 'activo')
+    .order('fecha_fin_esperada', { ascending: true })
+
+  if (error) {
+    // Si la tabla aún no existe (migración pendiente), retornar vacío silenciosamente
+    if (error.code === '42P01') return { data: [] }
+    return { error: error.message }
+  }
+  return { data: (data ?? []) as unknown as PrestamoEquipo[] }
+}
+
+export async function devolverEquipo(
+  prestamoId: string,
+): Promise<{ success?: boolean; equipoId?: string; error?: string }> {
+  const { user, supabase } = await getAuthUser()
+  if (!user) return { error: 'No autenticado' }
+
+  const { data: prestamo } = await supabase
+    .from('prestamos_equipo')
+    .select('equipo_id, estado')
+    .eq('id', prestamoId)
+    .eq('usuario_id', user.id)
+    .single()
+
+  if (!prestamo) return { error: 'Préstamo no encontrado o sin permiso' }
+  if (prestamo.estado !== 'activo') return { error: 'Este préstamo ya no está activo' }
+
+  const { error } = await supabase
+    .from('prestamos_equipo')
+    .update({ estado: 'devuelto', fecha_devolucion: new Date().toISOString() })
+    .eq('id', prestamoId)
+    .eq('usuario_id', user.id)
+
+  if (error) return { error: error.message }
+
+  // Liberar el equipo — requiere admin client para bypassear RLS en equipos
+  const adminClient = getSupabaseAdmin()
+  const writeClient = adminClient ?? supabase
+  await writeClient
+    .from('equipos')
+    .update({ estado: 'disponible' })
+    .eq('id', prestamo.equipo_id)
+
+  return { success: true, equipoId: prestamo.equipo_id }
+}
+
+export async function updatePrestamoReserva(
+  prestamoId: string,
+  reservaId: string,
+): Promise<{ success?: boolean; error?: string }> {
+  const { user, supabase } = await getAuthUser()
+  if (!user) return { error: 'No autenticado' }
+
+  // Verificar que la reserva pertenece al usuario
+  const { data: reserva } = await supabase
+    .from('reservas')
+    .select('id, sala_id')
+    .eq('id', reservaId)
+    .eq('usuario_id', user.id)
+    .single()
+
+  if (!reserva) return { error: 'La reserva seleccionada no es válida o no te pertenece.' }
+
+  const { error } = await supabase
+    .from('prestamos_equipo')
+    .update({ reserva_id: reservaId, sala_id: reserva.sala_id })
+    .eq('id', prestamoId)
+    .eq('usuario_id', user.id)
+
+  if (error) return { error: error.message }
+  return { success: true }
 }

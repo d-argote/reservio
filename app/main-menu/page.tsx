@@ -21,9 +21,13 @@ import {
   createSala,
   updateSala,
   deleteSala,
+  asignarEquipoASala,
+  getPrestamosAdmin,
+  devolverPrestamoAdmin,
   type UsuarioAdmin,
   type Equipo,
   type SalaAdmin,
+  type PrestamoEquipoAdmin,
 } from '@/features/admin/actions'
 import { getSistemas, getMarcas, getTipos, getTiposDirectos, isTechCategory, TIPO_EQUIPO_LABELS, CATEGORIA_LABELS } from '@/lib/equipo-catalogo'
 import {
@@ -32,7 +36,12 @@ import {
   cancelarReserva,
   deleteReserva,
   getReportData,
+  createPrestamoEquipo,
+  getMisPrestamos,
+  devolverEquipo,
+  updatePrestamoReserva,
   type ReportData,
+  type PrestamoEquipo,
 } from '@/features/reservas/actions'
 import { ReservasCalendar } from '@/components/ui/ReservasCalendar'
 
@@ -367,6 +376,26 @@ export default function MainMenuPage() {
   const [techSearch, setTechSearch] = useState('')
   const [techFilter, setTechFilter] = useState('')
 
+  // ── Préstamos de equipo (Sprint 3) ────────────────────────────────────────
+  const [loanModalOpen, setLoanModalOpen] = useState(false)
+  const [loanEquipo, setLoanEquipo] = useState<Equipo | null>(null)
+  const [loanForm, setLoanForm] = useState({ fecha: '', hora_devolucion: '', sala_id: '', notas: '', reserva_id: '' })
+  const [loanSubmitting, setLoanSubmitting] = useState(false)
+  const [loanError, setLoanError] = useState<string | null>(null)
+  const [loanSuccess, setLoanSuccess] = useState(false)
+  const [misPrestamos, setMisPrestamos] = useState<PrestamoEquipo[]>([])
+  const [loadingPrestamos, setLoadingPrestamos] = useState(false)
+  const [devolviendoPrestamo, setDevolviendoPrestamo] = useState<string | null>(null)
+  const [editandoPrestamoId, setEditandoPrestamoId] = useState<string | null>(null)
+  const [editPrestamoReservaId, setEditPrestamoReservaId] = useState('')
+  const [savingEditPrestamo, setSavingEditPrestamo] = useState(false)
+  const [editPrestamoError, setEditPrestamoError] = useState<string | null>(null)
+  // ── Admin: préstamos activos ──────────────────────────────────────────────
+  const [prestamosAdmin, setPrestamosAdmin] = useState<PrestamoEquipoAdmin[]>([])
+  const [loadingPrestamosAdmin, setLoadingPrestamosAdmin] = useState(false)
+  const [asignandoSala, setAsignandoSala] = useState<string | null>(null)
+  const [devolviendoAdmin, setDevolviendoAdmin] = useState<string | null>(null)
+
   // ── Admin — Usuarios CRUD ─────────────────────────────────────────
   const [showUserForm, setShowUserForm] = useState(false)
   const [userForm, setUserForm] = useState({ nombre: '', correo: '', password: '', confirmPassword: '', rol: 'usuario' as 'usuario' | 'admin' })
@@ -402,7 +431,7 @@ export default function MainMenuPage() {
   const [cancelingReservaId, setCancelingReservaId] = useState<string | null>(null)
   const [deletingReservaId, setDeletingReservaId] = useState<string | null>(null)
 
-  // ── Reservas calendar view ────────────────────────────────────────
+  // ── Reservas: vista calendario ────────────────────────────────────
   const [reservaView, setReservaView] = useState<'list' | 'calendar'>('calendar')
   const [calendarReservas, setCalendarReservas] = useState<Reserva[]>([])
   const [loadingCalendar, setLoadingCalendar] = useState(false)
@@ -536,6 +565,117 @@ export default function MainMenuPage() {
     if (result.data) setEquipos(result.data)
     setLoadingEquipos(false)
   }, [])
+
+  // ── Préstamos: cargar y gestionar ─────────────────────────────────────────
+  const loadMisPrestamos = useCallback(async () => {
+    setLoadingPrestamos(true)
+    const result = await getMisPrestamos()
+    if (result.data) setMisPrestamos(result.data)
+    setLoadingPrestamos(false)
+  }, [])
+
+  const loadPrestamosAdmin = useCallback(async () => {
+    setLoadingPrestamosAdmin(true)
+    const result = await getPrestamosAdmin()
+    if (result.data) setPrestamosAdmin(result.data)
+    setLoadingPrestamosAdmin(false)
+  }, [])
+
+  const handleSolicitarEquipo = (equipo: Equipo) => {
+    const { dateStr } = getBogotaNow()
+    setLoanEquipo(equipo)
+    setLoanForm({ fecha: dateStr, hora_devolucion: '', sala_id: '', notas: '', reserva_id: '' })
+    setLoanError(null)
+    setLoanSuccess(false)
+    setLoanModalOpen(true)
+  }
+
+  const handleSubmitLoan = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!loanEquipo || !loanForm.reserva_id || !loanForm.fecha || !loanForm.hora_devolucion) return
+    setLoanSubmitting(true)
+    setLoanError(null)
+
+    // Validar que la fecha/hora de devolución sea futura (hora Bogotá)
+    const { dateStr: todayStr, timeStr: nowTimeStr } = getBogotaNow()
+    if (loanForm.fecha < todayStr) {
+      setLoanError('La fecha de devolución no puede ser una fecha pasada.')
+      setLoanSubmitting(false)
+      return
+    }
+    if (loanForm.fecha === todayStr && loanForm.hora_devolucion <= nowTimeStr) {
+      setLoanError('La hora de devolución debe ser posterior a la hora actual.')
+      setLoanSubmitting(false)
+      return
+    }
+
+    const fechaFin = `${loanForm.fecha}T${loanForm.hora_devolucion}:00`
+    const result = await createPrestamoEquipo(
+      loanEquipo.id,
+      loanForm.reserva_id,
+      fechaFin,
+      loanForm.notas || null,
+    )
+
+    if (result.error) {
+      setLoanError(result.error)
+      setLoanSubmitting(false)
+      return
+    }
+
+    setLoanSuccess(true)
+    // Actualizar estado del equipo localmente
+    setEquipos(prev => prev.map(e => e.id === loanEquipo.id ? { ...e, estado: 'reservado' as const } : e))
+    await loadMisPrestamos()
+    setTimeout(() => {
+      setLoanModalOpen(false)
+      setLoanSuccess(false)
+      setLoanEquipo(null)
+    }, 1800)
+    setLoanSubmitting(false)
+  }
+
+  const handleDevolverEquipo = async (prestamoId: string) => {
+    setDevolviendoPrestamo(prestamoId)
+    const result = await devolverEquipo(prestamoId)
+    if (!result.error && result.equipoId) {
+      setMisPrestamos(prev => prev.filter(p => p.id !== prestamoId))
+      setEquipos(prev => prev.map(e => e.id === result.equipoId ? { ...e, estado: 'disponible' as const } : e))
+    }
+    setDevolviendoPrestamo(null)
+  }
+
+  const handleEditarPrestamo = async () => {
+    if (!editandoPrestamoId || !editPrestamoReservaId) return
+    setSavingEditPrestamo(true)
+    setEditPrestamoError(null)
+    const result = await updatePrestamoReserva(editandoPrestamoId, editPrestamoReservaId)
+    if (result.error) {
+      setEditPrestamoError(result.error)
+    } else {
+      await loadMisPrestamos()
+      setEditandoPrestamoId(null)
+      setEditPrestamoReservaId('')
+    }
+    setSavingEditPrestamo(false)
+  }
+
+  const handleAsignarSala = async (equipoId: string, salaId: string | null) => {
+    setAsignandoSala(equipoId)
+    await asignarEquipoASala(equipoId, salaId)
+    setEquipos(prev => prev.map(e => e.id === equipoId ? { ...e, sala_id: salaId } : e))
+    setAsignandoSala(null)
+  }
+
+  const handleDevolverPrestamoAdmin = async (prestamoId: string, equipoId: string) => {
+    setDevolviendoAdmin(prestamoId)
+    const result = await devolverPrestamoAdmin(prestamoId, equipoId)
+    if (!result.error) {
+      setPrestamosAdmin(prev => prev.filter(p => p.id !== prestamoId))
+      setEquipos(prev => prev.map(e => e.id === equipoId ? { ...e, estado: 'disponible' as const } : e))
+    }
+    setDevolviendoAdmin(null)
+  }
 
   const handleToggleEquipo = async (id: string, estado: Equipo['estado']) => {
     await updateEquipoEstado(id, estado)
@@ -848,15 +988,45 @@ export default function MainMenuPage() {
     setSavingSala(false)
   }
 
-  const openModal = (salaId?: string, fechaInicial?: string) => {
+  const openModal = async (salaId?: string, fecha?: string, equipoId?: string) => {
     const { dateStr: todayStr } = getBogotaNow()
-    setForm({ ...EMPTY_FORM, fecha: fechaInicial ?? todayStr, sala_id: salaId ?? '' })
+    setForm({ ...EMPTY_FORM, fecha: fecha ?? todayStr, sala_id: salaId ?? '' })
     setModalError(null)
     setModalSuccess(false)
     setDuracionPreset('libre')
+
+    // Si se pasa un equipoId explícito (p.ej. desde el modal de préstamo), usarlo directamente
+    if (equipoId) {
+      setNecesitaEquipo(true)
+      setEquiposSeleccionados([equipoId])
+      if (equipos.length === 0) loadEquipos()
+      setModalOpen(true)
+      return
+    }
+
+    // Resolver lista de equipos (puede no estar cargada todavía)
+    let listaEquipos = equipos
+    if (listaEquipos.length === 0) {
+      const { data } = await getEquipos()
+      listaEquipos = data ?? []
+      if (data) setEquipos(data)
+    }
+
+    // Si hay sala, pre-seleccionar equipos asignados a ella
+    if (salaId) {
+      const asignados = listaEquipos
+        .filter(e => e.sala_id === salaId && e.estado === 'disponible')
+        .map(e => e.id)
+      if (asignados.length > 0) {
+        setNecesitaEquipo(true)
+        setEquiposSeleccionados(asignados)
+        setModalOpen(true)
+        return
+      }
+    }
+
     setNecesitaEquipo(false)
     setEquiposSeleccionados([])
-    if (equipos.length === 0) loadEquipos()
     setModalOpen(true)
   }
 
@@ -933,11 +1103,24 @@ export default function MainMenuPage() {
         setSubmitting(false)
         return
       }
+      if (result.prestamosError) {
+        // La reserva se creó, pero el registro de préstamos falló.
+        // Esto ocurre si la migración de la tabla prestamos_equipo no se ha ejecutado en Supabase.
+        setModalError(`Reserva creada, pero no se pudieron registrar los préstamos de equipo: ${result.prestamosError}. Ejecuta la migración 003_prestamos_equipo.sql en Supabase.`)
+        setSubmitting(false)
+        if (currentUserId) { fetchReservas(currentUserId); fetchCalendarReservas(currentUserId) }
+        return
+      }
     }
 
     setSubmitting(false)
     setModalSuccess(true)
     if (currentUserId) { fetchReservas(currentUserId); fetchCalendarReservas(currentUserId) }
+    // Si se reservaron equipos, actualizar préstamos activos y estado de equipos
+    if (!editingReservaId && necesitaEquipo && equiposSeleccionados.length > 0) {
+      await loadMisPrestamos()
+      await loadEquipos()
+    }
 
     setTimeout(() => {
       setModalOpen(false)
@@ -1047,7 +1230,7 @@ export default function MainMenuPage() {
           {navItems.map((item) => (
             <button
               key={item.id}
-              onClick={() => { setActiveTab(item.id); if (item.id === 'tech') loadEquipos() }}
+              onClick={() => { setActiveTab(item.id); if (item.id === 'tech') { loadEquipos(); loadMisPrestamos() } }}
               className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200
                 ${
                   activeTab === item.id
@@ -1088,7 +1271,7 @@ export default function MainMenuPage() {
                 <span>Usuarios</span>
               </button>
               <button
-                onClick={() => { handleAdminTab(); setAdminSubTab('equipment') }}
+                onClick={() => { handleAdminTab(); setAdminSubTab('equipment'); loadPrestamosAdmin() }}
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200 ${
                   activeTab === 'admin' && adminSubTab === 'equipment'
                     ? 'border-l-[3px] border-primary bg-surface-container-lowest text-primary font-semibold'
@@ -1176,7 +1359,7 @@ export default function MainMenuPage() {
               {navItems.map((item) => (
                 <button
                   key={item.id}
-                  onClick={() => { setActiveTab(item.id); if (item.id === 'tech') loadEquipos(); setMobileMenuOpen(false) }}
+                  onClick={() => { setActiveTab(item.id); if (item.id === 'tech') { loadEquipos(); loadMisPrestamos() } setMobileMenuOpen(false) }}
                   className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200
                     ${activeTab === item.id
                       ? 'bg-surface-container-lowest text-primary font-semibold'
@@ -1210,7 +1393,7 @@ export default function MainMenuPage() {
                     <span>Usuarios</span>
                   </button>
                   <button
-                    onClick={() => { handleAdminTab(); setAdminSubTab('equipment'); setMobileMenuOpen(false) }}
+                    onClick={() => { handleAdminTab(); setAdminSubTab('equipment'); loadPrestamosAdmin(); setMobileMenuOpen(false) }}
                     className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200 ${
                       activeTab === 'admin' && adminSubTab === 'equipment'
                         ? 'bg-surface-container-lowest text-primary font-semibold'
@@ -1418,7 +1601,7 @@ export default function MainMenuPage() {
             <ReservasCalendar
               reservas={calendarReservas}
               loading={loadingCalendar}
-              onNewReserva={(fecha) => openModal(undefined, fecha)}
+              onNewReserva={(fecha) => { if (!FEATURES.reservations) { showComingSoon(); return }; openModal(undefined, fecha) }}
               onEditReserva={handleEditReserva}
               onCancelReserva={handleCancelReserva}
               onDeleteReserva={handleDeleteReserva}
@@ -1578,7 +1761,7 @@ export default function MainMenuPage() {
               </div>
             </div>
           </div>
-          )}
+          )} {/* end reservaView === 'list' */}
             </>
           )}
 
@@ -1672,6 +1855,132 @@ export default function MainMenuPage() {
             })
             return (
               <div className="space-y-6">
+                {/* Mis Préstamos Activos */}
+                {(loadingPrestamos || misPrestamos.length > 0) && (
+                  <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 shadow-sm overflow-hidden">
+                    <div className="flex items-center gap-2 px-5 py-3.5 border-b border-outline-variant/15 bg-surface-container">
+                      <span className="material-symbols-outlined text-primary text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>inventory_2</span>
+                      <h3 className="font-label text-sm font-bold text-on-surface">Mis Préstamos Activos</h3>
+                      {misPrestamos.length > 0 && (
+                        <span className="ml-auto inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary text-on-primary text-[10px] font-bold">{misPrestamos.length}</span>
+                      )}
+                    </div>
+                    {loadingPrestamos ? (
+                      <div className="flex items-center justify-center gap-2 py-6 text-sm font-body text-on-surface-variant">
+                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                        Cargando préstamos…
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-outline-variant/10">
+                        {misPrestamos.map(p => {
+                          const finDate = new Date(p.fecha_fin_esperada)
+                          const isOverdue = finDate < new Date()
+                          return (
+                            <div key={p.id} className="divide-y divide-outline-variant/10">
+                              <div className="flex items-center gap-3 px-5 py-3.5">
+                                {p.equipos?.imagen_url ? (
+                                  <img src={p.equipos.imagen_url} alt={p.equipos.nombre} className="w-10 h-10 rounded-lg object-cover shrink-0 border border-outline-variant/15" />
+                                ) : (
+                                  <div className="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center shrink-0">
+                                    <span className="material-symbols-outlined text-on-surface-variant text-[20px]">devices</span>
+                                  </div>
+                                )}
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-body text-sm font-medium text-on-surface truncate">{p.equipos?.nombre ?? '—'}</p>
+                                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
+                                    <span className={`flex items-center gap-1 font-body text-xs ${isOverdue ? 'text-red-500 font-semibold' : 'text-on-surface-variant'}`}>
+                                      <span className="material-symbols-outlined text-[13px]">{isOverdue ? 'warning' : 'schedule'}</span>
+                                      {isOverdue ? 'Venció el ' : 'Hasta '}
+                                      {finDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' })} {finDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })}
+                                    </span>
+                                    {p.salas && (
+                                      <span className="flex items-center gap-1 font-body text-xs text-on-surface-variant">
+                                        <span className="material-symbols-outlined text-[13px]">meeting_room</span>
+                                        {p.salas.nombre}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <button
+                                    onClick={() => {
+                                      if (editandoPrestamoId === p.id) {
+                                        setEditandoPrestamoId(null)
+                                        setEditPrestamoError(null)
+                                      } else {
+                                        setEditandoPrestamoId(p.id)
+                                        setEditPrestamoReservaId(p.reserva_id ?? '')
+                                        setEditPrestamoError(null)
+                                      }
+                                    }}
+                                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-label font-semibold border transition-colors ${editandoPrestamoId === p.id ? 'bg-primary/10 text-primary border-primary/30' : 'bg-surface-container text-on-surface-variant border-outline-variant/20 hover:bg-blue-50 hover:text-blue-700'}`}
+                                  >
+                                    <span className="material-symbols-outlined text-[14px]">edit</span>
+                                    Editar
+                                  </button>
+                                  <button
+                                    onClick={() => handleDevolverEquipo(p.id)}
+                                    disabled={devolviendoPrestamo === p.id}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container text-on-surface text-xs font-label font-semibold hover:bg-green-50 hover:text-green-700 border border-outline-variant/20 transition-colors disabled:opacity-50"
+                                  >
+                                    {devolviendoPrestamo === p.id ? (
+                                      <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                                    ) : (
+                                      <span className="material-symbols-outlined text-[14px]">assignment_return</span>
+                                    )}
+                                    Devolver
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Inline edit form */}
+                              {editandoPrestamoId === p.id && (
+                                <div className="px-5 py-3 bg-surface-container/40 space-y-2.5">
+                                  <p className="font-label text-xs text-on-surface-variant uppercase tracking-widest">Cambiar reserva vinculada</p>
+                                  <select
+                                    value={editPrestamoReservaId}
+                                    onChange={e => setEditPrestamoReservaId(e.target.value)}
+                                    disabled={savingEditPrestamo}
+                                    className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition appearance-none"
+                                  >
+                                    <option value="">— Selecciona una reserva —</option>
+                                    {reservas.filter(r => r.estado !== 'cancelada').map(r => (
+                                      <option key={r.id} value={r.id}>
+                                        {r.titulo} · {r.salas?.nombre ?? 'Sin sala'} · {r.fecha} {r.hora_inicio.slice(0,5)}–{r.hora_fin.slice(0,5)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  {editPrestamoError && (
+                                    <p className="text-xs font-body text-error flex items-center gap-1">
+                                      <span className="material-symbols-outlined text-[13px]">error</span>
+                                      {editPrestamoError}
+                                    </p>
+                                  )}
+                                  <div className="flex gap-2">
+                                    <button
+                                      onClick={handleEditarPrestamo}
+                                      disabled={!editPrestamoReservaId || savingEditPrestamo}
+                                      className="flex-1 py-2 rounded-lg bg-primary text-on-primary text-xs font-label font-semibold hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                      {savingEditPrestamo ? 'Guardando…' : 'Guardar cambio'}
+                                    </button>
+                                    <button
+                                      onClick={() => { setEditandoPrestamoId(null); setEditPrestamoError(null) }}
+                                      className="px-4 py-2 rounded-lg border border-outline-variant/30 text-xs font-label text-on-surface-variant hover:bg-surface-container transition"
+                                    >
+                                      Cancelar
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Search + filter bar */}
                 <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-4 shadow-sm flex flex-col sm:flex-row gap-3">
                   <div className="relative flex-1">
@@ -1782,7 +2091,7 @@ export default function MainMenuPage() {
 
                           <div className="mt-6 pt-4 border-t border-outline-variant/15 mt-auto">
                             <button
-                              onClick={() => { if (!FEATURES.techRequests) { showComingSoon(); return } }}
+                              onClick={() => handleSolicitarEquipo(item)}
                               disabled={item.estado !== 'disponible'}
                               className="w-full bg-surface-container-high text-on-surface font-label text-sm font-bold py-3 rounded-xl hover:bg-secondary hover:text-on-secondary hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-40 disabled:hover:translate-y-0 disabled:shadow-none disabled:cursor-not-allowed flex items-center justify-center gap-2"
                             >
@@ -2517,6 +2826,7 @@ export default function MainMenuPage() {
                                 <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-5 py-3 hidden lg:table-cell">SO</th>
                                 <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-5 py-3">Tipo</th>
                                 <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-5 py-3">Estado</th>
+                                <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-5 py-3 hidden xl:table-cell">Sala Asignada</th>
                                 <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-5 py-3">Acciones</th>
                               </tr>
                             </thead>
@@ -2579,6 +2889,7 @@ export default function MainMenuPage() {
                                           </button>
                                         </div>
                                       </td>
+                                      <td className="hidden xl:table-cell" />
                                     </>
                                   ) : (
                                     <>
@@ -2613,6 +2924,24 @@ export default function MainMenuPage() {
                                           {eq.estado === 'disponible' ? 'Disponible' : eq.estado === 'reservado' ? 'Reservado' : 'Mantenimiento'}
                                         </span>
                                       </td>
+                                      <td className="px-5 py-4 hidden xl:table-cell">
+                                        <div className="flex items-center gap-1.5">
+                                          <select
+                                            value={eq.sala_id ?? ''}
+                                            onChange={e => handleAsignarSala(eq.id, e.target.value || null)}
+                                            disabled={asignandoSala === eq.id}
+                                            className="bg-surface-container-low border border-outline-variant/30 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none focus:ring-1 focus:ring-primary/40 disabled:opacity-50 max-w-[160px]"
+                                          >
+                                            <option value="">— Sin sala —</option>
+                                            {salas.map(s => (
+                                              <option key={s.id} value={s.id}>{s.nombre}</option>
+                                            ))}
+                                          </select>
+                                          {asignandoSala === eq.id && (
+                                            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary border-t-transparent shrink-0" />
+                                          )}
+                                        </div>
+                                      </td>
                                       <td className="px-5 py-4">
                                         <div className="flex items-center gap-1">
                                           <button
@@ -2646,6 +2975,91 @@ export default function MainMenuPage() {
                                   )}
                                 </tr>
                               ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ── Préstamos activos (admin view) ──────────── */}
+                    <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 shadow-sm overflow-hidden">
+                      <div className="flex items-center gap-2 px-5 py-3.5 border-b border-outline-variant/15 bg-surface-container">
+                        <span className="material-symbols-outlined text-primary text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>assignment</span>
+                        <h3 className="font-label text-sm font-bold text-on-surface">Préstamos en Curso</h3>
+                        {prestamosAdmin.length > 0 && (
+                          <span className="ml-auto inline-flex items-center justify-center min-w-[20px] h-5 rounded-full bg-primary text-on-primary text-[10px] font-bold px-1">{prestamosAdmin.length}</span>
+                        )}
+                      </div>
+                      {loadingPrestamosAdmin ? (
+                        <div className="flex items-center justify-center gap-2 py-10 text-sm font-body text-on-surface-variant">
+                          <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                          Cargando préstamos…
+                        </div>
+                      ) : prestamosAdmin.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-10 gap-2 text-center">
+                          <span className="material-symbols-outlined text-on-surface-variant text-3xl">assignment_turned_in</span>
+                          <p className="font-body text-sm text-on-surface-variant">No hay préstamos activos en este momento.</p>
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead className="bg-surface-container border-b border-outline-variant/20">
+                              <tr>
+                                <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-5 py-3">Equipo</th>
+                                <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-5 py-3 hidden md:table-cell">Usuario</th>
+                                <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-5 py-3 hidden sm:table-cell">Sala de uso</th>
+                                <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-5 py-3">Devolver antes de</th>
+                                <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-5 py-3">Acción</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-outline-variant/10">
+                              {prestamosAdmin.map(p => {
+                                const finDate = new Date(p.fecha_fin_esperada)
+                                const isOverdue = finDate < new Date()
+                                return (
+                                  <tr key={p.id} className={`hover:bg-surface-container/40 transition-colors ${isOverdue ? 'bg-red-50/30' : ''}`}>
+                                    <td className="px-5 py-3 font-body font-medium text-on-surface">
+                                      <div className="flex items-center gap-2">
+                                        {p.equipos?.imagen_url ? (
+                                          <img src={p.equipos.imagen_url} alt="" className="w-7 h-7 rounded-md object-cover shrink-0 border border-outline-variant/15" />
+                                        ) : (
+                                          <div className="w-7 h-7 rounded-md bg-surface-container flex items-center justify-center shrink-0">
+                                            <span className="material-symbols-outlined text-on-surface-variant text-[14px]">devices</span>
+                                          </div>
+                                        )}
+                                        <span className="truncate max-w-[140px] text-sm">{p.equipos?.nombre ?? '—'}</span>
+                                      </div>
+                                    </td>
+                                    <td className="px-5 py-3 hidden md:table-cell">
+                                      <p className="font-body text-sm text-on-surface">{p.usuarios?.nombre ?? '—'}</p>
+                                      <p className="font-body text-xs text-on-surface-variant/70">{p.usuarios?.correo}</p>
+                                    </td>
+                                    <td className="px-5 py-3 font-body text-sm text-on-surface-variant hidden sm:table-cell">
+                                      {p.salas?.nombre ?? '—'}
+                                    </td>
+                                    <td className="px-5 py-3">
+                                      <span className={`font-body text-sm flex items-center gap-1 ${isOverdue ? 'text-red-500 font-semibold' : 'text-on-surface-variant'}`}>
+                                        {isOverdue && <span className="material-symbols-outlined text-[14px]">warning</span>}
+                                        {finDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' })} {finDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })}
+                                      </span>
+                                    </td>
+                                    <td className="px-5 py-3">
+                                      <button
+                                        onClick={() => handleDevolverPrestamoAdmin(p.id, p.equipo_id)}
+                                        disabled={devolviendoAdmin === p.id}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container text-on-surface text-xs font-label font-semibold hover:bg-green-50 hover:text-green-700 border border-outline-variant/20 transition-colors disabled:opacity-50"
+                                      >
+                                        {devolviendoAdmin === p.id ? (
+                                          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                                        ) : (
+                                          <span className="material-symbols-outlined text-[14px]">assignment_return</span>
+                                        )}
+                                        Registrar devolución
+                                      </button>
+                                    </td>
+                                  </tr>
+                                )
+                              })}
                             </tbody>
                           </table>
                         </div>
@@ -3569,7 +3983,7 @@ export default function MainMenuPage() {
         {navItems.map((item) => (
           <button
             key={item.id}
-            onClick={() => { setActiveTab(item.id); if (item.id === 'tech') loadEquipos() }}
+            onClick={() => { setActiveTab(item.id); if (item.id === 'tech') { loadEquipos(); loadMisPrestamos() } }}
             className={`flex flex-col items-center justify-center w-full h-full gap-0.5 transition-colors
               ${activeTab === item.id ? 'text-primary' : 'text-secondary hover:text-primary'}`}
           >
@@ -3841,6 +4255,7 @@ export default function MainMenuPage() {
                       onChange={e => {
                         setNecesitaEquipo(e.target.checked)
                         if (!e.target.checked) setEquiposSeleccionados([])
+                        if (e.target.checked && equipos.length === 0) loadEquipos()
                       }}
                       disabled={submitting}
                     />
@@ -4020,6 +4435,229 @@ export default function MainMenuPage() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ MODAL: SOLICITAR PRÉSTAMO DE EQUIPO ══════════════════ */}
+      {loanModalOpen && loanEquipo && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
+            onClick={() => { if (!loanSubmitting) { setLoanModalOpen(false); setLoanEquipo(null) } }}
+          />
+          <div className="relative w-full max-w-md bg-surface rounded-2xl shadow-2xl border border-outline-variant/20 flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant/15">
+              <div className="flex items-center gap-3">
+                <div className="bg-primary-container text-on-primary w-9 h-9 rounded-lg flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>add_shopping_cart</span>
+                </div>
+                <h2 className="font-headline text-lg font-bold text-on-surface">Solicitar Equipo</h2>
+              </div>
+              <button
+                onClick={() => { if (!loanSubmitting) { setLoanModalOpen(false); setLoanEquipo(null) } }}
+                className="p-1.5 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant"
+                aria-label="Cerrar"
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            {/* Equipment info card */}
+            <div className="px-6 pt-4">
+              <div className="flex items-center gap-3 bg-surface-container rounded-xl p-3 border border-outline-variant/15">
+                {loanEquipo.imagen_url ? (
+                  <img src={loanEquipo.imagen_url} alt={loanEquipo.nombre} className="w-14 h-14 rounded-lg object-cover shrink-0 border border-outline-variant/15" />
+                ) : (
+                  <div className="w-14 h-14 rounded-lg bg-surface-container-high flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-on-surface-variant text-[28px]">devices</span>
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="font-headline font-bold text-on-surface text-base truncate">{loanEquipo.nombre}</p>
+                  <p className="font-label text-xs text-primary uppercase tracking-wide mt-0.5">{TIPO_EQUIPO_LABELS[loanEquipo.tipo_equipo] ?? loanEquipo.tipo_equipo} · {loanEquipo.marca}</p>
+                  {loanEquipo.numero_serie && (
+                    <code className="text-[10px] font-mono text-on-surface-variant mt-0.5 block">{loanEquipo.numero_serie}</code>
+                  )}
+                </div>
+                <span className="inline-flex items-center gap-1 text-[10px] font-label font-bold px-2 py-0.5 rounded bg-green-100 text-green-700 shrink-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                  Disponible
+                </span>
+              </div>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleSubmitLoan} className="px-6 py-4 space-y-4 overflow-y-auto flex-1">
+              <p className="font-label text-xs uppercase tracking-widest text-on-surface-variant">Detalles del préstamo</p>
+
+              {/* Vincular a reserva activa — obligatorio */}
+              <div>
+                <label className="font-label text-xs text-on-surface-variant block mb-1.5">
+                  Vincular a una reserva activa <span className="text-error">*</span>
+                </label>
+                {reservas.filter(r => r.estado !== 'cancelada').length === 0 ? (
+                  <div className="space-y-2">
+                    <div className="flex items-start gap-2 bg-surface-container rounded-lg px-3 py-3 text-sm font-body text-on-surface-variant">
+                      <span className="material-symbols-outlined text-[18px] text-error shrink-0 mt-0.5">event_busy</span>
+                      <span>No tienes reservas activas. Para solicitar un equipo debes tener una sala reservada.</span>
+                    </div>
+                    {loanEquipo && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLoanModalOpen(false)
+                          openModal(undefined, undefined, loanEquipo.id)
+                        }}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-primary text-primary text-sm font-label font-semibold hover:bg-primary/5 transition"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                        Crear reserva con este equipo
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <select
+                      value={loanForm.reserva_id}
+                      onChange={e => {
+                        const rid = e.target.value
+                        const r = reservas.find(x => x.id === rid)
+                        if (r) {
+                          setLoanForm(f => ({
+                            ...f,
+                            reserva_id: rid,
+                            sala_id: r.salas?.id ?? '',
+                            fecha: r.fecha,
+                            hora_devolucion: r.hora_fin.slice(0, 5),
+                          }))
+                        } else {
+                          setLoanForm(f => ({ ...f, reserva_id: '', sala_id: '', fecha: '', hora_devolucion: '' }))
+                        }
+                      }}
+                      disabled={loanSubmitting}
+                      required
+                      className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition appearance-none"
+                    >
+                      <option value="">— Selecciona una reserva —</option>
+                      {reservas.filter(r => r.estado !== 'cancelada').map(r => (
+                        <option key={r.id} value={r.id}>
+                          {r.titulo} · {r.salas?.nombre ?? 'Sin sala'} · {r.fecha} {r.hora_inicio.slice(0,5)}–{r.hora_fin.slice(0,5)}
+                        </option>
+                      ))}
+                    </select>
+                    {loanForm.reserva_id && (
+                      <p className="mt-1.5 text-[11px] font-body text-primary flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[14px]">link</span>
+                        Sala y horario de devolución pre-llenados desde la reserva.
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* Fecha y hora de devolución — se llenan desde la reserva */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-label text-xs text-on-surface-variant block mb-1.5">
+                    Fecha de devolución
+                  </label>
+                  <input
+                    type="date"
+                    value={loanForm.fecha}
+                    readOnly
+                    disabled={loanSubmitting}
+                    className="w-full rounded-lg border border-outline-variant/40 bg-surface-container px-3 py-2.5 text-sm font-body text-on-surface-variant cursor-not-allowed"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="font-label text-xs text-on-surface-variant block mb-1.5">
+                    Hora de devolución
+                  </label>
+                  <input
+                    type="time"
+                    value={loanForm.hora_devolucion}
+                    readOnly
+                    disabled={loanSubmitting}
+                    className="w-full rounded-lg border border-outline-variant/40 bg-surface-container px-3 py-2.5 text-sm font-body text-on-surface-variant cursor-not-allowed"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Notas */}
+              <div>
+                <label className="font-label text-xs text-on-surface-variant block mb-1.5">
+                  Notas
+                  <span className="ml-1 text-on-surface-variant/50">(opcional)</span>
+                </label>
+                <textarea
+                  value={loanForm.notas}
+                  onChange={e => setLoanForm(f => ({ ...f, notas: e.target.value }))}
+                  disabled={loanSubmitting}
+                  placeholder="Ej: Para presentación del proyecto final…"
+                  rows={2}
+                  maxLength={300}
+                  className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition resize-none"
+                />
+              </div>
+
+              {/* Info chip */}
+              <div className="flex items-start gap-2 bg-surface-container rounded-lg px-3 py-2.5 text-xs font-body text-on-surface-variant">
+                <span className="material-symbols-outlined text-[16px] text-primary shrink-0 mt-0.5">info</span>
+                <span>El equipo quedará como <strong>reservado</strong> desde ahora. Puedes devolverlo anticipadamente desde tu panel de préstamos activos.</span>
+              </div>
+
+              {/* Error */}
+              {loanError && (
+                <div className="flex items-start gap-2 bg-error-container text-on-error-container rounded-lg px-4 py-3 text-sm font-body">
+                  <span className="material-symbols-outlined text-[18px] shrink-0 mt-0.5">error</span>
+                  {loanError}
+                </div>
+              )}
+
+              {/* Success */}
+              {loanSuccess && (
+                <div className="flex items-start gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
+                  <span className="material-symbols-outlined text-[22px] text-green-500 shrink-0 mt-0.5" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
+                  <div>
+                    <p className="font-label text-sm font-bold text-green-800">¡Préstamo registrado!</p>
+                    <p className="font-body text-xs text-green-700 mt-0.5">El equipo ha sido asignado a tu nombre correctamente.</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => { if (!loanSubmitting) { setLoanModalOpen(false); setLoanEquipo(null) } }}
+                  disabled={loanSubmitting}
+                  className="flex-1 py-2.5 rounded-lg border border-outline-variant/40 text-on-surface font-label text-sm font-medium hover:bg-surface-container transition-colors disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={loanSubmitting || loanSuccess || !loanForm.reserva_id}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-primary text-on-primary font-label text-sm font-medium hover:brightness-105 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loanSubmitting ? (
+                    <>
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-on-primary border-t-transparent" />
+                      Procesando…
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-[18px]">add_shopping_cart</span>
+                      Confirmar préstamo
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

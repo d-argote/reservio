@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react'
 
-// ── Types ──────────────────────────────────────────────────────────────
+// ── Types ────────────────────────────────────────────────────────────────────
 export interface CalReserva {
   id: string
   titulo: string
@@ -26,7 +26,7 @@ interface Props {
 
 type CalView = 'month' | 'week' | 'day'
 
-// ── Constants ──────────────────────────────────────────────────────────
+// ── Constants ────────────────────────────────────────────────────────────────
 const DIAS_SHORT = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
 const DIAS_FULL  = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 const MESES      = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
@@ -36,7 +36,7 @@ const HOUR_END   = 22
 const SLOT_H     = 64   // px per hour
 const HOURS      = Array.from({ length: HOUR_END - HOUR_START }, (_, i) => HOUR_START + i)
 
-// ── Helpers ────────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 function pad2(n: number) { return String(n).padStart(2, '0') }
 
 function toLocal(d: Date): string {
@@ -48,7 +48,7 @@ function parseMin(hms: string): number {
   return h * 60 + (m || 0)
 }
 
-// ── Event style by status ──────────────────────────────────────────────
+// ── Event style by status ─────────────────────────────────────────────────────
 const EV: Record<string, { bg: string; text: string; dot: string; border: string; pill: string; bar: string }> = {
   confirmada: {
     bg:     'bg-primary/[0.10]',
@@ -76,7 +76,7 @@ const EV: Record<string, { bg: string; text: string; dot: string; border: string
   },
 }
 
-// ── Detail row helper ──────────────────────────────────────────────────
+// ── Detail row helper ─────────────────────────────────────────────────────────
 function Row({ icon, children }: { icon: string; children: React.ReactNode }) {
   return (
     <div className="flex items-start gap-2.5">
@@ -86,9 +86,9 @@ function Row({ icon, children }: { icon: string; children: React.ReactNode }) {
   )
 }
 
-// ══════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
-// ══════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
 export function ReservasCalendar({
   reservas,
   loading,
@@ -99,7 +99,7 @@ export function ReservasCalendar({
   cancelingId,
   deletingId,
 }: Props) {
-  // ── Today reference ──────────────────────────────────────────────
+  // ── Today reference ───────────────────────────────────────────────
   const todayDate = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d }, [])
   const todayStr  = useMemo(() => toLocal(todayDate), [todayDate])
 
@@ -134,7 +134,7 @@ export function ReservasCalendar({
     const d = new Date(); d.setHours(0, 0, 0, 0); setCurrent(d)
   }
 
-  // ── Period label ──────────────────────────────────────────────────
+  // ── Period label ─────────────────────────────────────────────────
   function label(): string {
     if (view === 'month') return `${MESES[current.getMonth()]} ${current.getFullYear()}`
     if (view === 'day') {
@@ -216,7 +216,7 @@ export function ReservasCalendar({
   return (
     <div className="bg-surface-container-lowest rounded-2xl border border-outline-variant/25 overflow-hidden shadow-sm">
 
-      {/* ── TOOLBAR ──────────────────────────────────────────────── */}
+      {/* ── TOOLBAR ─────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 border-b border-outline-variant/20 bg-surface-container-low/60">
         {/* Navigation */}
         <div className="flex items-center gap-2">
@@ -264,9 +264,9 @@ export function ReservasCalendar({
         </div>
       </div>
 
-      {/* ══════════════════════════════════════════════════════════ */}
-      {/* MONTH VIEW                                                */}
-      {/* ══════════════════════════════════════════════════════════ */}
+      {/* ════════════════════════════════════════════════════════════ */}
+      {/* MONTH VIEW                                                  */}
+      {/* ════════════════════════════════════════════════════════════ */}
       {view === 'month' && (
         <div>
           {/* Weekday headers */}
@@ -359,9 +359,9 @@ export function ReservasCalendar({
         </div>
       )}
 
-      {/* ══════════════════════════════════════════════════════════ */}
-      {/* WEEK VIEW                                                 */}
-      {/* ══════════════════════════════════════════════════════════ */}
+      {/* ════════════════════════════════════════════════════════════ */}
+      {/* WEEK VIEW                                                   */}
+      {/* ════════════════════════════════════════════════════════════ */}
       {view === 'week' && (
         <div className="overflow-auto" style={{ maxHeight: 660 }}>
           {/* Sticky header */}
@@ -444,9 +444,9 @@ export function ReservasCalendar({
         </div>
       )}
 
-      {/* ══════════════════════════════════════════════════════════ */}
-      {/* DAY VIEW                                                  */}
-      {/* ══════════════════════════════════════════════════════════ */}
+      {/* ════════════════════════════════════════════════════════════ */}
+      {/* DAY VIEW                                                    */}
+      {/* ════════════════════════════════════════════════════════════ */}
       {view === 'day' && (
         <div className="overflow-auto" style={{ maxHeight: 660 }}>
           {/* Sticky header */}
@@ -512,9 +512,9 @@ export function ReservasCalendar({
         </div>
       )}
 
-      {/* ══════════════════════════════════════════════════════════ */}
-      {/* EVENT DETAIL MODAL                                        */}
-      {/* ══════════════════════════════════════════════════════════ */}
+      {/* ════════════════════════════════════════════════════════════ */}
+      {/* EVENT DETAIL MODAL                                         */}
+      {/* ════════════════════════════════════════════════════════════ */}
       {selected && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
