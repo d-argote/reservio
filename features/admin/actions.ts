@@ -276,6 +276,24 @@ export async function deleteEquipo(id: string): Promise<{ success?: boolean; err
 
   const supabase = getSupabaseAdmin()
   if (!supabase) return { error: 'Error interno del servidor' }
+
+  // Validación: No permitir si el estado es reservado
+  const { data: equipo } = await supabase.from('equipos').select('estado').eq('id', id).single()
+  if (equipo?.estado === 'reservado') {
+    return { error: 'No se puede eliminar el equipo porque se encuentra actualmente reservado.' }
+  }
+
+  // Validación: No permitir si hay préstamos activos o vencidos
+  const { count: countPrestamos } = await supabase
+    .from('prestamos_equipo')
+    .select('id', { count: 'exact', head: true })
+    .eq('equipo_id', id)
+    .in('estado', ['activo', 'vencido'])
+  
+  if (countPrestamos && countPrestamos > 0) {
+    return { error: 'No se puede eliminar el equipo porque tiene préstamos en curso.' }
+  }
+
   const { error } = await supabase
     .from('equipos')
     .delete()
@@ -346,6 +364,18 @@ export async function deleteSala(id: string): Promise<{ success?: boolean; error
 
   const supabase = getSupabaseAdmin()
   if (!supabase) return { error: 'Error interno del servidor' }
+
+  // Validación: Verificar que la sala no tenga reservas activas o pendientes
+  const { count: countReservas } = await supabase
+    .from('reservas')
+    .select('id', { count: 'exact', head: true })
+    .eq('sala_id', id)
+    .in('estado', ['pendiente', 'confirmada'])
+  
+  if (countReservas && countReservas > 0) {
+    return { error: 'No se puede eliminar la sala porque tiene reservas pendientes o confirmadas.' }
+  }
+
   const { error } = await supabase
     .from('salas')
     .delete()
