@@ -323,6 +323,13 @@ export default function MainMenuPage() {
     setTimeout(() => setComingSoon(false), 2800)
   }, [])
 
+  // ── Global Error toast ────────────────────────────────────────────
+  const [globalError, setGlobalError] = useState<string | null>(null)
+  const showGlobalError = useCallback((msg: string) => {
+    setGlobalError(msg)
+    setTimeout(() => setGlobalError(null), 4500)
+  }, [])
+
   // ── Modal state ───────────────────────────────────────────────────
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState<ReservaForm>(EMPTY_FORM)
@@ -482,6 +489,16 @@ export default function MainMenuPage() {
       .order('hora_inicio', { ascending: true })
     if (data) setCalendarReservas(data as unknown as Reserva[])
     setLoadingCalendar(false)
+  }, [])
+
+  const fetchSalas = useCallback(async () => {
+    setLoadingSalas(true)
+    const { data } = await supabase
+      .from('salas')
+      .select('id, nombre, descripcion, capacidad, ubicacion, imagen_url, estado')
+      .order('nombre')
+    if (data) setSalas(data as Sala[])
+    setLoadingSalas(false)
   }, [])
 
   useEffect(() => {
@@ -683,7 +700,11 @@ export default function MainMenuPage() {
   }
 
   const handleDeleteEquipo = async (id: string) => {
-    await deleteEquipo(id)
+    const result = await deleteEquipo(id)
+    if (result.error) {
+      showGlobalError(result.error)
+      return
+    }
     setEquipos(prev => prev.filter(e => e.id !== id))
   }
 
@@ -955,7 +976,11 @@ export default function MainMenuPage() {
   }
 
   const handleDeleteSala = async (id: string) => {
-    await deleteSala(id)
+    const result = await deleteSala(id)
+    if (result.error) {
+      showGlobalError(result.error)
+      return
+    }
     setSalasAdmin(prev => prev.filter(s => s.id !== id))
   }
 
@@ -1116,6 +1141,8 @@ export default function MainMenuPage() {
     setSubmitting(false)
     setModalSuccess(true)
     if (currentUserId) { fetchReservas(currentUserId); fetchCalendarReservas(currentUserId) }
+    // Recargar salas para reflejar cambios de estado (ocupada/disponible)
+    fetchSalas()
     // Si se reservaron equipos, actualizar préstamos activos y estado de equipos
     if (!editingReservaId && necesitaEquipo && equiposSeleccionados.length > 0) {
       await loadMisPrestamos()
@@ -1154,6 +1181,8 @@ export default function MainMenuPage() {
     if (!result.error) {
       setReservas(prev => prev.filter(r => r.id !== reservaId))
       setCalendarReservas(prev => prev.map(r => r.id === reservaId ? { ...r, estado: 'cancelada' as const } : r))
+      // Recargar salas para reflejar el cambio de estado
+      fetchSalas()
     }
     setCancelingReservaId(null)
   }
@@ -1165,6 +1194,8 @@ export default function MainMenuPage() {
     if (!result.error) {
       setReservas(prev => prev.filter(r => r.id !== reservaId))
       setCalendarReservas(prev => prev.filter(r => r.id !== reservaId))
+      // Recargar salas para reflejar el cambio de estado
+      fetchSalas()
     }
     setDeletingReservaId(null)
   }
@@ -1212,6 +1243,14 @@ export default function MainMenuPage() {
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 bg-[#001529] text-white px-5 py-3 rounded-xl shadow-2xl border border-white/10 animate-fadeIn">
           <span className="material-symbols-outlined text-[20px] text-yellow-400" style={{ fontVariationSettings: "'FILL' 1" }}>rocket_launch</span>
           <span className="font-label text-sm font-medium">Próximamente — disponible en el siguiente Sprint</span>
+        </div>
+      )}
+
+      {/* ── Global Error toast ────────────────────────────────── */}
+      {globalError && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[105] flex items-center gap-3 bg-error-container text-on-error-container border border-error/20 shadow-2xl px-5 py-3 rounded-xl animate-fadeIn max-w-[90vw] md:max-w-md">
+          <span className="material-symbols-outlined text-[20px] shrink-0" style={{ fontVariationSettings: "'FILL' 1" }}>error</span>
+          <span className="font-body text-sm font-medium leading-tight">{globalError}</span>
         </div>
       )}
       {/* ── Sidebar (desktop) ─────────────────────────────────── */}
@@ -4243,90 +4282,7 @@ export default function MainMenuPage() {
                 </div>
               )}
 
-              {/* ── Equipo tecnológico (opcional) ─────────────────── */}
-              <div className="border-t border-outline-variant/15 pt-4">
-                <label className="flex items-center gap-3 cursor-pointer select-none group">
-                  <div className={`relative w-10 h-6 rounded-full transition-colors shrink-0 ${necesitaEquipo ? 'bg-primary' : 'bg-outline-variant/40 group-hover:bg-outline-variant/60'}`}>
-                    <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${necesitaEquipo ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                    <input
-                      type="checkbox"
-                      className="sr-only"
-                      checked={necesitaEquipo}
-                      onChange={e => {
-                        setNecesitaEquipo(e.target.checked)
-                        if (!e.target.checked) setEquiposSeleccionados([])
-                        if (e.target.checked && equipos.length === 0) loadEquipos()
-                      }}
-                      disabled={submitting}
-                    />
-                  </div>
-                  <div>
-                    <p className="font-label text-sm font-medium text-on-surface">¿Necesitas equipo tecnológico?</p>
-                    <p className="font-body text-xs text-on-surface-variant">Selecciona los dispositivos disponibles para esta reserva</p>
-                  </div>
-                </label>
-
-                {necesitaEquipo && (
-                  <div className="mt-3 space-y-2">
-                    {loadingEquipos ? (
-                      <div className="flex items-center justify-center gap-2 text-sm font-body text-on-surface-variant py-6">
-                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                        Cargando equipos…
-                      </div>
-                    ) : equipos.filter(e => e.estado === 'disponible').length === 0 ? (
-                      <div className="flex items-center gap-2 text-sm font-body text-on-surface-variant bg-surface-container rounded-lg px-4 py-3">
-                        <span className="material-symbols-outlined text-[18px]">devices_off</span>
-                        No hay equipos disponibles en este momento.
-                      </div>
-                    ) : (
-                      <div className="max-h-44 overflow-y-auto space-y-1.5 pr-0.5">
-                        {equipos.filter(e => e.estado === 'disponible').map(eq => {
-                          const sel = equiposSeleccionados.includes(eq.id)
-                          return (
-                            <label
-                              key={eq.id}
-                              className={`flex items-center gap-3 p-2.5 rounded-lg cursor-pointer border transition-colors ${sel ? 'border-primary/50 bg-primary/5' : 'border-outline-variant/20 hover:bg-surface-container'}`}
-                            >
-                              <input
-                                type="checkbox"
-                                className="sr-only"
-                                checked={sel}
-                                onChange={() => setEquiposSeleccionados(prev =>
-                                  sel ? prev.filter(id => id !== eq.id) : [...prev, eq.id]
-                                )}
-                                disabled={submitting}
-                              />
-                              <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${sel ? 'bg-primary border-primary' : 'border-outline-variant'}`}>
-                                {sel && <span className="material-symbols-outlined text-on-primary" style={{ fontSize: '11px' }}>check</span>}
-                              </div>
-                              {eq.imagen_url ? (
-                                <img src={eq.imagen_url} alt={eq.nombre} className="w-8 h-8 rounded-md object-cover shrink-0 border border-outline-variant/20" />
-                              ) : (
-                                <div className="w-8 h-8 rounded-md bg-surface-container flex items-center justify-center shrink-0">
-                                  <span className="material-symbols-outlined text-on-surface-variant text-[16px]">devices</span>
-                                </div>
-                              )}
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-body font-medium text-on-surface truncate">{eq.nombre}</p>
-                                <p className="text-xs font-body text-on-surface-variant">{TIPO_EQUIPO_LABELS[eq.tipo_equipo] ?? eq.tipo_equipo} · {eq.marca}</p>
-                                {eq.numero_serie && (
-                                  <code className="text-[10px] font-mono text-primary">{eq.numero_serie}</code>
-                                )}
-                              </div>
-                            </label>
-                          )
-                        })}
-                      </div>
-                    )}
-                    {equiposSeleccionados.length > 0 && (
-                      <p className="text-xs font-body text-primary flex items-center gap-1 pt-0.5">
-                        <span className="material-symbols-outlined text-[14px]" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
-                        {equiposSeleccionados.length} equipo{equiposSeleccionados.length > 1 ? 's' : ''} seleccionado{equiposSeleccionados.length > 1 ? 's' : ''}
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
+              {/* ── Equipo tecnológico (removido) ─────────────────── */}
 
               {/* Éxito */}
               {modalSuccess && (
