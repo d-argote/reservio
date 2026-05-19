@@ -16,6 +16,34 @@ export interface ReservaInput {
   hora_fin: string    // 'HH:MM'
 }
 
+// ── Disponibilidad por franja horaria ──────────────────────────────
+export interface FranjaOcupada {
+  hora_inicio: string   // 'HH:MM'
+  hora_fin: string      // 'HH:MM'
+  titulo?: string       // título de la reserva (opcional)
+}
+
+export type EstadoDisponibilidad = 'libre' | 'parcial' | 'ocupada_total' | 'mantenimiento'
+
+export interface SalaDisponibilidad {
+  id: string
+  nombre: string
+  descripcion: string | null
+  capacidad: number
+  ubicacion: string | null
+  imagen_url: string | null
+  estado: 'disponible' | 'ocupada' | 'mantenimiento'
+  franjas_reservadas: FranjaOcupada[]
+  disponibilidad: EstadoDisponibilidad
+  proxima_libre: string | null   // 'HH:MM' hora a partir de la cual hay espacio libre hoy
+}
+
+export interface EquipoConflicto {
+  equipo_id: string
+  conflicto: boolean
+  franjas_ocupadas: FranjaOcupada[]
+}
+
 export interface ReportData {
   equipos: {
     total: number
@@ -50,25 +78,86 @@ async function getAuthUser() {
 }
 
 /**
- * Recalcula el estado de una sala: si tiene reservas pendientes o confirmadas
- * en el futuro (o en curso hoy) la marca como 'ocupada'; si no, como 'disponible'.
- * Usa el cliente admin para saltar RLS.
+ * Obtiene la fecha y hora actual en la zona horaria de Bogotá (UTC-5, sin DST).
+ * Se usa en el servidor para calcular disponibilidad en tiempo real.
+ */
+function getBogotaNowServer(): { dateStr: string; timeStr: string } {
+  const now = new Date()
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Bogota',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  })
+  const parts = fmt.formatToParts(now)
+  const get = (type: string) => parts.find(p => p.type === type)?.value ?? '00'
+  const dateStr = `${get('year')}-${get('month')}-${get('day')}`
+  const h = parseInt(get('hour'))
+  const m = parseInt(get('minute'))
+  const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+  return { dateStr, timeStr }
+}
+
+/**
+ * Recalcula el estado de una sala basándose en si hay una reserva
+ * en curso AHORA MISMO (no cualquier reserva futura).
+ * Solo marca 'ocupada' durante la franja horaria exacta que está reservada.
  */
 async function recalcularEstadoSala(salaId: string): Promise<void> {
   const adminClient = getSupabaseAdmin()
   if (!adminClient) return
 
-  const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD en UTC
+  // No tocar salas en mantenimiento
+  const { data: sala } = await adminClient
+    .from('salas')
+    .select('estado')
+    .eq('id', salaId)
+    .single()
+  if (sala?.estado === 'mantenimiento') return
 
+  const { dateStr, timeStr } = getBogotaNowServer()
+
+  // Solo 'ocupada' si hay una reserva activa en este momento exacto
   const { count } = await adminClient
     .from('reservas')
     .select('id', { count: 'exact', head: true })
     .eq('sala_id', salaId)
+    .eq('fecha', dateStr)
     .in('estado', ['pendiente', 'confirmada'])
-    .gte('fecha', today)
+    .lte('hora_inicio', timeStr)
+    .gt('hora_fin', timeStr)
 
   const nuevoEstado = (count ?? 0) > 0 ? 'ocupada' : 'disponible'
   await adminClient.from('salas').update({ estado: nuevoEstado }).eq('id', salaId)
+}
+
+/**
+ * Recalcula el estado de un equipo basándose en si hay un préstamo
+ * activo EN CURSO ahora mismo (fecha_inicio <= ahora < fecha_fin_esperada).
+ * Equipos en mantenimiento no son modificados.
+ */
+async function recalcularEstadoEquipo(equipoId: string): Promise<void> {
+  const adminClient = getSupabaseAdmin()
+  if (!adminClient) return
+
+  const { data: equipo } = await adminClient
+    .from('equipos')
+    .select('estado')
+    .eq('id', equipoId)
+    .single()
+  if (equipo?.estado === 'mantenimiento') return
+
+  const ahora = new Date().toISOString()
+
+  const { count } = await adminClient
+    .from('prestamos_equipo')
+    .select('id', { count: 'exact', head: true })
+    .eq('equipo_id', equipoId)
+    .eq('estado', 'activo')
+    .lte('fecha_inicio', ahora)
+    .gt('fecha_fin_esperada', ahora)
+
+  const nuevoEstado = (count ?? 0) > 0 ? 'reservado' : 'disponible'
+  await adminClient.from('equipos').update({ estado: nuevoEstado }).eq('id', equipoId)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -173,20 +262,43 @@ export async function createReserva(
   const { user, supabase } = await getAuthUser()
   if (!user) return { error: 'No autenticado' }
 
-  // Verificar conflicto de horario en la misma sala y fecha
-  const { data: overlapping } = await supabase
-    .from('reservas')
-    .select('id')
-    .eq('sala_id', data.sala_id)
-    .eq('fecha', data.fecha)
-    .in('estado', ['pendiente', 'confirmada'])
-    .lt('hora_inicio', data.hora_fin)
-    .gt('hora_fin', data.hora_inicio)
+  const adminClient = getSupabaseAdmin()
+  const writeClient = adminClient ?? supabase
 
-  if (overlapping && overlapping.length > 0) {
+  // ── 1. Pre-insert conflict checks + fetch sala nombre — TODO en paralelo ──
+  // Sala overlap + todos los equipos en UNA sola query + nombre de sala para email.
+  const [salaCheck, equipoCheck, salaInfoResult] = await Promise.all([
+    supabase
+      .from('reservas')
+      .select('id', { count: 'exact', head: true })
+      .eq('sala_id', data.sala_id)
+      .eq('fecha', data.fecha)
+      .in('estado', ['pendiente', 'confirmada'])
+      .lt('hora_inicio', data.hora_fin)
+      .gt('hora_fin', data.hora_inicio),
+
+    equiposIds.length > 0
+      ? writeClient
+          .from('reserva_equipos')
+          .select('equipo_id, reservas!inner(fecha, hora_inicio, hora_fin, estado)')
+          .in('equipo_id', equiposIds)
+          .eq('reservas.fecha', data.fecha)
+          .in('reservas.estado', ['pendiente', 'confirmada'])
+          .lt('reservas.hora_inicio', data.hora_fin)
+          .gt('reservas.hora_fin', data.hora_inicio)
+      : Promise.resolve({ data: [] as { equipo_id: string }[], error: null }),
+
+    supabase.from('salas').select('nombre').eq('id', data.sala_id).single(),
+  ])
+
+  if ((salaCheck.count ?? 0) > 0) {
     return { error: 'La sala ya tiene una reserva en ese horario. Elige otra franja horaria.' }
   }
+  if (equipoCheck.data && equipoCheck.data.length > 0) {
+    return { error: 'El equipo seleccionado ya está reservado en esa franja horaria. Elige otro horario o equipo.' }
+  }
 
+  // ── 2. Insertar reserva ───────────────────────────────────────────────────
   const { data: reserva, error } = await supabase
     .from('reservas')
     .insert({
@@ -204,66 +316,50 @@ export async function createReserva(
   if (error) return { error: error.message }
   if (!reserva) return { error: 'Error al crear la reserva' }
 
-  // Vincular equipos si los hay
+  // ── 3. Insertar pivote + préstamos en paralelo ────────────────────────────
   if (equiposIds.length > 0) {
-    // Usar el cliente admin para bypassear RLS en operaciones privilegiadas
-    // (los usuarios normales no tienen permiso UPDATE en equipos ni INSERT en reserva_equipos)
-    const adminClient = getSupabaseAdmin()
-    const writeClient = adminClient ?? supabase   // fallback al usuario si falta service role key
+    const horaInicioStr    = data.hora_inicio.length === 5 ? `${data.hora_inicio}:00` : data.hora_inicio
+    const horaFinStr       = data.hora_fin.length === 5    ? `${data.hora_fin}:00`    : data.hora_fin
+    const fechaInicio      = `${data.fecha}T${horaInicioStr}-05:00`
+    const fechaFinEsperada = `${data.fecha}T${horaFinStr}-05:00`
 
-    // Tabla pivote reserva_equipos
-    const pivotRows = equiposIds.map(equipoId => ({
-      reserva_id: reserva.id,
-      equipo_id: equipoId,
-    }))
-    const { error: pivotError } = await writeClient.from('reserva_equipos').insert(pivotRows)
-    if (pivotError) {
-      console.error('[createReserva] Error inserting reserva_equipos:', pivotError)
-      return { data: { id: reserva.id }, prestamosError: pivotError.message }
-    }
-
-    // Marcar equipos como reservados
-    const { error: eqError } = await writeClient
-      .from('equipos')
-      .update({ estado: 'reservado' })
-      .in('id', equiposIds)
-    if (eqError) {
-      console.error('[createReserva] Error updating equipos:', eqError)
-    }
-
-    // Crear préstamos automáticos vinculados a esta reserva
-    // La hora de devolución esperada = fecha + hora_fin de la reserva (hora Bogotá UTC-5)
-    // Se añade :00 para que PostgREST parsee correctamente el timestamp.
-    const horaFin = data.hora_fin.length === 5 ? `${data.hora_fin}:00` : data.hora_fin
-    const fechaFinEsperada = `${data.fecha}T${horaFin}-05:00`
-    
+    const pivotRows = equiposIds.map(equipoId => ({ reserva_id: reserva.id, equipo_id: equipoId }))
     const prestamoRows = equiposIds.map(equipoId => ({
-      equipo_id: equipoId,
-      usuario_id: user.id,
-      reserva_id: reserva.id,
-      sala_id: data.sala_id || null, // Asegurar que string vacío se vuelva null
+      equipo_id:          equipoId,
+      usuario_id:         user.id,
+      reserva_id:         reserva.id,
+      sala_id:            data.sala_id || null,
+      fecha_inicio:       fechaInicio,
       fecha_fin_esperada: fechaFinEsperada,
-      estado: 'activo',
+      estado:             'activo',
     }))
-    
-    const { error: prestamosInsertError } = await writeClient
-      .from('prestamos_equipo')
-      .insert(prestamoRows)
 
-    if (prestamosInsertError) {
-      console.error('[createReserva] Error inserting prestamos_equipo:', prestamosInsertError)
-      // La reserva ya se creó — no la revertimos, pero avisamos al cliente
-      return { data: { id: reserva.id }, prestamosError: prestamosInsertError.message }
+    const [pivotRes, prestamosRes] = await Promise.all([
+      writeClient.from('reserva_equipos').insert(pivotRows),
+      writeClient.from('prestamos_equipo').insert(prestamoRows),
+    ])
+
+    if (pivotRes.error) {
+      console.error('[createReserva] Error inserting reserva_equipos:', pivotRes.error)
+      return { data: { id: reserva.id }, prestamosError: pivotRes.error.message }
+    }
+    if (prestamosRes.error) {
+      console.error('[createReserva] Error inserting prestamos_equipo:', prestamosRes.error)
+      return { data: { id: reserva.id }, prestamosError: prestamosRes.error.message }
+    }
+
+    // Marcar equipos 'reservado' si la reserva está activa AHORA (fire-and-forget)
+    const { dateStr: today, timeStr: nowTime } = getBogotaNowServer()
+    if (data.fecha === today && data.hora_inicio <= nowTime && data.hora_fin > nowTime) {
+      writeClient.from('equipos').update({ estado: 'reservado' }).in('id', equiposIds).catch(console.error)
     }
   }
 
-  // Email notification (best-effort)
+  // ── 4. Email (awaited — confiable) + recalcular sala (fire-and-forget) ───
+  // recalcularEstadoSala es estado de fondo; el email es crítico para el usuario.
+  recalcularEstadoSala(data.sala_id).catch(console.error)
+
   if (user.email) {
-    const { data: salaInfo } = await supabase
-      .from('salas')
-      .select('nombre')
-      .eq('id', data.sala_id)
-      .single()
     await sendReservaEmail({
       to: user.email,
       action: 'confirmada',
@@ -271,12 +367,9 @@ export async function createReserva(
       fecha: data.fecha,
       horaInicio: data.hora_inicio,
       horaFin: data.hora_fin,
-      sala: salaInfo?.nombre,
+      sala: salaInfoResult.data?.nombre,
     })
   }
-
-  // Actualizar estado de la sala
-  await recalcularEstadoSala(data.sala_id)
 
   return { data: { id: reserva.id } }
 }
@@ -376,7 +469,7 @@ export async function cancelarReserva(id: string): Promise<{ success?: boolean; 
     supabase.from('reserva_equipos').select('equipo_id').eq('reserva_id', id),
     supabase
       .from('reservas')
-      .select('titulo, fecha, hora_inicio, hora_fin, salas(nombre)')
+      .select('titulo, fecha, hora_inicio, hora_fin, sala_id, salas(id, nombre)')
       .eq('id', id)
       .single(),
   ])
@@ -392,11 +485,24 @@ export async function cancelarReserva(id: string): Promise<{ success?: boolean; 
 
   if (error) return { error: error.message }
 
+  // Marcar los préstamos vinculados a esta reserva como 'devuelto'
+  // y recalcular el estado de cada equipo involucrado
   if (pivotRows && pivotRows.length > 0) {
-    await supabase
-      .from('equipos')
-      .update({ estado: 'disponible' })
-      .in('id', (pivotRows as { equipo_id: string }[]).map(r => r.equipo_id))
+    const adminClient = getSupabaseAdmin()
+    const writeClient = adminClient ?? supabase
+    const equipoIds = (pivotRows as { equipo_id: string }[]).map(r => r.equipo_id)
+
+    // Cerrar prestamos activos vinculados a esta reserva
+    await writeClient
+      .from('prestamos_equipo')
+      .update({ estado: 'devuelto', fecha_devolucion: new Date().toISOString() })
+      .eq('reserva_id', id)
+      .eq('estado', 'activo')
+
+    // Recalcular estado de cada equipo individualmente
+    for (const equipoId of equipoIds) {
+      await recalcularEstadoEquipo(equipoId)
+    }
   }
 
   // Email notification (best-effort)
@@ -418,10 +524,11 @@ export async function cancelarReserva(id: string): Promise<{ success?: boolean; 
   }
 
   // Actualizar estado de la sala (re-evaluar si sigue ocupada)
-  const reservaDetails = details as unknown as { salas?: { id?: string } | null } | null
-  const salaId = Array.isArray(reservaDetails?.salas)
-    ? (reservaDetails?.salas as { id?: string }[])[0]?.id
-    : (reservaDetails?.salas as { id?: string } | null)?.id
+  const reservaDetails = details as unknown as { sala_id?: string; salas?: { id?: string } | null } | null
+  const salaId = reservaDetails?.sala_id
+    ?? (Array.isArray(reservaDetails?.salas)
+      ? (reservaDetails?.salas as { id?: string }[])[0]?.id
+      : (reservaDetails?.salas as { id?: string } | null)?.id)
   if (salaId) await recalcularEstadoSala(salaId)
 
   return { success: true }
@@ -454,11 +561,12 @@ export async function deleteReserva(id: string): Promise<{ success?: boolean; er
 
   if (error) return { error: error.message }
 
+  // Recalcular estado de cada equipo que estaba vinculado
   if (pivotRows && pivotRows.length > 0) {
-    await supabase
-      .from('equipos')
-      .update({ estado: 'disponible' })
-      .in('id', (pivotRows as { equipo_id: string }[]).map(r => r.equipo_id))
+    const equipoIds = (pivotRows as { equipo_id: string }[]).map(r => r.equipo_id)
+    for (const equipoId of equipoIds) {
+      await recalcularEstadoEquipo(equipoId)
+    }
   }
 
   // Recalcular estado de la sala ahora que la reserva fue eliminada
@@ -632,7 +740,7 @@ export async function createPrestamoEquipo(
   // Verificar que el equipo esté disponible
   const { data: equipo } = await supabase
     .from('equipos')
-    .select('estado')
+    .select('estado, sala_id')
     .eq('id', equipoId)
     .single()
 
@@ -640,6 +748,21 @@ export async function createPrestamoEquipo(
   if (equipo.estado !== 'disponible') {
     return { error: 'El equipo ya no está disponible. Puede que alguien más lo haya solicitado.' }
   }
+  // Validar que el equipo pertenece a la sala de la reserva (si tiene sala asignada)
+  if (equipo.sala_id && equipo.sala_id !== reserva.sala_id) {
+    return { error: 'El equipo seleccionado está asignado a otra sala y no puede prestarse para esta reserva.' }
+  }
+
+  // Calcular fecha_inicio = inicio de la reserva (no ahora)
+  const { data: reservaDetalle } = await supabase
+    .from('reservas')
+    .select('fecha, hora_inicio')
+    .eq('id', reservaId)
+    .single()
+
+  const horaInicioReserva = reservaDetalle
+    ? `${reservaDetalle.fecha}T${String(reservaDetalle.hora_inicio).slice(0, 8)}-05:00`
+    : new Date().toISOString()
 
   const { data: prestamo, error } = await supabase
     .from('prestamos_equipo')
@@ -648,6 +771,7 @@ export async function createPrestamoEquipo(
       usuario_id: user.id,
       reserva_id: reservaId,
       sala_id: reserva.sala_id || null,
+      fecha_inicio: horaInicioReserva,
       fecha_fin_esperada: fechaFinEsperada + '-05:00',
       notas,
     })
@@ -657,15 +781,19 @@ export async function createPrestamoEquipo(
   if (error) return { error: error.message }
   if (!prestamo) return { error: 'Error al registrar el préstamo' }
 
-  // Marcar equipo como reservado
-  // Usar el cliente admin para bypassear RLS en equipos
-  const adminClient = getSupabaseAdmin()
-  const writeClient = adminClient ?? supabase
+  // Marcar equipo como 'reservado' solo si la reserva está activa AHORA
+  const { dateStr: today, timeStr: nowTime } = getBogotaNowServer()
+  const prestamoEsAhora = reservaDetalle
+    ? reservaDetalle.fecha === today &&
+      String(reservaDetalle.hora_inicio).slice(0, 5) <= nowTime &&
+      (fechaFinEsperada.slice(11, 16)) > nowTime
+    : false
 
-  await writeClient
-    .from('equipos')
-    .update({ estado: 'reservado' })
-    .eq('id', equipoId)
+  if (prestamoEsAhora) {
+    const adminClient = getSupabaseAdmin()
+    const writeClient = adminClient ?? supabase
+    await writeClient.from('equipos').update({ estado: 'reservado' }).eq('id', equipoId)
+  }
 
   return { data: { id: prestamo.id } }
 }
@@ -717,13 +845,8 @@ export async function devolverEquipo(
 
   if (error) return { error: error.message }
 
-  // Liberar el equipo — requiere admin client para bypassear RLS en equipos
-  const adminClient = getSupabaseAdmin()
-  const writeClient = adminClient ?? supabase
-  await writeClient
-    .from('equipos')
-    .update({ estado: 'disponible' })
-    .eq('id', prestamo.equipo_id)
+  // Recalcular estado real del equipo (puede haber otro préstamo activo)
+  await recalcularEstadoEquipo(prestamo.equipo_id)
 
   return { success: true, equipoId: prestamo.equipo_id }
 }
@@ -753,4 +876,159 @@ export async function updatePrestamoReserva(
 
   if (error) return { error: error.message }
   return { success: true }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DISPONIBILIDAD POR FRANJA HORARIA
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Horario operativo del sistema (debe coincidir con HOUR_START / HOUR_END del calendario)
+const HORA_APERTURA = '07:00'
+const HORA_CIERRE   = '22:00'
+
+/**
+ * Calcula el estado de disponibilidad de una sala para una fecha dada.
+ * Devuelve las franjas horarias reservadas y un estado derivado:
+ *   - 'libre'        → sin reservas ese día
+ *   - 'parcial'      → algunas franjas reservadas
+ *   - 'ocupada_total'→ toda la jornada cubierta por reservas contiguas
+ *   - 'mantenimiento'→ sala fuera de servicio
+ */
+function calcularDisponibilidadSala(
+  estado: 'disponible' | 'ocupada' | 'mantenimiento',
+  reservas: { hora_inicio: string; hora_fin: string }[],
+): { disponibilidad: EstadoDisponibilidad; proxima_libre: string | null } {
+  if (estado === 'mantenimiento') {
+    return { disponibilidad: 'mantenimiento', proxima_libre: null }
+  }
+  if (reservas.length === 0) {
+    return { disponibilidad: 'libre', proxima_libre: HORA_APERTURA }
+  }
+
+  // Verificar si toda la jornada operativa está cubierta
+  const sorted = [...reservas].sort((a, b) => a.hora_inicio.localeCompare(b.hora_inicio))
+
+  let covered = HORA_APERTURA
+  for (const r of sorted) {
+    if (r.hora_inicio > covered) break   // hay un hueco antes de esta reserva
+    if (r.hora_fin > covered) covered = r.hora_fin
+  }
+
+  if (covered >= HORA_CIERRE) {
+    return { disponibilidad: 'ocupada_total', proxima_libre: null }
+  }
+
+  // Hay al menos un hueco → parcial; proxima_libre = primer hueco disponible
+  let primerLibre: string | null = HORA_APERTURA
+  let cursor = HORA_APERTURA
+  for (const r of sorted) {
+    if (r.hora_inicio > cursor) { primerLibre = cursor; break }
+    if (r.hora_fin > cursor) cursor = r.hora_fin
+  }
+  if (!primerLibre) primerLibre = cursor < HORA_CIERRE ? cursor : null
+
+  return { disponibilidad: 'parcial', proxima_libre: primerLibre }
+}
+
+/**
+ * Devuelve todas las salas con sus franjas horarias reservadas para una fecha.
+ * Permite a la UI mostrar disponibilidad parcial en lugar de bloquear toda la sala.
+ */
+export async function getSalasConDisponibilidadFecha(
+  fecha: string,  // 'YYYY-MM-DD'
+): Promise<{ data?: SalaDisponibilidad[]; error?: string }> {
+  const supabase = await createClient()
+
+  const [salasResult, reservasResult] = await Promise.allSettled([
+    supabase
+      .from('salas')
+      .select('id, nombre, descripcion, capacidad, ubicacion, imagen_url, estado')
+      .order('nombre'),
+    supabase
+      .from('reservas')
+      .select('sala_id, hora_inicio, hora_fin, titulo, estado')
+      .eq('fecha', fecha)
+      .in('estado', ['pendiente', 'confirmada']),
+  ])
+
+  if (salasResult.status === 'rejected') return { error: 'Error al cargar salas' }
+
+  const salas = salasResult.value.data ?? []
+  const reservas = reservasResult.status === 'fulfilled' ? (reservasResult.value.data ?? []) : []
+
+  // Agrupar reservas por sala_id
+  const porSala = new Map<string, { hora_inicio: string; hora_fin: string; titulo?: string }[]>()
+  for (const r of reservas) {
+    const arr = porSala.get(r.sala_id) ?? []
+    arr.push({
+      hora_inicio: (r.hora_inicio as string).slice(0, 5),
+      hora_fin:    (r.hora_fin as string).slice(0, 5),
+      titulo:      r.titulo ?? undefined,
+    })
+    porSala.set(r.sala_id, arr)
+  }
+
+  const data: SalaDisponibilidad[] = salas.map(s => {
+    const franjas = porSala.get(s.id) ?? []
+    const { disponibilidad, proxima_libre } = calcularDisponibilidadSala(s.estado, franjas)
+    return {
+      id:                s.id,
+      nombre:            s.nombre,
+      descripcion:       s.descripcion,
+      capacidad:         s.capacidad,
+      ubicacion:         s.ubicacion,
+      imagen_url:        s.imagen_url,
+      estado:            s.estado,
+      franjas_reservadas: franjas.sort((a, b) => a.hora_inicio.localeCompare(b.hora_inicio)),
+      disponibilidad,
+      proxima_libre,
+    }
+  })
+
+  return { data }
+}
+
+/**
+ * Recalcula el estado de TODOS los equipos no mantenimiento
+ * en función de si tienen un préstamo activo en curso ahora mismo.
+ * Acción pensada para admins o para llamar al cargar el tab de equipos.
+ */
+export async function recalcularEstadosEquiposDB(): Promise<{ updated: number; error?: string }> {
+  const adminClient = getSupabaseAdmin()
+  if (!adminClient) return { updated: 0, error: 'Admin client no disponible' }
+
+  const ahora = new Date().toISOString()
+
+  // Equipos con préstamo activo EN CURSO
+  const { data: enUso } = await adminClient
+    .from('prestamos_equipo')
+    .select('equipo_id')
+    .eq('estado', 'activo')
+    .lte('fecha_inicio', ahora)
+    .gt('fecha_fin_esperada', ahora)
+
+  const enUsoIds = new Set((enUso ?? []).map(p => p.equipo_id))
+
+  // Obtener todos los equipos no-mantenimiento
+  const { data: todos } = await adminClient
+    .from('equipos')
+    .select('id, estado')
+    .neq('estado', 'mantenimiento')
+
+  if (!todos) return { updated: 0 }
+
+  const aReservar   = todos.filter(e => enUsoIds.has(e.id)  && e.estado !== 'reservado').map(e => e.id)
+  const aLiberar    = todos.filter(e => !enUsoIds.has(e.id) && e.estado !== 'disponible').map(e => e.id)
+
+  let updated = 0
+  if (aReservar.length > 0) {
+    await adminClient.from('equipos').update({ estado: 'reservado'  }).in('id', aReservar)
+    updated += aReservar.length
+  }
+  if (aLiberar.length > 0) {
+    await adminClient.from('equipos').update({ estado: 'disponible' }).in('id', aLiberar)
+    updated += aLiberar.length
+  }
+
+  return { updated }
 }

@@ -40,8 +40,12 @@ import {
   getMisPrestamos,
   devolverEquipo,
   updatePrestamoReserva,
+  getSalasConDisponibilidadFecha,
+  recalcularEstadosEquiposDB,
   type ReportData,
   type PrestamoEquipo,
+  type SalaDisponibilidad,
+  type EstadoDisponibilidad,
 } from '@/features/reservas/actions'
 import { ReservasCalendar } from '@/components/ui/ReservasCalendar'
 
@@ -60,6 +64,10 @@ interface Sala {
   ubicacion: string | null
   imagen_url: string | null
   estado: 'disponible' | 'ocupada' | 'mantenimiento'
+  // Disponibilidad calculada (viene de getSalasConDisponibilidadFecha)
+  franjas_reservadas?: { hora_inicio: string; hora_fin: string; titulo?: string }[]
+  disponibilidad?: EstadoDisponibilidad
+  proxima_libre?: string | null
 }
 
 interface Reserva {
@@ -493,11 +501,10 @@ export default function MainMenuPage() {
 
   const fetchSalas = useCallback(async () => {
     setLoadingSalas(true)
-    const { data } = await supabase
-      .from('salas')
-      .select('id, nombre, descripcion, capacidad, ubicacion, imagen_url, estado')
-      .order('nombre')
-    if (data) setSalas(data as Sala[])
+    // Usar la fecha de hoy en Bogotá para calcular disponibilidad real
+    const { dateStr: fechaHoy } = getBogotaNow()
+    const result = await getSalasConDisponibilidadFecha(fechaHoy)
+    if (result.data) setSalas(result.data as Sala[])
     setLoadingSalas(false)
   }, [])
 
@@ -578,6 +585,8 @@ export default function MainMenuPage() {
   // ── HU-07: Cargar y gestionar equipos ────────────────────────────
   const loadEquipos = useCallback(async () => {
     setLoadingEquipos(true)
+    // Recalcular estados de equipos antes de cargar (fire-and-forget best-effort)
+    recalcularEstadosEquiposDB().catch(() => {})
     const result = await getEquipos()
     if (result.data) setEquipos(result.data)
     setLoadingEquipos(false)
@@ -1815,7 +1824,25 @@ export default function MainMenuPage() {
                   <p className="font-body font-semibold text-on-surface">No hay salas disponibles en este momento</p>
                 </div>
               ) : (
-                salas.map((sala, idx) => (
+                salas.map((sala, idx) => {
+                  const disp = sala.disponibilidad ?? (sala.estado === 'mantenimiento' ? 'mantenimiento' : 'libre')
+                  const badgeConfig = {
+                    libre:         { bg: 'bg-green-500/20',  text: 'text-green-50',  border: 'border-green-500/30',  dot: 'bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.8)]',  label: 'Disponible' },
+                    parcial:       { bg: 'bg-amber-500/20',  text: 'text-amber-50',  border: 'border-amber-500/30',  dot: 'bg-amber-400',                                          label: 'Parc. ocupada' },
+                    ocupada_total: { bg: 'bg-red-500/20',    text: 'text-red-50',    border: 'border-red-500/30',    dot: 'bg-red-400',                                            label: 'Ocupada' },
+                    mantenimiento: { bg: 'bg-yellow-500/20', text: 'text-yellow-50', border: 'border-yellow-500/30', dot: 'bg-yellow-400',                                         label: 'Mantenimiento' },
+                  }[disp] ?? { bg: 'bg-surface/20', text: 'text-on-surface', border: 'border-outline/30', dot: 'bg-outline', label: sala.estado }
+
+                  const HORA_APERTURA_MIN = 7 * 60    // 07:00 → 420 min
+                  const HORA_CIERRE_MIN   = 22 * 60   // 22:00 → 1320 min
+                  const jornada = HORA_CIERRE_MIN - HORA_APERTURA_MIN  // 900 min
+
+                  const toMin = (t: string) => {
+                    const [h, m] = t.split(':').map(Number)
+                    return h * 60 + m
+                  }
+
+                  return (
                   <div key={sala.id} className="bg-surface-container-lowest rounded-2xl overflow-hidden border border-outline-variant/15 shadow-none hover:shadow-md transition-shadow duration-200 group flex flex-col">
                     <div className="relative h-48 overflow-hidden bg-surface-container">
                       <img 
@@ -1825,17 +1852,9 @@ export default function MainMenuPage() {
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-80" />
                       <div className="absolute bottom-4 left-4 right-4 flex justify-between items-end">
-                        <span className={`inline-flex items-center gap-1.5 text-xs font-label font-bold px-2.5 py-1 rounded-md uppercase tracking-wider backdrop-blur-md ${
-                          sala.estado === 'disponible'    ? 'bg-green-500/20 text-green-50 border border-green-500/30'  :
-                          sala.estado === 'ocupada'       ? 'bg-red-500/20 text-red-50 border border-red-500/30'      :
-                          'bg-yellow-500/20 text-yellow-50 border border-yellow-500/30'
-                        }`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${
-                            sala.estado === 'disponible' ? 'bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.8)]' :
-                            sala.estado === 'ocupada'    ? 'bg-red-400'   : 'bg-yellow-400'
-                          }`} />
-                          {sala.estado === 'disponible'    ? 'Disponible'    :
-                           sala.estado === 'ocupada'       ? 'Ocupada'       : 'Mantenimiento'}
+                        <span className={`inline-flex items-center gap-1.5 text-xs font-label font-bold px-2.5 py-1 rounded-md uppercase tracking-wider backdrop-blur-md ${badgeConfig.bg} ${badgeConfig.text} border ${badgeConfig.border}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${badgeConfig.dot}`} />
+                          {badgeConfig.label}
                         </span>
                       </div>
                     </div>
@@ -1860,24 +1879,63 @@ export default function MainMenuPage() {
                           </span>
                         )}
                       </div>
+
+                      {/* Barra visual de franjas horarias */}
+                      {disp !== 'mantenimiento' && (
+                        <div className="mt-4">
+                          <div className="flex justify-between text-[10px] font-label text-on-surface-variant mb-1">
+                            <span>7:00</span>
+                            <span>14:30</span>
+                            <span>22:00</span>
+                          </div>
+                          <div className="relative h-2.5 rounded-full bg-surface-container overflow-hidden">
+                            {/* Franja verde "libre" base */}
+                            <div className="absolute inset-0 rounded-full bg-green-500/25" />
+                            {/* Franjas ocupadas (rojas) */}
+                            {(sala.franjas_reservadas ?? []).map((f, fi) => {
+                              const startMin  = Math.max(toMin(f.hora_inicio), HORA_APERTURA_MIN)
+                              const endMin    = Math.min(toMin(f.hora_fin),    HORA_CIERRE_MIN)
+                              if (endMin <= startMin) return null
+                              const left  = ((startMin - HORA_APERTURA_MIN) / jornada) * 100
+                              const width = ((endMin - startMin) / jornada) * 100
+                              return (
+                                <div
+                                  key={fi}
+                                  title={`${f.hora_inicio}–${f.hora_fin}${f.titulo ? ': ' + f.titulo : ''}`}
+                                  className="absolute h-full bg-red-400/70"
+                                  style={{ left: `${left}%`, width: `${width}%` }}
+                                />
+                              )
+                            })}
+                          </div>
+                          {/* Próxima libre */}
+                          {disp === 'parcial' && sala.proxima_libre && (
+                            <p className="text-[11px] font-label text-on-surface-variant mt-1">
+                              Próxima libre: <span className="font-bold text-green-600 dark:text-green-400">{sala.proxima_libre}</span>
+                            </p>
+                          )}
+                          {disp === 'ocupada_total' && (
+                            <p className="text-[11px] font-label text-red-500 mt-1">Sin disponibilidad hoy</p>
+                          )}
+                        </div>
+                      )}
                       
-                      <div className="mt-6 pt-4 border-t border-outline-variant/15 mt-auto">
+                      <div className="mt-4 pt-4 border-t border-outline-variant/15 mt-auto">
                         <button
                           onClick={() => handleReservarRapido(sala)}
-                          disabled={sala.estado !== 'disponible'}
+                          disabled={disp === 'mantenimiento'}
                           className="w-full border border-primary/40 text-primary font-label text-sm font-bold py-3 rounded-xl hover:bg-primary hover:text-on-primary transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                         >
-                          {sala.estado === 'disponible' ? (
-                            <>
-                              <span className="material-symbols-outlined text-[18px]">calendar_add_on</span>
-                              Reservar Sala
-                            </>
-                          ) : 'No disponible'}
+                          <>
+                            <span className="material-symbols-outlined text-[18px]">calendar_add_on</span>
+                            {disp === 'mantenimiento' ? 'En mantenimiento' : disp === 'libre' ? 'Reservar Sala' : 'Ver horarios / Reservar'}
+                          </>
                         </button>
                       </div>
                     </div>
                   </div>
-                ))
+                  )
+                })
               )}
             </div>
           )}
