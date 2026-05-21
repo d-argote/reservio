@@ -989,6 +989,48 @@ export async function getSalasConDisponibilidadFecha(
 }
 
 /**
+ * Devuelve las franjas horarias reservadas (pendiente + confirmada) para una
+ * sala específica en una fecha concreta. Útil para mostrar disponibilidad en
+ * el formulario de reserva sin necesidad de cargar todas las salas.
+ *
+ * @param salaId          UUID de la sala
+ * @param fecha           'YYYY-MM-DD'
+ * @param excludeReservaId  Omite esta reserva del cálculo (útil al editar)
+ */
+export async function getDisponibilidadSala(
+  salaId: string,
+  fecha: string,
+  excludeReservaId?: string,
+): Promise<{ franjas?: FranjaOcupada[]; error?: string }> {
+  const supabase = await createClient()
+
+  let query = supabase
+    .from('reservas')
+    .select('hora_inicio, hora_fin, titulo')
+    .eq('sala_id', salaId)
+    .eq('fecha', fecha)
+    .in('estado', ['pendiente', 'confirmada'])
+
+  if (excludeReservaId) {
+    query = query.neq('id', excludeReservaId)
+  }
+
+  const { data, error } = await query
+
+  if (error) return { error: error.message }
+
+  const franjas: FranjaOcupada[] = (data ?? [])
+    .map(r => ({
+      hora_inicio: (r.hora_inicio as string).slice(0, 5),
+      hora_fin:    (r.hora_fin as string).slice(0, 5),
+      titulo:      r.titulo ?? undefined,
+    }))
+    .sort((a, b) => a.hora_inicio.localeCompare(b.hora_inicio))
+
+  return { franjas }
+}
+
+/**
  * Recalcula el estado de TODOS los equipos no mantenimiento
  * en función de si tienen un préstamo activo en curso ahora mismo.
  * Acción pensada para admins o para llamar al cargar el tab de equipos.

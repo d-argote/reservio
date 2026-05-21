@@ -41,13 +41,16 @@ import {
   devolverEquipo,
   updatePrestamoReserva,
   getSalasConDisponibilidadFecha,
+  getDisponibilidadSala,
   recalcularEstadosEquiposDB,
   type ReportData,
   type PrestamoEquipo,
   type SalaDisponibilidad,
   type EstadoDisponibilidad,
+  type FranjaOcupada,
 } from '@/features/reservas/actions'
 import { ReservasCalendar } from '@/components/ui/ReservasCalendar'
+import { AvailabilityTimeline, hasOverlap } from '@/components/ui/AvailabilityTimeline'
 
 // ── Types
 
@@ -346,6 +349,10 @@ export default function MainMenuPage() {
   const [modalSuccess, setModalSuccess] = useState(false)
   const [duracionPreset, setDuracionPreset] = useState<number | 'libre' | 'dia'>('libre')
 
+  // ── Availability timeline state ───────────────────────────────────
+  const [modalFranjas, setModalFranjas] = useState<FranjaOcupada[]>([])
+  const [loadingFranjas, setLoadingFranjas] = useState(false)
+
   // ── HU-08: Preview modal de sala ─────────────────────────────────
   const [previewSala, setPreviewSala] = useState<Sala | null>(null)
 
@@ -537,25 +544,34 @@ export default function MainMenuPage() {
       const uid = session.user.id
       setCurrentUserId(uid)
 
-      const [, salasResult] = await Promise.allSettled([
+      await Promise.allSettled([
         fetchReservas(uid),
-
-        supabase
-          .from('salas')
-          .select('id, nombre, descripcion, capacidad, ubicacion, imagen_url, estado')
-          .order('nombre'),
+        fetchSalas(),           // carga salas con disponibilidad real del día
       ])
 
       fetchCalendarReservas(uid)
-
-      if (salasResult.status === 'fulfilled' && salasResult.value.data) {
-        setSalas(salasResult.value.data as Sala[])
-      }
-      setLoadingSalas(false)
     }
 
     init()
   }, [router, fetchReservas, fetchCalendarReservas])
+
+  // ── Fetch availability whenever sala or date changes inside modal ─
+  useEffect(() => {
+    if (!modalOpen || !form.sala_id || !form.fecha) {
+      setModalFranjas([])
+      return
+    }
+    let cancelled = false
+    setLoadingFranjas(true)
+    getDisponibilidadSala(form.sala_id, form.fecha, editingReservaId ?? undefined).then(result => {
+      if (!cancelled) {
+        setModalFranjas(result.franjas ?? [])
+        setLoadingFranjas(false)
+      }
+    })
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalOpen, form.sala_id, form.fecha])
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
@@ -1028,6 +1044,7 @@ export default function MainMenuPage() {
     setModalError(null)
     setModalSuccess(false)
     setDuracionPreset('libre')
+    setModalFranjas([])
 
     // Si se pasa un equipoId explícito (p.ej. desde el modal de préstamo), usarlo directamente
     if (equipoId) {
@@ -1104,6 +1121,12 @@ export default function MainMenuPage() {
       }
     }
 
+    // Validación de solapamiento contra franjas ya reservadas (cliente)
+    if (modalFranjas.length > 0 && hasOverlap(form.hora_inicio, form.hora_fin, modalFranjas)) {
+      setModalError('El horario seleccionado se solapa con una reserva existente. Elige un rango disponible.')
+      return
+    }
+
     setSubmitting(true)
 
     if (editingReservaId) {
@@ -1178,6 +1201,7 @@ export default function MainMenuPage() {
     setModalError(null)
     setModalSuccess(false)
     setDuracionPreset('libre')
+    setModalFranjas([])
     setNecesitaEquipo(false)
     setEquiposSeleccionados([])
     setModalOpen(true)
@@ -1278,7 +1302,7 @@ export default function MainMenuPage() {
           {navItems.map((item) => (
             <button
               key={item.id}
-              onClick={() => { setActiveTab(item.id); if (item.id === 'tech') { loadEquipos(); loadMisPrestamos() } }}
+              onClick={() => { setActiveTab(item.id); if (item.id === 'tech') { loadEquipos(); loadMisPrestamos() } if (item.id === 'rooms') { fetchSalas() } }}
               className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200
                 ${
                   activeTab === item.id
@@ -1407,7 +1431,7 @@ export default function MainMenuPage() {
               {navItems.map((item) => (
                 <button
                   key={item.id}
-                  onClick={() => { setActiveTab(item.id); if (item.id === 'tech') { loadEquipos(); loadMisPrestamos() } setMobileMenuOpen(false) }}
+                  onClick={() => { setActiveTab(item.id); if (item.id === 'tech') { loadEquipos(); loadMisPrestamos() } if (item.id === 'rooms') { fetchSalas() } setMobileMenuOpen(false) }}
                   className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200
                     ${activeTab === item.id
                       ? 'bg-surface-container-lowest text-primary font-semibold'
@@ -1880,45 +1904,75 @@ export default function MainMenuPage() {
                         )}
                       </div>
 
-                      {/* Barra visual de franjas horarias */}
-                      {disp !== 'mantenimiento' && (
-                        <div className="mt-4">
-                          <div className="flex justify-between text-[10px] font-label text-on-surface-variant mb-1">
-                            <span>7:00</span>
-                            <span>14:30</span>
-                            <span>22:00</span>
-                          </div>
-                          <div className="relative h-2.5 rounded-full bg-surface-container overflow-hidden">
-                            {/* Franja verde "libre" base */}
-                            <div className="absolute inset-0 rounded-full bg-green-500/25" />
-                            {/* Franjas ocupadas (rojas) */}
-                            {(sala.franjas_reservadas ?? []).map((f, fi) => {
-                              const startMin  = Math.max(toMin(f.hora_inicio), HORA_APERTURA_MIN)
-                              const endMin    = Math.min(toMin(f.hora_fin),    HORA_CIERRE_MIN)
-                              if (endMin <= startMin) return null
-                              const left  = ((startMin - HORA_APERTURA_MIN) / jornada) * 100
-                              const width = ((endMin - startMin) / jornada) * 100
-                              return (
+                      {/* Barra visual de franjas horarias (disponibilidad real del día) */}
+                      {disp !== 'mantenimiento' && (() => {
+                        const { timeStr: nowTime } = getBogotaNow()
+                        const nowMin = toMin(nowTime)
+                        const nowPct = Math.max(0, Math.min(100,
+                          ((nowMin - HORA_APERTURA_MIN) / jornada) * 100
+                        ))
+                        const showNow = nowMin >= HORA_APERTURA_MIN && nowMin <= HORA_CIERRE_MIN
+                        return (
+                          <div className="mt-4">
+                            {/* Hour tick labels */}
+                            <div className="relative h-3 mb-0.5">
+                              {[7, 10, 13, 16, 19, 22].map(h => {
+                                const pct = ((h * 60 - HORA_APERTURA_MIN) / jornada) * 100
+                                return (
+                                  <span
+                                    key={h}
+                                    className="absolute text-[9px] font-mono text-on-surface-variant/55 -translate-x-1/2"
+                                    style={{ left: `${pct}%` }}
+                                  >
+                                    {String(h).padStart(2, '0')}h
+                                  </span>
+                                )
+                              })}
+                            </div>
+                            {/* The bar */}
+                            <div className="relative h-2.5 rounded-full bg-surface-container overflow-visible">
+                              {/* Free base (green) */}
+                              <div className="absolute inset-0 rounded-full bg-green-500/30 overflow-hidden" />
+                              {/* Booked slots (red) */}
+                              {(sala.franjas_reservadas ?? []).map((f, fi) => {
+                                const startMin = Math.max(toMin(f.hora_inicio), HORA_APERTURA_MIN)
+                                const endMin   = Math.min(toMin(f.hora_fin),    HORA_CIERRE_MIN)
+                                if (endMin <= startMin) return null
+                                const left  = ((startMin - HORA_APERTURA_MIN) / jornada) * 100
+                                const width = ((endMin  - startMin)           / jornada) * 100
+                                return (
+                                  <div
+                                    key={fi}
+                                    title={`${f.hora_inicio}–${f.hora_fin}${f.titulo ? ': ' + f.titulo : ''}`}
+                                    className="absolute top-0 h-full rounded-sm bg-red-400/75"
+                                    style={{ left: `${left}%`, width: `${width}%` }}
+                                  />
+                                )
+                              })}
+                              {/* "Now" indicator */}
+                              {showNow && (
                                 <div
-                                  key={fi}
-                                  title={`${f.hora_inicio}–${f.hora_fin}${f.titulo ? ': ' + f.titulo : ''}`}
-                                  className="absolute h-full bg-red-400/70"
-                                  style={{ left: `${left}%`, width: `${width}%` }}
+                                  className="absolute top-1/2 -translate-y-1/2 w-0.5 h-4 bg-primary rounded-full shadow-sm z-10"
+                                  style={{ left: `${nowPct}%` }}
+                                  title={`Ahora: ${nowTime}`}
                                 />
-                              )
-                            })}
+                              )}
+                            </div>
+                            {/* Status text below bar */}
+                            {disp === 'parcial' && sala.proxima_libre && (
+                              <p className="text-[11px] font-label text-on-surface-variant mt-1">
+                                Próxima libre: <span className="font-bold text-green-600 dark:text-green-400">{sala.proxima_libre}</span>
+                              </p>
+                            )}
+                            {disp === 'ocupada_total' && (
+                              <p className="text-[11px] font-label text-red-500 mt-1">Sin disponibilidad hoy</p>
+                            )}
+                            {disp === 'libre' && (
+                              <p className="text-[11px] font-label text-green-600 dark:text-green-400 mt-1">Libre todo el día</p>
+                            )}
                           </div>
-                          {/* Próxima libre */}
-                          {disp === 'parcial' && sala.proxima_libre && (
-                            <p className="text-[11px] font-label text-on-surface-variant mt-1">
-                              Próxima libre: <span className="font-bold text-green-600 dark:text-green-400">{sala.proxima_libre}</span>
-                            </p>
-                          )}
-                          {disp === 'ocupada_total' && (
-                            <p className="text-[11px] font-label text-red-500 mt-1">Sin disponibilidad hoy</p>
-                          )}
-                        </div>
-                      )}
+                        )
+                      })()}
                       
                       <div className="mt-4 pt-4 border-t border-outline-variant/15 mt-auto">
                         <button
@@ -4080,7 +4134,7 @@ export default function MainMenuPage() {
         {navItems.map((item) => (
           <button
             key={item.id}
-            onClick={() => { setActiveTab(item.id); if (item.id === 'tech') { loadEquipos(); loadMisPrestamos() } }}
+            onClick={() => { setActiveTab(item.id); if (item.id === 'tech') { loadEquipos(); loadMisPrestamos() } if (item.id === 'rooms') { fetchSalas() } }}
             className={`flex flex-col items-center justify-center w-full h-full gap-0.5 transition-colors
               ${activeTab === item.id ? 'text-primary' : 'text-secondary hover:text-primary'}`}
           >
@@ -4191,6 +4245,28 @@ export default function MainMenuPage() {
                   disabled={submitting}
                 />
               </div>
+
+              {/* Availability timeline — shown once sala + fecha are selected */}
+              {form.sala_id && form.fecha && (
+                <AvailabilityTimeline
+                  franjas={modalFranjas}
+                  horaInicio={form.hora_inicio || undefined}
+                  horaFin={form.hora_fin || undefined}
+                  loading={loadingFranjas}
+                  onSelectWindow={(inicio, fin) => {
+                    setForm(f => {
+                      const next = { ...f, hora_inicio: inicio }
+                      if (duracionPreset !== 'libre' && duracionPreset !== 'dia' && typeof duracionPreset === 'number') {
+                        const calculated = addHoras(inicio, duracionPreset)
+                        next.hora_fin = calculated <= fin ? calculated : fin
+                      } else {
+                        next.hora_fin = fin
+                      }
+                      return next
+                    })
+                  }}
+                />
+              )}
 
               {/* Duración preestablecida */}
               <div>
