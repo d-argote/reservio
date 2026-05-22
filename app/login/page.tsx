@@ -1,10 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { loginUser } from '@/features/auth/actions'
+import { animate, spring, stagger } from 'animejs'
 
 const SimpleParallax = dynamic(() => import('simple-parallax-js'), { ssr: false })
 
@@ -16,6 +17,66 @@ export default function LoginPage() {
   const [globalError, setGlobalError] = useState<string | null>(null)
   const [isSuccess, setIsSuccess] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+
+  // ── Animation refs ───────────────────────────────────────────────
+  const asideRef    = useRef<HTMLElement>(null)
+  const mainRef     = useRef<HTMLElement>(null)
+  const cardRef     = useRef<HTMLDivElement>(null)
+  const taglineRef  = useRef<HTMLDivElement>(null)
+  const logoCardRef = useRef<HTMLDivElement>(null)
+  const submitRef   = useRef<HTMLButtonElement>(null)
+
+  // ── Entrance animation on mount ──────────────────────────────────
+  useEffect(() => {
+    // Set initial invisible state in JS (not JSX) so elements are
+    // visible if JS/animation fails (graceful degradation)
+    const aside     = asideRef.current
+    const logoCard  = logoCardRef.current
+    const tagline   = taglineRef.current
+    const card      = cardRef.current
+    const fields    = mainRef.current ? Array.from(mainRef.current.querySelectorAll<HTMLElement>('[data-field]')) : []
+
+    if (aside)    { aside.style.opacity = '0' }
+    if (logoCard) { logoCard.style.opacity = '0'; logoCard.style.transform = 'scale(0.9)' }
+    if (tagline)  { tagline.style.opacity = '0'; tagline.style.transform = 'translateY(20px)' }
+    if (card)     { card.style.opacity = '0'; card.style.transform = 'translateY(24px)' }
+    fields.forEach(f => { f.style.opacity = '0'; f.style.transform = 'translateY(10px)' })
+
+    // Fire animations
+    if (aside) animate(aside, { opacity: [0, 1], duration: 500, ease: 'out(2)', delay: 0 })
+
+    if (logoCard) animate(logoCard, {
+      opacity: [0, 1], scale: [0.9, 1],
+      duration: 560, ease: spring({ stiffness: 220, damping: 18, mass: 1 }), delay: 160,
+    })
+
+    if (tagline) animate(tagline, {
+      opacity: [0, 1], translateY: [20, 0],
+      duration: 480, ease: 'out(3)', delay: 340,
+    })
+
+    if (card) animate(card, {
+      opacity: [0, 1], translateY: [24, 0],
+      duration: 520, ease: spring({ stiffness: 240, damping: 22, mass: 0.9 }), delay: 80,
+    })
+
+    if (fields.length) animate(fields, {
+      opacity: [0, 1], translateY: [10, 0],
+      delay: stagger(70, { start: 300 }),
+      duration: 340, ease: 'out(3)',
+    })
+  }, [])
+
+  // ── Submit button press feedback ─────────────────────────────────
+  const handleButtonPress = () => {
+    const el = submitRef.current
+    if (!el) return
+    animate(el, {
+      scale: [1, 0.96, 1],
+      duration: 300,
+      ease: spring({ stiffness: 400, damping: 14 }),
+    })
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -65,12 +126,10 @@ export default function LoginPage() {
 
       {/* ════════════════════════════════════════════════════
           LEFT PANEL — Branding
-          sticky + h-screen keeps it locked regardless of how
-          tall the right panel grows (keyboard, errors, etc.)
           ════════════════════════════════════════════════════ */}
-      <aside className="hidden lg:flex lg:w-1/2 flex-col h-screen sticky top-0 relative bg-[#001529] overflow-hidden">
+      <aside ref={asideRef} className="hidden lg:flex lg:w-1/2 flex-col h-screen sticky top-0 relative bg-[#001529] overflow-hidden">
 
-        {/* ── Background image — plain img, absolutely fills the panel ── */}
+        {/* ── Background image ── */}
         <img
           src="/fondo1.avif"
           alt=""
@@ -78,22 +137,17 @@ export default function LoginPage() {
           className="absolute inset-0 w-full h-full object-cover"
         />
 
-        {/* ── Layered overlays — guarantee legibility over any source image ── */}
-        {/* Base dark wash */}
+        {/* ── Layered overlays ── */}
         <div className="absolute inset-0 bg-[#001529]/65 pointer-events-none" />
-        {/* Bottom-up gradient so tagline is always readable */}
         <div className="absolute inset-0 bg-gradient-to-t from-[#001529]/95 via-[#001529]/20 to-transparent pointer-events-none" />
-        {/* Subtle vignette on the right edge — softens the split with the form panel */}
         <div className="absolute inset-0 bg-gradient-to-r from-transparent to-[#001529]/30 pointer-events-none" />
 
-        {/* ── Inner content ────────────────────────────────────── */}
+        {/* ── Inner content ── */}
         <div className="relative z-10 flex flex-col h-full p-10 xl:p-14">
 
-          {/* Logo inside frosted-glass card
-              The glass backdrop gives the navy logo enough contrast
-              regardless of what fondo1 looks like underneath */}
+          {/* Logo card */}
           <div className="flex-1 flex items-center justify-center">
-            <div className="bg-white/[0.18] backdrop-blur-md rounded-2xl px-8 py-6 border border-white/[0.28] shadow-2xl shadow-black/40">
+            <div ref={logoCardRef} className="bg-white/[0.18] backdrop-blur-md rounded-2xl px-8 py-6 border border-white/[0.28] shadow-2xl shadow-black/40">
               <SimpleParallax scale={1.08} delay={0.4} orientation="up" overflow={false}>
                 <img
                   src="/Reservi1.png?v=3"
@@ -104,8 +158,8 @@ export default function LoginPage() {
             </div>
           </div>
 
-          {/* Tagline anchored to the bottom */}
-          <div className="max-w-sm">
+          {/* Tagline */}
+          <div ref={taglineRef} className="max-w-sm">
             <h2 className="font-headline text-4xl xl:text-5xl font-black text-white mb-3 leading-[1.15] tracking-tight">
               Excelencia en la<br />Gestión de Recursos.
             </h2>
@@ -118,24 +172,22 @@ export default function LoginPage() {
 
       {/* ════════════════════════════════════════════════════
           RIGHT PANEL — Form
-          flex-1 so it fills the remaining width; min-h-screen
-          so it covers the viewport even when content is short
           ════════════════════════════════════════════════════ */}
-      <main className="flex-1 flex items-center justify-center p-6 sm:p-10 min-h-screen bg-surface">
+      <main ref={mainRef} className="flex-1 flex items-center justify-center p-6 sm:p-10 min-h-screen bg-surface">
         <div className="w-full max-w-md">
 
-          {/* Mobile logo — only visible on small screens */}
-          <div className="flex justify-center lg:hidden mb-8">
+          {/* Mobile logo */}
+          <div className="flex justify-center lg:hidden mb-8" data-field>
             <div className="w-14 h-14 rounded-2xl bg-primary flex items-center justify-center shadow-lg shadow-primary/25">
               <img src="/logo.png" alt="Reservio" className="w-8 h-8 object-contain" />
             </div>
           </div>
 
           {/* Card */}
-          <div className="bg-surface-container-lowest rounded-2xl p-8 sm:p-10 shadow-xl shadow-black/[0.06] border border-outline-variant/10">
+          <div ref={cardRef} className="bg-surface-container-lowest rounded-2xl p-8 sm:p-10 shadow-xl shadow-black/[0.06] border border-outline-variant/10">
 
             {/* Header */}
-            <div className="mb-8">
+            <div className="mb-8" data-field>
               <h1 className="font-headline text-2xl font-bold text-on-surface tracking-tight">
                 Bienvenido a Reservio
               </h1>
@@ -179,7 +231,7 @@ export default function LoginPage() {
             <form onSubmit={handleSubmit} className={`space-y-5 ${isSuccess ? 'hidden' : ''}`} noValidate>
 
               {/* Email */}
-              <div className="space-y-1.5">
+              <div className="space-y-1.5" data-field>
                 <label htmlFor="email" className="block font-label text-sm font-semibold text-on-surface">
                   Correo electrónico
                 </label>
@@ -189,14 +241,14 @@ export default function LoginPage() {
                   placeholder="nombre@empresa.com"
                   value={correo}
                   onChange={(e) => setCorreo(e.target.value)}
-                  className="w-full rounded-lg px-4 py-3 bg-surface-container-high border border-outline-variant/20 text-on-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 placeholder:text-on-surface-variant/40 transition-all duration-200"
+                  className="input-animated w-full rounded-lg px-4 py-3 bg-surface-container-high border border-outline-variant/20 text-on-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 placeholder:text-on-surface-variant/40 transition-all duration-200"
                   autoComplete="email"
                   disabled={isLoading}
                 />
               </div>
 
               {/* Password */}
-              <div className="space-y-1.5">
+              <div className="space-y-1.5" data-field>
                 <label htmlFor="password" className="block font-label text-sm font-semibold text-on-surface">
                   Contraseña
                 </label>
@@ -207,14 +259,14 @@ export default function LoginPage() {
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full rounded-lg px-4 py-3 pr-11 bg-surface-container-high border border-outline-variant/20 text-on-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 placeholder:text-on-surface-variant/40 transition-all duration-200"
+                    className="input-animated w-full rounded-lg px-4 py-3 pr-11 bg-surface-container-high border border-outline-variant/20 text-on-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 placeholder:text-on-surface-variant/40 transition-all duration-200"
                     autoComplete="current-password"
                     disabled={isLoading}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-on-surface-variant hover:text-primary transition-colors"
+                    className="btn-press absolute inset-y-0 right-0 pr-3 flex items-center text-on-surface-variant hover:text-primary transition-colors"
                     aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
                     disabled={isLoading}
                   >
@@ -226,7 +278,7 @@ export default function LoginPage() {
               </div>
 
               {/* Forgot password */}
-              <div className="flex justify-end">
+              <div className="flex justify-end" data-field>
                 <Link
                   href="/forgot-password"
                   className="text-xs font-medium text-secondary hover:text-primary transition-colors"
@@ -236,18 +288,20 @@ export default function LoginPage() {
               </div>
 
               {/* Submit */}
-              <div className="pt-2">
+              <div className="pt-2" data-field>
                 <button
+                  ref={submitRef}
                   type="submit"
                   disabled={isLoading || isSuccess}
+                  onMouseDown={handleButtonPress}
                   className={`
-                    w-full flex justify-center items-center gap-2
+                    btn-press w-full flex justify-center items-center gap-2
                     py-3.5 px-4 rounded-xl text-sm font-semibold tracking-wide
                     transition-all duration-200
                     disabled:opacity-60 disabled:cursor-not-allowed
                     ${isLoading
                       ? 'bg-primary/80 text-on-primary cursor-wait'
-                      : 'bg-primary text-on-primary hover:bg-primary-container hover:shadow-lg hover:shadow-primary/20 active:scale-[0.98]'
+                      : 'bg-primary text-on-primary hover:bg-primary-container hover:shadow-lg hover:shadow-primary/20'
                     }
                   `}
                 >
@@ -272,7 +326,7 @@ export default function LoginPage() {
 
           {/* Footer link */}
           {!isSuccess && (
-            <p className="mt-6 text-center font-body text-sm text-on-surface-variant">
+            <p className="mt-6 text-center font-body text-sm text-on-surface-variant" data-field>
               ¿No tienes cuenta?{' '}
               <Link
                 href="/register"
@@ -284,8 +338,6 @@ export default function LoginPage() {
           )}
         </div>
       </main>
-
-
     </div>
   )
 }

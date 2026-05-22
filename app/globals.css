@@ -86,3 +86,94 @@
   to   { width: 0%; }
 }
 .animate-shrink { animation: shrink 3s linear forwards; }
+
+/* ── Anime.js progressive enhancement ───────────────────── */
+/* Elements that will be animated by Anime.js start hidden.
+   Anime.js sets opacity:1 / translateY:0 via inline styles.
+   If JS fails they remain visible (no hidden content). */
+.will-animate {
+  opacity: 0;
+  transform: translateY(16px);
+}
+.will-animate-fast {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+/* ── Sidebar nav active indicator pill ─────────────────── */
+.nav-indicator {
+  transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ── Tab pill smooth transitions ────────────────────────── */
+.tab-pill {
+  transition: background-color 180ms ease, color 180ms ease, box-shadow 180ms ease;
+}
+
+/* ── Card hover lift ─────────────────────────────────────── */
+.card-lift {
+  transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow 200ms ease;
+  will-change: transform;
+}
+.card-lift:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(0, 32, 69, 0.10);
+}
+
+/* ── Button micro-press feedback ─────────────────────────── */
+.btn-press {
+  transition: transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  will-change: transform;
+}
+.btn-press:active {
+  transform: scale(0.96);
+}
+
+/* ── Premium form input focus glow ───────────────────────── */
+.input-animated {
+  transition: border-color 180ms ease,
+              box-shadow 180ms ease,
+              background-color 180ms ease;
+}
+.input-animated:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(0, 32, 69, 0.10);
+  background-color: var(--color-surface-container-lowest);
+}
+
+/* ── Shimmer loading skeleton enhancement ─────────────────── */
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--color-surface-container) 25%,
+    var(--color-surface-container-low) 50%,
+    var(--color-surface-container) 75%
+  );
+  background-size: 800px 100%;
+  animation: shimmer 1.4s infinite linear;
+}
+
+/* ── Modal backdrop smooth blur ─────────────────────────── */
+.modal-backdrop {
+  backdrop-filter: blur(2px);
+}
+
+/* ── Page-level entrance: prevent FOUC ──────────────────── */
+@keyframes pageIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.animate-pageIn { animation: pageIn 0.18s ease-out; }
+
+/* ── Status badge pulse (for live states) ───────────────── */
+@keyframes statusPulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+.animate-status-pulse { animation: statusPulse 2s ease-in-out infinite; }

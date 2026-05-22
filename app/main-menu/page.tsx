@@ -1,9 +1,12 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { FEATURES } from '@/config/features'
+import { animate, spring } from 'animejs'
+import { AnimatedToast } from '@/components/ui/AnimatedToast'
+import { TabContent } from '@/components/ui/TabContent'
 import {
   getUsuarios,
   updateUserRole,
@@ -1585,18 +1588,18 @@ export default function MainMenuPage() {
 
       {/* ── Coming Soon toast ────────────────────────────────── */}
       {comingSoon && (
-        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 bg-[#001529] text-white px-5 py-3 rounded-xl shadow-2xl border border-white/10 animate-fadeIn">
+        <AnimatedToast className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 bg-[#001529] text-white px-5 py-3 rounded-xl shadow-2xl border border-white/10">
           <span className="material-symbols-outlined text-[20px] text-yellow-400" style={{ fontVariationSettings: "'FILL' 1" }}>rocket_launch</span>
           <span className="font-label text-sm font-medium">Próximamente — disponible en el siguiente Sprint</span>
-        </div>
+        </AnimatedToast>
       )}
 
       {/* ── Global Error toast ────────────────────────────────── */}
       {globalError && (
-        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[105] flex items-center gap-3 bg-error-container text-on-error-container border border-error/20 shadow-2xl px-5 py-3 rounded-xl animate-fadeIn max-w-[90vw] md:max-w-md">
+        <AnimatedToast className="fixed top-6 left-1/2 -translate-x-1/2 z-[105] flex items-center gap-3 bg-error-container text-on-error-container border border-error/20 shadow-2xl px-5 py-3 rounded-xl max-w-[90vw] md:max-w-md">
           <span className="material-symbols-outlined text-[20px] shrink-0" style={{ fontVariationSettings: "'FILL' 1" }}>error</span>
           <span className="font-body text-sm font-medium leading-tight">{globalError}</span>
-        </div>
+        </AnimatedToast>
       )}
       {/* ── Sidebar (desktop) ─────────────────────────────────── */}
       <nav className="bg-surface text-primary font-body hidden h-screen w-72 flex-col border-r border-outline-variant/20 fixed left-0 top-0 z-50 md:flex">
@@ -1910,7 +1913,7 @@ export default function MainMenuPage() {
                 )}
                 <button
                   onClick={handleNuevaReserva}
-                  className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label font-medium text-sm shadow-sm hover:shadow-md hover:brightness-105 transition-all duration-200"
+                  className="btn-press inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label font-medium text-sm shadow-sm hover:shadow-md hover:brightness-105 transition-all duration-200"
                 >
                   <span className="material-symbols-outlined text-[20px]">add</span>
                   Nueva Reserva
@@ -1920,13 +1923,16 @@ export default function MainMenuPage() {
             {activeTab === 'rooms' && (
               <button
                 onClick={() => { if (!FEATURES.reservations) { showComingSoon(); return }; openModal() }}
-                className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label font-medium text-sm shadow-sm hover:shadow-md hover:brightness-105 transition-all duration-200"
+                className="btn-press inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label font-medium text-sm shadow-sm hover:shadow-md hover:brightness-105 transition-all duration-200"
               >
                 <span className="material-symbols-outlined text-[20px]">add</span>
                 Nueva Reserva
               </button>
             )}
           </div>
+
+          {/* ══ TAB CONTENT WRAPPER — animates on tab change ══════ */}
+          <TabContent tabKey={activeTab === 'admin' ? `admin-${adminSubTab}` : activeTab}>
 
           {/* ══ TAB: RESERVATIONS ══════════════════════════════════ */}
           {activeTab === 'reservations' && (
@@ -1939,7 +1945,7 @@ export default function MainMenuPage() {
             {loadingReservas ? (
               <SkeletonSummaryCard />
             ) : (
-              <div className="bg-surface-container-lowest rounded-xl p-5 border border-outline-variant/25 shadow-none hover:shadow-sm transition-shadow flex items-start gap-4">
+              <div className="bg-surface-container-lowest rounded-xl p-5 border border-outline-variant/25 card-lift flex items-start gap-4" data-anim>
                 <div className="bg-primary/10 text-primary w-10 h-10 rounded-lg flex items-center justify-center shrink-0">
                   <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
                     event_available
@@ -1967,7 +1973,7 @@ export default function MainMenuPage() {
             {loadingSalas ? (
               <SkeletonSummaryCard />
             ) : (
-              <div className="bg-surface-container-lowest rounded-xl p-5 border border-outline-variant/25 shadow-none hover:shadow-sm transition-shadow flex items-start gap-4">
+              <div className="bg-surface-container-lowest rounded-xl p-5 border border-outline-variant/25 card-lift flex items-start gap-4" data-anim>
                 <div className="bg-primary/10 text-primary w-10 h-10 rounded-lg flex items-center justify-center shrink-0">
                   <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
                     meeting_room
@@ -1989,7 +1995,7 @@ export default function MainMenuPage() {
             )}
 
             {/* Card: rol */}
-            <div className="bg-surface-container-lowest rounded-xl p-5 border border-outline-variant/25 shadow-none hover:shadow-sm transition-shadow flex items-start gap-4">
+            <div className="bg-surface-container-lowest rounded-xl p-5 border border-outline-variant/25 card-lift flex items-start gap-4" data-anim>
               <div className="bg-primary/10 text-primary w-10 h-10 rounded-lg flex items-center justify-center shrink-0">
                 <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
                   {isAdmin ? 'shield_person' : 'account_circle'}
@@ -2348,7 +2354,7 @@ export default function MainMenuPage() {
                   }
 
                   return (
-                  <div key={sala.id} className="bg-surface-container-lowest rounded-2xl overflow-hidden border border-outline-variant/15 shadow-none hover:shadow-md transition-shadow duration-200 group flex flex-col">
+                  <div key={sala.id} className="bg-surface-container-lowest rounded-2xl overflow-hidden border border-outline-variant/15 card-lift group flex flex-col" data-anim>
                     <div className="relative h-48 overflow-hidden bg-surface-container">
                       <img 
                         src={sala.imagen_url || getRoomImage(idx)} 
@@ -2678,7 +2684,7 @@ export default function MainMenuPage() {
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                     {filteredTech.map((item) => (
-                      <div key={item.id} className="bg-surface-container-lowest rounded-2xl overflow-hidden border border-outline-variant/15 shadow-none hover:shadow-md transition-shadow duration-200 group flex flex-col">
+                      <div key={item.id} className="bg-surface-container-lowest rounded-2xl overflow-hidden border border-outline-variant/15 card-lift group flex flex-col" data-anim>
                         <div className="relative h-48 overflow-hidden bg-surface-container">
                           {item.imagen_url ? (
                             <img
@@ -4845,6 +4851,7 @@ export default function MainMenuPage() {
             </div>
           )}
 
+          </TabContent>
         </div>
       </main>
 
