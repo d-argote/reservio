@@ -415,13 +415,33 @@ export interface PrestamoEquipoAdmin {
   sala_id: string | null
   fecha_inicio: string
   fecha_fin_esperada: string
+  fecha_devolucion: string | null
   estado: 'activo' | 'devuelto' | 'vencido'
   notas: string | null
+  condicion_entrega: string
+  condicion_devolucion: string | null
+  foto_devolucion_url: string | null
+  observaciones_devolucion: string | null
+  novedad: boolean
+  tipo_novedad: string | null
+  descripcion_novedad: string | null
+  notas_admin: string | null
+  num_acta: string | null
   equipos: { id: string; nombre: string; tipo_equipo: string; imagen_url: string | null } | null
   usuarios: { id: string; nombre: string; correo: string } | null
   salas: { id: string; nombre: string } | null
 }
 
+const PRESTAMOS_SELECT = `
+  id, equipo_id, usuario_id, sala_id, fecha_inicio, fecha_fin_esperada, fecha_devolucion, estado, notas,
+  condicion_entrega, condicion_devolucion, foto_devolucion_url, observaciones_devolucion,
+  novedad, tipo_novedad, descripcion_novedad, notas_admin, num_acta,
+  equipos:equipo_id ( id, nombre, tipo_equipo, imagen_url ),
+  usuarios:usuario_id ( id, nombre, correo ),
+  salas:sala_id ( id, nombre )
+`
+
+// Préstamos activos + vencidos
 export async function getPrestamosAdmin(): Promise<{ data?: PrestamoEquipoAdmin[]; error?: string }> {
   const guard = await assertAdmin()
   if (guard) return { error: guard.error }
@@ -431,15 +451,39 @@ export async function getPrestamosAdmin(): Promise<{ data?: PrestamoEquipoAdmin[
 
   const { data, error } = await supabase
     .from('prestamos_equipo')
-    .select(`
-      id, equipo_id, usuario_id, sala_id, fecha_inicio, fecha_fin_esperada, estado, notas,
-      equipos:equipo_id ( id, nombre, tipo_equipo, imagen_url ),
-      usuarios:usuario_id ( id, nombre, correo ),
-      salas:sala_id ( id, nombre )
-    `)
-    .eq('estado', 'activo')
+    .select(PRESTAMOS_SELECT)
+    .in('estado', ['activo', 'vencido'])
     .order('fecha_fin_esperada', { ascending: true })
 
+  if (error) {
+    if (error.code === '42P01') return { data: [] }
+    return { error: error.message }
+  }
+  return { data: (data ?? []) as unknown as PrestamoEquipoAdmin[] }
+}
+
+// Historial completo con filtros opcionales
+export async function getPrestamosAdminHistorial(opts?: {
+  estado?: 'activo' | 'devuelto' | 'vencido' | 'todos'
+  soloNovedades?: boolean
+}): Promise<{ data?: PrestamoEquipoAdmin[]; error?: string }> {
+  const guard = await assertAdmin()
+  if (guard) return { error: guard.error }
+
+  const supabase = getSupabaseAdmin()
+  if (!supabase) return { error: 'Error interno del servidor' }
+
+  let query = supabase.from('prestamos_equipo').select(PRESTAMOS_SELECT)
+
+  if (opts?.estado && opts.estado !== 'todos') {
+    query = query.eq('estado', opts.estado)
+  }
+  if (opts?.soloNovedades) {
+    query = query.eq('novedad', true)
+  }
+  query = query.order('fecha_fin_esperada', { ascending: false }).limit(200)
+
+  const { data, error } = await query
   if (error) {
     if (error.code === '42P01') return { data: [] }
     return { error: error.message }
@@ -450,6 +494,47 @@ export async function getPrestamosAdmin(): Promise<{ data?: PrestamoEquipoAdmin[
 export async function devolverPrestamoAdmin(
   prestamoId: string,
   equipoId: string,
+  condicionDevolucion: string,
+  notasAdmin: string | null,
+  novedadTipo?: string | null,
+  descripcionNovedad?: string | null,
+): Promise<{ success?: boolean; error?: string }> {
+  const guard = await assertAdmin()
+  if (guard) return { error: guard.error }
+
+  const supabase = getSupabaseAdmin()
+  if (!supabase) return { error: 'Error interno del servidor' }
+
+  const novedadFinal = !!novedadTipo || ['dano_leve','dano_grave','perdido'].includes(condicionDevolucion)
+
+  const { error } = await supabase
+    .from('prestamos_equipo')
+    .update({
+      estado: 'devuelto',
+      fecha_devolucion: new Date().toISOString(),
+      condicion_devolucion: condicionDevolucion,
+      notas_admin: notasAdmin,
+      novedad: novedadFinal,
+      tipo_novedad: novedadFinal ? (novedadTipo ?? 'dano_fisico') : null,
+      descripcion_novedad: novedadFinal ? descripcionNovedad : null,
+    })
+    .eq('id', prestamoId)
+
+  if (error) return { error: error.message }
+
+  // Si fue perdido, marcar como mantenimiento; si hay daño grave, igual
+  const nuevoEstado = condicionDevolucion === 'perdido' || condicionDevolucion === 'dano_grave'
+    ? 'mantenimiento'
+    : 'disponible'
+
+  await supabase.from('equipos').update({ estado: nuevoEstado }).eq('id', equipoId)
+
+  return { success: true }
+}
+
+export async function actualizarNotasAdmin(
+  prestamoId: string,
+  notasAdmin: string,
 ): Promise<{ success?: boolean; error?: string }> {
   const guard = await assertAdmin()
   if (guard) return { error: guard.error }
@@ -459,15 +544,9 @@ export async function devolverPrestamoAdmin(
 
   const { error } = await supabase
     .from('prestamos_equipo')
-    .update({ estado: 'devuelto', fecha_devolucion: new Date().toISOString() })
+    .update({ notas_admin: notasAdmin })
     .eq('id', prestamoId)
 
   if (error) return { error: error.message }
-
-  await supabase
-    .from('equipos')
-    .update({ estado: 'disponible' })
-    .eq('id', equipoId)
-
   return { success: true }
 }

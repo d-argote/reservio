@@ -251,6 +251,165 @@ async function sendReservaEmail(opts: {
   }
 }
 
+// ── Labels de condición para emails ───────────────────────────────────────────
+const CONDICION_LABEL: Record<string, string> = {
+  nuevo:       'Nuevo',
+  excelente:   'Excelente',
+  bueno:       'Bueno',
+  regular:     'Regular',
+  dano_leve:   'Daño leve',
+  dano_grave:  'Daño grave',
+  perdido:     'Perdido / extraviado',
+}
+const NOVEDAD_LABEL: Record<string, string> = {
+  dano_fisico:         'Daño físico',
+  dano_software:       'Daño de software',
+  perdida:             'Pérdida del equipo',
+  faltante_accesorio:  'Faltante de accesorio',
+  entrega_tardia:      'Entrega tardía',
+  otro:                'Otra novedad',
+}
+
+async function sendPrestamoEmail(opts: {
+  to: string
+  userName: string
+  action: 'confirmado' | 'devuelto' | 'devuelto_novedad'
+  equipoNombre: string
+  numActa: string
+  condicionEntrega?: string
+  condicionDevolucion?: string
+  novedadTipo?: string | null
+  fechaFin?: string
+  salaNombre?: string | null
+}) {
+  const transporter = createTransporter()
+  if (!transporter) return
+
+  const fromName = process.env.SMTP_FROM_NAME ?? 'ITAM Reservio'
+  const fromAddr = process.env.SMTP_USER ?? ''
+
+  const cfg = {
+    confirmado:       { accent: '#002045', bg: '#d6e3ff', label: '✅ Préstamo Confirmado',       subject: 'Préstamo confirmado' },
+    devuelto:         { accent: '#1a6b3c', bg: '#d6f5e3', label: '📦 Devolución Registrada',     subject: 'Devolución registrada' },
+    devuelto_novedad: { accent: '#ba1a1a', bg: '#ffdad6', label: '⚠️ Devolución con Novedad',    subject: 'Devolución con novedad reportada' },
+  }[opts.action]
+
+  const condRow = opts.action === 'confirmado' && opts.condicionEntrega
+    ? `<tr><td style="padding:10px 0;border-bottom:1px solid #f0f4f8;vertical-align:top;width:36px;"><span style="font-size:16px;">🔍</span></td><td style="padding:10px 0 10px 14px;border-bottom:1px solid #f0f4f8;"><p style="margin:0;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#74777f;">Condición de entrega</p><p style="margin:3px 0 0;font-size:14px;font-weight:600;color:#171c1f;">${CONDICION_LABEL[opts.condicionEntrega] ?? opts.condicionEntrega}</p></td></tr>`
+    : ''
+  const devCondRow = opts.condicionDevolucion
+    ? `<tr><td style="padding:10px 0;border-bottom:1px solid #f0f4f8;vertical-align:top;width:36px;"><span style="font-size:16px;">📋</span></td><td style="padding:10px 0 10px 14px;border-bottom:1px solid #f0f4f8;"><p style="margin:0;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#74777f;">Condición al devolver</p><p style="margin:3px 0 0;font-size:14px;font-weight:600;color:#171c1f;">${CONDICION_LABEL[opts.condicionDevolucion] ?? opts.condicionDevolucion}</p></td></tr>`
+    : ''
+  const novedadRow = opts.novedadTipo
+    ? `<tr><td style="padding:10px 0;border-bottom:1px solid #f0f4f8;vertical-align:top;width:36px;"><span style="font-size:16px;">⚠️</span></td><td style="padding:10px 0 10px 14px;border-bottom:1px solid #f0f4f8;"><p style="margin:0;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#74777f;">Novedad</p><p style="margin:3px 0 0;font-size:14px;font-weight:600;color:#ba1a1a;">${NOVEDAD_LABEL[opts.novedadTipo] ?? opts.novedadTipo}</p></td></tr>`
+    : ''
+  const fechaRow = opts.fechaFin
+    ? `<tr><td style="padding:10px 0;border-bottom:1px solid #f0f4f8;vertical-align:top;width:36px;"><span style="font-size:16px;">📅</span></td><td style="padding:10px 0 10px 14px;border-bottom:1px solid #f0f4f8;"><p style="margin:0;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#74777f;">Devolución esperada</p><p style="margin:3px 0 0;font-size:14px;font-weight:600;color:#171c1f;">${new Date(opts.fechaFin + '-05:00').toLocaleString('es-ES', { dateStyle: 'long', timeStyle: 'short', timeZone: 'America/Bogota' })}</p></td></tr>`
+    : ''
+  const salaRow = opts.salaNombre
+    ? `<tr><td style="padding:10px 0;border-bottom:1px solid #f0f4f8;vertical-align:top;width:36px;"><span style="font-size:16px;">🏛️</span></td><td style="padding:10px 0 10px 14px;border-bottom:1px solid #f0f4f8;"><p style="margin:0;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#74777f;">Sala de uso</p><p style="margin:3px 0 0;font-size:14px;font-weight:600;color:#171c1f;">${opts.salaNombre}</p></td></tr>`
+    : ''
+
+  const footerMsg = opts.action === 'devuelto_novedad'
+    ? 'El equipo de TI revisará la novedad reportada y se comunicará contigo si es necesario.'
+    : opts.action === 'confirmado'
+    ? 'Por favor cuida el equipo y devuélvelo en las mismas condiciones en que lo recibiste.'
+    : 'Gracias por devolver el equipo. ¡Hasta la próxima!'
+
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f6fafe;font-family:Helvetica,Arial,sans-serif;">
+<div style="max-width:520px;margin:40px auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,32,69,0.10);">
+  <div style="background:${cfg.accent};padding:32px 40px;">
+    <p style="margin:0;font-size:10px;letter-spacing:3px;text-transform:uppercase;color:rgba(255,255,255,0.55);font-weight:700;">ITAM RESERVIO · PRÉSTAMOS</p>
+    <h1 style="margin:10px 0 0;font-size:22px;font-weight:800;color:#ffffff;line-height:1.3;">${cfg.label}</h1>
+  </div>
+  <div style="padding:32px 40px;">
+    <p style="margin:0 0 20px;font-size:15px;color:#3b4752;">Hola <strong>${opts.userName}</strong>,</p>
+    <div style="background:${cfg.bg};border-radius:12px;padding:20px 24px;margin-bottom:24px;border-left:4px solid ${cfg.accent};">
+      <p style="margin:0 0 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:${cfg.accent};">Equipo</p>
+      <p style="margin:0;font-size:20px;font-weight:800;color:${cfg.accent};line-height:1.3;">${opts.equipoNombre}</p>
+      ${opts.numActa ? `<p style="margin:6px 0 0;font-size:11px;color:#74777f;letter-spacing:0.5px;">Acta: <strong>${opts.numActa}</strong></p>` : ''}
+    </div>
+    <table style="width:100%;border-collapse:collapse;">
+      ${condRow}${devCondRow}${novedadRow}${fechaRow}${salaRow}
+    </table>
+    <p style="margin:24px 0 0;font-size:13px;color:#74777f;line-height:1.6;">${footerMsg}</p>
+  </div>
+  <div style="background:#f0f4f8;padding:20px 40px;text-align:center;">
+    <p style="margin:0;font-size:11px;color:#74777f;line-height:1.6;">Este es un correo automático de <strong>ITAM Reservio</strong>.<br>Si no realizaste esta acción, contacta al administrador del sistema.</p>
+  </div>
+</div></body></html>`
+
+  try {
+    await transporter.sendMail({
+      from: `"${fromName}" <${fromAddr}>`,
+      to: opts.to,
+      subject: `${cfg.subject}: ${opts.equipoNombre} (${opts.numActa}) — ITAM Reservio`,
+      html,
+    })
+  } catch (err) {
+    console.error('[Email Préstamo] Error:', err)
+  }
+}
+
+async function sendNovedadEmailAdmin(opts: {
+  to: string
+  equipoNombre: string
+  numActa: string
+  userName: string
+  userEmail: string
+  condicionDevolucion: string
+  tipoNovedad: string
+  descripcion: string
+  fotoUrl: string | null
+}) {
+  const transporter = createTransporter()
+  if (!transporter) return
+
+  const fromName = process.env.SMTP_FROM_NAME ?? 'ITAM Reservio'
+  const fromAddr = process.env.SMTP_USER ?? ''
+
+  const fotoHtml = opts.fotoUrl
+    ? `<p style="margin:16px 0 0;"><a href="${opts.fotoUrl}" style="display:inline-block;padding:10px 20px;background:#ba1a1a;color:#fff;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none;">📷 Ver foto de devolución</a></p>`
+    : ''
+
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#fff5f5;font-family:Helvetica,Arial,sans-serif;">
+<div style="max-width:520px;margin:40px auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(186,26,26,0.12);">
+  <div style="background:#ba1a1a;padding:28px 40px;">
+    <p style="margin:0;font-size:10px;letter-spacing:3px;text-transform:uppercase;color:rgba(255,255,255,0.6);font-weight:700;">ITAM RESERVIO · ALERTA</p>
+    <h1 style="margin:8px 0 0;font-size:20px;font-weight:800;color:#fff;">⚠️ Novedad en devolución de equipo</h1>
+  </div>
+  <div style="padding:28px 40px;">
+    <div style="background:#ffdad6;border-radius:10px;padding:16px 20px;margin-bottom:20px;border-left:4px solid #ba1a1a;">
+      <p style="margin:0 0 2px;font-size:10px;font-weight:700;letter-spacing:2px;color:#ba1a1a;">EQUIPO · ACTA ${opts.numActa}</p>
+      <p style="margin:0;font-size:18px;font-weight:800;color:#ba1a1a;">${opts.equipoNombre}</p>
+    </div>
+    <table style="width:100%;border-collapse:collapse;">
+      <tr><td style="padding:10px 0;border-bottom:1px solid #fde;width:36px;"><span style="font-size:16px;">👤</span></td><td style="padding:10px 0 10px 14px;border-bottom:1px solid #fde;"><p style="margin:0;font-size:10px;font-weight:700;letter-spacing:1.5px;color:#74777f;">Usuario</p><p style="margin:2px 0 0;font-size:14px;font-weight:600;color:#171c1f;">${opts.userName} · <a href="mailto:${opts.userEmail}" style="color:#ba1a1a;">${opts.userEmail}</a></p></td></tr>
+      <tr><td style="padding:10px 0;border-bottom:1px solid #fde;width:36px;"><span style="font-size:16px;">📋</span></td><td style="padding:10px 0 10px 14px;border-bottom:1px solid #fde;"><p style="margin:0;font-size:10px;font-weight:700;letter-spacing:1.5px;color:#74777f;">Condición al devolver</p><p style="margin:2px 0 0;font-size:14px;font-weight:600;color:#171c1f;">${CONDICION_LABEL[opts.condicionDevolucion] ?? opts.condicionDevolucion}</p></td></tr>
+      <tr><td style="padding:10px 0;border-bottom:1px solid #fde;width:36px;"><span style="font-size:16px;">⚠️</span></td><td style="padding:10px 0 10px 14px;border-bottom:1px solid #fde;"><p style="margin:0;font-size:10px;font-weight:700;letter-spacing:1.5px;color:#74777f;">Tipo de novedad</p><p style="margin:2px 0 0;font-size:14px;font-weight:600;color:#ba1a1a;">${NOVEDAD_LABEL[opts.tipoNovedad] ?? opts.tipoNovedad}</p></td></tr>
+      ${opts.descripcion ? `<tr><td style="padding:10px 0;width:36px;"><span style="font-size:16px;">📝</span></td><td style="padding:10px 0 10px 14px;"><p style="margin:0;font-size:10px;font-weight:700;letter-spacing:1.5px;color:#74777f;">Descripción</p><p style="margin:2px 0 0;font-size:14px;color:#171c1f;">${opts.descripcion}</p></td></tr>` : ''}
+    </table>
+    ${fotoHtml}
+  </div>
+  <div style="background:#f0f4f8;padding:16px 40px;text-align:center;">
+    <p style="margin:0;font-size:11px;color:#74777f;">Alerta automática de <strong>ITAM Reservio</strong>. Revisa el panel de administración para gestionar esta novedad.</p>
+  </div>
+</div></body></html>`
+
+  try {
+    await transporter.sendMail({
+      from: `"${fromName}" <${fromAddr}>`,
+      to: opts.to,
+      subject: `🚨 Novedad en devolución: ${opts.equipoNombre} (${opts.numActa}) — ITAM Reservio`,
+      html,
+    })
+  } catch (err) {
+    console.error('[Email Novedad Admin] Error:', err)
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // CREAR RESERVA
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -690,6 +849,10 @@ export async function getReportData(): Promise<{ data?: ReportData; error?: stri
 // PRÉSTAMOS DE EQUIPO
 // ═══════════════════════════════════════════════════════════════════════════════
 
+export type CondicionEquipo = 'nuevo' | 'excelente' | 'bueno' | 'regular' | 'dano_leve'
+export type CondicionDevolucion = 'excelente' | 'bueno' | 'regular' | 'dano_leve' | 'dano_grave' | 'perdido'
+export type TipoNovedad = 'dano_fisico' | 'dano_software' | 'perdida' | 'faltante_accesorio' | 'entrega_tardia' | 'otro'
+
 export interface PrestamoEquipo {
   id: string
   equipo_id: string
@@ -700,6 +863,15 @@ export interface PrestamoEquipo {
   fecha_devolucion: string | null
   estado: 'activo' | 'devuelto' | 'vencido'
   notas: string | null
+  // Gestión profesional de condición
+  condicion_entrega: CondicionEquipo
+  condicion_devolucion: CondicionDevolucion | null
+  foto_devolucion_url: string | null
+  observaciones_devolucion: string | null
+  novedad: boolean
+  tipo_novedad: TipoNovedad | null
+  descripcion_novedad: string | null
+  num_acta: string | null
   equipos: {
     id: string
     nombre: string
@@ -715,7 +887,8 @@ export async function createPrestamoEquipo(
   reservaId: string,
   fechaFinEsperada: string, // ISO string e.g. '2026-05-15T17:00:00'
   notas: string | null,
-): Promise<{ data?: { id: string }; error?: string }> {
+  condicionEntrega: CondicionEquipo = 'bueno',
+): Promise<{ data?: { id: string; num_acta?: string }; error?: string }> {
   const { user, supabase } = await getAuthUser()
   if (!user) return { error: 'No autenticado' }
 
@@ -774,8 +947,9 @@ export async function createPrestamoEquipo(
       fecha_inicio: horaInicioReserva,
       fecha_fin_esperada: fechaFinEsperada + '-05:00',
       notas,
+      condicion_entrega: condicionEntrega,
     })
-    .select('id')
+    .select('id, num_acta')
     .single()
 
   if (error) return { error: error.message }
@@ -795,7 +969,26 @@ export async function createPrestamoEquipo(
     await writeClient.from('equipos').update({ estado: 'reservado' }).eq('id', equipoId)
   }
 
-  return { data: { id: prestamo.id } }
+  // Send confirmation email best-effort
+  try {
+    const { data: userProfile } = await supabase.from('usuarios').select('correo, nombre').eq('id', user.id).single()
+    if (userProfile?.correo) {
+      const equipoNombre = (await supabase.from('equipos').select('nombre').eq('id', equipoId).single()).data?.nombre ?? 'Equipo'
+      const salaNombre = reserva.sala_id ? (await supabase.from('salas').select('nombre').eq('id', reserva.sala_id).single()).data?.nombre : null
+      await sendPrestamoEmail({
+        to: userProfile.correo,
+        userName: userProfile.nombre,
+        action: 'confirmado',
+        equipoNombre,
+        numActa: prestamo.num_acta ?? '',
+        condicionEntrega,
+        fechaFin: fechaFinEsperada,
+        salaNombre,
+      })
+    }
+  } catch { /* best-effort */ }
+
+  return { data: { id: prestamo.id, num_acta: prestamo.num_acta } }
 }
 
 export async function getMisPrestamos(): Promise<{ data?: PrestamoEquipo[]; error?: string }> {
@@ -806,6 +999,8 @@ export async function getMisPrestamos(): Promise<{ data?: PrestamoEquipo[]; erro
     .from('prestamos_equipo')
     .select(`
       id, equipo_id, reserva_id, sala_id, fecha_inicio, fecha_fin_esperada, fecha_devolucion, estado, notas,
+      condicion_entrega, condicion_devolucion, foto_devolucion_url, observaciones_devolucion,
+      novedad, tipo_novedad, descripcion_novedad, num_acta,
       equipos:equipo_id ( id, nombre, tipo_equipo, marca, imagen_url ),
       salas:sala_id ( id, nombre )
     `)
@@ -823,32 +1018,90 @@ export async function getMisPrestamos(): Promise<{ data?: PrestamoEquipo[]; erro
 
 export async function devolverEquipo(
   prestamoId: string,
-): Promise<{ success?: boolean; equipoId?: string; error?: string }> {
+  condicionDevolucion: CondicionDevolucion,
+  observaciones: string | null,
+  fotoUrl: string | null,
+  tieneNovedad: boolean,
+  tipoNovedad?: TipoNovedad | null,
+  descripcionNovedad?: string | null,
+): Promise<{ success?: boolean; equipoId?: string; numActa?: string; error?: string }> {
   const { user, supabase } = await getAuthUser()
   if (!user) return { error: 'No autenticado' }
 
-  const { data: prestamo } = await supabase
+  const { data: prestamo, error: selectError } = await supabase
     .from('prestamos_equipo')
-    .select('equipo_id, estado')
+    .select('equipo_id, estado, num_acta, condicion_entrega, equipos:equipo_id(nombre)')
     .eq('id', prestamoId)
     .eq('usuario_id', user.id)
     .single()
 
+  if (selectError) return { error: selectError.message }
   if (!prestamo) return { error: 'Préstamo no encontrado o sin permiso' }
   if (prestamo.estado !== 'activo') return { error: 'Este préstamo ya no está activo' }
 
+  // Determinar si hay novedad automática por condición degradada
+  const condicionesDegradadas: CondicionDevolucion[] = ['dano_leve', 'dano_grave', 'perdido']
+  const novedadFinal = tieneNovedad || condicionesDegradadas.includes(condicionDevolucion)
+
+  const updateData: Record<string, unknown> = {
+    estado: 'devuelto',
+    fecha_devolucion: new Date().toISOString(),
+    condicion_devolucion: condicionDevolucion,
+    observaciones_devolucion: observaciones,
+    foto_devolucion_url: fotoUrl,
+    novedad: novedadFinal,
+    tipo_novedad: novedadFinal ? (tipoNovedad ?? (condicionesDegradadas.includes(condicionDevolucion) ? 'dano_fisico' : null)) : null,
+    descripcion_novedad: novedadFinal ? descripcionNovedad : null,
+  }
+
   const { error } = await supabase
     .from('prestamos_equipo')
-    .update({ estado: 'devuelto', fecha_devolucion: new Date().toISOString() })
+    .update(updateData)
     .eq('id', prestamoId)
     .eq('usuario_id', user.id)
 
   if (error) return { error: error.message }
 
-  // Recalcular estado real del equipo (puede haber otro préstamo activo)
+  // Recalcular estado real del equipo
   await recalcularEstadoEquipo(prestamo.equipo_id)
 
-  return { success: true, equipoId: prestamo.equipo_id }
+  // Email best-effort
+  try {
+    const { data: userProfile } = await supabase.from('usuarios').select('correo, nombre').eq('id', user.id).single()
+    const equipoNombre = (prestamo as { equipos?: { nombre?: string } }).equipos
+      ? ((prestamo as { equipos?: { nombre?: string } }).equipos as { nombre?: string }).nombre ?? 'Equipo'
+      : 'Equipo'
+    if (userProfile?.correo) {
+      await sendPrestamoEmail({
+        to: userProfile.correo,
+        userName: userProfile.nombre,
+        action: novedadFinal ? 'devuelto_novedad' : 'devuelto',
+        equipoNombre,
+        numActa: prestamo.num_acta ?? '',
+        condicionDevolucion,
+        novedadTipo: novedadFinal ? (tipoNovedad ?? null) : null,
+      })
+    }
+    // Notificar admin si hay novedad
+    if (novedadFinal) {
+      const adminEmail = process.env.ADMIN_EMAIL ?? process.env.SMTP_USER
+      if (adminEmail) {
+        await sendNovedadEmailAdmin({
+          to: adminEmail,
+          equipoNombre,
+          numActa: prestamo.num_acta ?? '',
+          userName: userProfile?.nombre ?? '—',
+          userEmail: userProfile?.correo ?? '—',
+          condicionDevolucion,
+          tipoNovedad: tipoNovedad ?? 'dano_fisico',
+          descripcion: descripcionNovedad ?? '',
+          fotoUrl,
+        })
+      }
+    }
+  } catch { /* best-effort */ }
+
+  return { success: true, equipoId: prestamo.equipo_id, numActa: prestamo.num_acta ?? undefined }
 }
 
 export async function updatePrestamoReserva(

@@ -23,7 +23,9 @@ import {
   deleteSala,
   asignarEquipoASala,
   getPrestamosAdmin,
+  getPrestamosAdminHistorial,
   devolverPrestamoAdmin,
+  actualizarNotasAdmin,
   type UsuarioAdmin,
   type Equipo,
   type SalaAdmin,
@@ -45,6 +47,9 @@ import {
   recalcularEstadosEquiposDB,
   type ReportData,
   type PrestamoEquipo,
+  type CondicionEquipo,
+  type CondicionDevolucion,
+  type TipoNovedad,
   type SalaDisponibilidad,
   type EstadoDisponibilidad,
   type FranjaOcupada,
@@ -164,6 +169,66 @@ async function uploadImagen(bucket: 'equipos' | 'salas', file: File): Promise<st
   const { data } = supabase.storage.from(bucket).getPublicUrl(path)
   return data.publicUrl
 }
+
+async function uploadFotoDevolucion(file: File): Promise<string | null> {
+  const ext = file.name.split('.').pop() ?? 'jpg'
+  const path = `devolucion-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+  // Intenta bucket 'prestamos', fallback a 'equipos/devoluciones/'
+  const { error } = await supabase.storage.from('prestamos').upload(path, file, { upsert: true })
+  if (error) {
+    const fallback = await supabase.storage.from('equipos').upload(`devoluciones/${path}`, file, { upsert: true })
+    if (fallback.error) { console.error('[uploadFotoDevolucion]', fallback.error.message); return null }
+    const { data } = supabase.storage.from('equipos').getPublicUrl(`devoluciones/${path}`)
+    return data.publicUrl
+  }
+  const { data } = supabase.storage.from('prestamos').getPublicUrl(path)
+  return data.publicUrl
+}
+
+// ── Condición de equipo: labels, colores e iconos ─────────────────────────────
+const CONDICION_LABEL: Record<string, string> = {
+  nuevo:      'Nuevo',
+  excelente:  'Excelente',
+  bueno:      'Bueno',
+  regular:    'Regular',
+  dano_leve:  'Daño leve',
+  dano_grave: 'Daño grave',
+  perdido:    'Perdido',
+}
+
+const CONDICION_COLOR: Record<string, string> = {
+  nuevo:      'bg-emerald-100 text-emerald-700 border-emerald-200',
+  excelente:  'bg-green-100 text-green-700 border-green-200',
+  bueno:      'bg-blue-100 text-blue-700 border-blue-200',
+  regular:    'bg-yellow-100 text-yellow-700 border-yellow-200',
+  dano_leve:  'bg-orange-100 text-orange-700 border-orange-200',
+  dano_grave: 'bg-red-100 text-red-700 border-red-200',
+  perdido:    'bg-gray-100 text-gray-700 border-gray-200',
+}
+
+const CONDICION_ICON: Record<string, string> = {
+  nuevo:      'fiber_new',
+  excelente:  'verified',
+  bueno:      'thumb_up',
+  regular:    'warning',
+  dano_leve:  'build',
+  dano_grave: 'report',
+  perdido:    'help',
+}
+
+const NOVEDAD_LABEL: Record<string, string> = {
+  dano_fisico:         'Daño físico',
+  dano_software:       'Daño de software',
+  perdida:             'Pérdida del equipo',
+  faltante_accesorio:  'Faltante de accesorio',
+  entrega_tardia:      'Entrega tardía',
+  otro:                'Otra novedad',
+}
+
+const CONDICIONES_ENTREGA: CondicionEquipo[] = ['nuevo', 'excelente', 'bueno', 'regular', 'dano_leve']
+const CONDICIONES_DEVOLUCION: CondicionDevolucion[] = ['excelente', 'bueno', 'regular', 'dano_leve', 'dano_grave', 'perdido']
+const TIPOS_NOVEDAD: TipoNovedad[] = ['dano_fisico', 'dano_software', 'perdida', 'faltante_accesorio', 'entrega_tardia', 'otro']
+
 
 const CARD_STYLES = [
   { bg: 'bg-primary-container',   text: 'text-on-primary',                icon: 'groups'     },
@@ -401,10 +466,11 @@ export default function MainMenuPage() {
   // ── Préstamos de equipo (Sprint 3) ────────────────────────────────────────
   const [loanModalOpen, setLoanModalOpen] = useState(false)
   const [loanEquipo, setLoanEquipo] = useState<Equipo | null>(null)
-  const [loanForm, setLoanForm] = useState({ fecha: '', hora_devolucion: '', sala_id: '', notas: '', reserva_id: '' })
+  const [loanForm, setLoanForm] = useState({ fecha: '', hora_devolucion: '', sala_id: '', notas: '', reserva_id: '', condicion_entrega: 'bueno' as CondicionEquipo })
   const [loanSubmitting, setLoanSubmitting] = useState(false)
   const [loanError, setLoanError] = useState<string | null>(null)
   const [loanSuccess, setLoanSuccess] = useState(false)
+  const [loanActa, setLoanActa] = useState<string | null>(null)
   const [misPrestamos, setMisPrestamos] = useState<PrestamoEquipo[]>([])
   const [loadingPrestamos, setLoadingPrestamos] = useState(false)
   const [devolviendoPrestamo, setDevolviendoPrestamo] = useState<string | null>(null)
@@ -412,9 +478,38 @@ export default function MainMenuPage() {
   const [editPrestamoReservaId, setEditPrestamoReservaId] = useState('')
   const [savingEditPrestamo, setSavingEditPrestamo] = useState(false)
   const [editPrestamoError, setEditPrestamoError] = useState<string | null>(null)
+  // ── Modal de devolución con documentación ────────────────────────────────
+  const [returnModalOpen, setReturnModalOpen] = useState(false)
+  const [returnPrestamo, setReturnPrestamo] = useState<PrestamoEquipo | null>(null)
+  const [returnStep, setReturnStep] = useState<1 | 2 | 3>(1)
+  const [returnCondicion, setReturnCondicion] = useState<CondicionDevolucion>('bueno')
+  const [returnObservaciones, setReturnObservaciones] = useState('')
+  const [returnFotoFile, setReturnFotoFile] = useState<File | null>(null)
+  const [returnFotoPreview, setReturnFotoPreview] = useState<string | null>(null)
+  const [returnNovedad, setReturnNovedad] = useState(false)
+  const [returnTipoNovedad, setReturnTipoNovedad] = useState<TipoNovedad>('dano_fisico')
+  const [returnDescNovedad, setReturnDescNovedad] = useState('')
+  const [returnConfirmed, setReturnConfirmed] = useState(false)
+  const [returnSubmitting, setReturnSubmitting] = useState(false)
+  const [returnError, setReturnError] = useState<string | null>(null)
+  const [returnSuccess, setReturnSuccess] = useState<{ numActa: string } | null>(null)
   // ── Admin: préstamos activos ──────────────────────────────────────────────
   const [prestamosAdmin, setPrestamosAdmin] = useState<PrestamoEquipoAdmin[]>([])
   const [loadingPrestamosAdmin, setLoadingPrestamosAdmin] = useState(false)
+  const [prestamosAdminTab, setPrestamosAdminTab] = useState<'activos' | 'novedades' | 'historial'>('activos')
+  const [prestamosHistorial, setPrestamosHistorial] = useState<PrestamoEquipoAdmin[]>([])
+  const [loadingHistorial, setLoadingHistorial] = useState(false)
+  // ── Modal devolución admin ────────────────────────────────────────────────
+  const [adminReturnModalOpen, setAdminReturnModalOpen] = useState(false)
+  const [adminReturnPrestamo, setAdminReturnPrestamo] = useState<PrestamoEquipoAdmin | null>(null)
+  const [adminReturnCondicion, setAdminReturnCondicion] = useState<string>('bueno')
+  const [adminReturnNotas, setAdminReturnNotas] = useState('')
+  const [adminReturnNovedad, setAdminReturnNovedad] = useState(false)
+  const [adminReturnTipoNovedad, setAdminReturnTipoNovedad] = useState<string>('dano_fisico')
+  const [adminReturnDescNovedad, setAdminReturnDescNovedad] = useState('')
+  const [adminReturnSubmitting, setAdminReturnSubmitting] = useState(false)
+  const [adminReturnError, setAdminReturnError] = useState<string | null>(null)
+  // ── Misc admin state ─────────────────────────────────────────────
   const [asignandoSala, setAsignandoSala] = useState<string | null>(null)
   const [devolviendoAdmin, setDevolviendoAdmin] = useState<string | null>(null)
 
@@ -563,7 +658,7 @@ export default function MainMenuPage() {
     }
     let cancelled = false
     setLoadingFranjas(true)
-    getDisponibilidadSala(form.sala_id, form.fecha, editingReservaId ?? undefined).then(result => {
+    getDisponibilidadSala(form.sala_id, form.fecha, editingReservaId ?? undefined).then((result: { franjas?: FranjaOcupada[]; error?: string }) => {
       if (!cancelled) {
         setModalFranjas(result.franjas ?? [])
         setLoadingFranjas(false)
@@ -623,18 +718,40 @@ export default function MainMenuPage() {
     setLoadingPrestamosAdmin(false)
   }, [])
 
+  const loadPrestamosHistorial = useCallback(async (tab: 'activos' | 'novedades' | 'historial') => {
+    setLoadingHistorial(true)
+    let result
+    if (tab === 'activos') {
+      result = await getPrestamosAdmin()
+    } else if (tab === 'novedades') {
+      result = await getPrestamosAdminHistorial({ soloNovedades: true })
+    } else {
+      result = await getPrestamosAdminHistorial({ estado: 'todos' })
+    }
+    if (result.data) setPrestamosHistorial(result.data)
+    setLoadingHistorial(false)
+  }, [])
+
   const handleSolicitarEquipo = (equipo: Equipo) => {
     const { dateStr } = getBogotaNow()
     setLoanEquipo(equipo)
-    setLoanForm({ fecha: dateStr, hora_devolucion: '', sala_id: '', notas: '', reserva_id: '' })
+    setLoanForm({ fecha: dateStr, hora_devolucion: '', sala_id: '', notas: '', reserva_id: '', condicion_entrega: 'bueno' })
     setLoanError(null)
     setLoanSuccess(false)
+    setLoanActa(null)
     setLoanModalOpen(true)
   }
 
   const handleSubmitLoan = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!loanEquipo || !loanForm.reserva_id || !loanForm.fecha || !loanForm.hora_devolucion) return
+    if (!loanEquipo || !loanForm.reserva_id || !loanForm.fecha || !loanForm.hora_devolucion) {
+      setLoanError('Debes seleccionar una reserva activa y completar todos los campos obligatorios.')
+      return
+    }
+    if (!loanEquipo.imagen_url) {
+      setLoanError('El equipo no tiene imagen registrada. Contacta al administrador antes de proceder.')
+      return
+    }
     setLoanSubmitting(true)
     setLoanError(null)
 
@@ -657,6 +774,7 @@ export default function MainMenuPage() {
       loanForm.reserva_id,
       fechaFin,
       loanForm.notas || null,
+      loanForm.condicion_entrega,
     )
 
     if (result.error) {
@@ -665,6 +783,7 @@ export default function MainMenuPage() {
       return
     }
 
+    setLoanActa(result.data?.num_acta ?? null)
     setLoanSuccess(true)
     // Actualizar estado del equipo localmente
     setEquipos(prev => prev.map(e => e.id === loanEquipo.id ? { ...e, estado: 'reservado' as const } : e))
@@ -677,14 +796,64 @@ export default function MainMenuPage() {
     setLoanSubmitting(false)
   }
 
-  const handleDevolverEquipo = async (prestamoId: string) => {
-    setDevolviendoPrestamo(prestamoId)
-    const result = await devolverEquipo(prestamoId)
-    if (!result.error && result.equipoId) {
-      setMisPrestamos(prev => prev.filter(p => p.id !== prestamoId))
+  // Return modal: open
+  const handleAbrirDevolucion = (prestamo: PrestamoEquipo) => {
+    setReturnPrestamo(prestamo)
+    setReturnStep(1)
+    setReturnCondicion('bueno')
+    setReturnObservaciones('')
+    setReturnFotoFile(null)
+    setReturnFotoPreview(null)
+    setReturnNovedad(false)
+    setReturnTipoNovedad('dano_fisico')
+    setReturnDescNovedad('')
+    setReturnConfirmed(false)
+    setReturnError(null)
+    setReturnSuccess(null)
+    setReturnModalOpen(true)
+  }
+
+  // Return modal: submit
+  const handleSubmitDevolucion = async () => {
+    if (!returnPrestamo || !returnConfirmed) return
+    if (!returnFotoFile) {
+      setReturnError('La fotografía del equipo es obligatoria.')
+      return
+    }
+    if (returnNovedad && !returnDescNovedad.trim()) {
+      setReturnError('Debes describir la novedad reportada.')
+      return
+    }
+    setReturnSubmitting(true)
+    setReturnError(null)
+
+    let fotoUrl: string | null = null
+    if (returnFotoFile) {
+      fotoUrl = await uploadFotoDevolucion(returnFotoFile)
+    }
+
+    const result = await devolverEquipo(
+      returnPrestamo.id,
+      returnCondicion,
+      returnObservaciones || null,
+      fotoUrl,
+      returnNovedad,
+      returnNovedad ? returnTipoNovedad : null,
+      returnNovedad && returnDescNovedad ? returnDescNovedad : null,
+    )
+
+    if (result.error) {
+      setReturnError(result.error)
+      setReturnSubmitting(false)
+      return
+    }
+
+    setMisPrestamos(prev => prev.filter(p => p.id !== returnPrestamo.id))
+    if (result.equipoId) {
       setEquipos(prev => prev.map(e => e.id === result.equipoId ? { ...e, estado: 'disponible' as const } : e))
     }
-    setDevolviendoPrestamo(null)
+    setReturnSuccess({ numActa: result.numActa ?? returnPrestamo.num_acta ?? '' })
+    setReturnSubmitting(false)
   }
 
   const handleEditarPrestamo = async () => {
@@ -709,14 +878,45 @@ export default function MainMenuPage() {
     setAsignandoSala(null)
   }
 
-  const handleDevolverPrestamoAdmin = async (prestamoId: string, equipoId: string) => {
-    setDevolviendoAdmin(prestamoId)
-    const result = await devolverPrestamoAdmin(prestamoId, equipoId)
-    if (!result.error) {
-      setPrestamosAdmin(prev => prev.filter(p => p.id !== prestamoId))
-      setEquipos(prev => prev.map(e => e.id === equipoId ? { ...e, estado: 'disponible' as const } : e))
+  // Admin return modal
+  const handleAbrirDevolucionAdmin = (p: PrestamoEquipoAdmin) => {
+    setAdminReturnPrestamo(p)
+    setAdminReturnCondicion('bueno')
+    setAdminReturnNotas('')
+    setAdminReturnNovedad(false)
+    setAdminReturnTipoNovedad('dano_fisico')
+    setAdminReturnDescNovedad('')
+    setAdminReturnError(null)
+    setAdminReturnModalOpen(true)
+  }
+
+  const handleSubmitDevolucionAdmin = async () => {
+    if (!adminReturnPrestamo) return
+    if (adminReturnNovedad && !adminReturnDescNovedad.trim()) {
+      setAdminReturnError('Debes describir la novedad antes de continuar.')
+      return
     }
-    setDevolviendoAdmin(null)
+    setAdminReturnSubmitting(true)
+    setAdminReturnError(null)
+    const result = await devolverPrestamoAdmin(
+      adminReturnPrestamo.id,
+      adminReturnPrestamo.equipo_id,
+      adminReturnCondicion,
+      adminReturnNotas || null,
+      adminReturnNovedad ? adminReturnTipoNovedad : null,
+      adminReturnNovedad && adminReturnDescNovedad ? adminReturnDescNovedad : null,
+    )
+    if (result.error) {
+      setAdminReturnError(result.error)
+      setAdminReturnSubmitting(false)
+      return
+    }
+    setPrestamosAdmin(prev => prev.filter(p => p.id !== adminReturnPrestamo.id))
+    setPrestamosHistorial(prev => prev.filter(p => p.id !== adminReturnPrestamo.id))
+    const nuevoEstado = adminReturnCondicion === 'perdido' || adminReturnCondicion === 'dano_grave' ? 'mantenimiento' : 'disponible'
+    setEquipos(prev => prev.map(e => e.id === adminReturnPrestamo.equipo_id ? { ...e, estado: nuevoEstado as Equipo['estado'] } : e))
+    setAdminReturnModalOpen(false)
+    setAdminReturnSubmitting(false)
   }
 
   const handleToggleEquipo = async (id: string, estado: Equipo['estado']) => {
@@ -2006,7 +2206,7 @@ export default function MainMenuPage() {
             })
             return (
               <div className="space-y-6">
-                {/* Mis Préstamos Activos */}
+                {/* ── Mis Préstamos Activos ──────────────────────────────────── */}
                 {(loadingPrestamos || misPrestamos.length > 0) && (
                   <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 shadow-sm overflow-hidden">
                     <div className="flex items-center gap-2 px-5 py-3.5 border-b border-outline-variant/15 bg-surface-container">
@@ -2026,42 +2226,67 @@ export default function MainMenuPage() {
                         {misPrestamos.map(p => {
                           const finDate = new Date(p.fecha_fin_esperada)
                           const isOverdue = finDate < new Date()
+                          const condicion = p.condicion_entrega ?? 'bueno'
                           return (
                             <div key={p.id} className="divide-y divide-outline-variant/10">
-                              <div className="flex items-center gap-3 px-5 py-3.5">
-                                {p.equipos?.imagen_url ? (
-                                  <img src={p.equipos.imagen_url} alt={p.equipos.nombre} className="w-10 h-10 rounded-lg object-cover shrink-0 border border-outline-variant/15" />
-                                ) : (
-                                  <div className="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center shrink-0">
-                                    <span className="material-symbols-outlined text-on-surface-variant text-[20px]">devices</span>
-                                  </div>
-                                )}
+                              <div className={`flex items-start gap-3 px-5 py-4 ${isOverdue ? 'bg-red-50/30' : ''}`}>
+                                {/* Equipo imagen */}
+                                <div className="shrink-0">
+                                  {p.equipos?.imagen_url ? (
+                                    <img src={p.equipos.imagen_url} alt={p.equipos.nombre} className="w-11 h-11 rounded-lg object-cover border border-outline-variant/15" />
+                                  ) : (
+                                    <div className="w-11 h-11 rounded-lg bg-surface-container flex items-center justify-center">
+                                      <span className="material-symbols-outlined text-on-surface-variant text-[22px]">devices</span>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Info */}
                                 <div className="flex-1 min-w-0">
-                                  <p className="font-body text-sm font-medium text-on-surface truncate">{p.equipos?.nombre ?? '—'}</p>
-                                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
-                                    <span className={`flex items-center gap-1 font-body text-xs ${isOverdue ? 'text-red-500 font-semibold' : 'text-on-surface-variant'}`}>
-                                      <span className="material-symbols-outlined text-[13px]">{isOverdue ? 'warning' : 'schedule'}</span>
-                                      {isOverdue ? 'Venció el ' : 'Hasta '}
-                                      {finDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' })} {finDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })}
+                                  <div className="flex flex-wrap items-center gap-2 mb-1">
+                                    <p className="font-body text-sm font-semibold text-on-surface truncate">{p.equipos?.nombre ?? '—'}</p>
+                                    {/* Acta badge */}
+                                    {p.num_acta && (
+                                      <span className="font-mono text-[10px] bg-surface-container text-on-surface-variant px-1.5 py-0.5 rounded border border-outline-variant/20">{p.num_acta}</span>
+                                    )}
+                                    {/* Condition badge */}
+                                    <span className={`inline-flex items-center gap-0.5 text-[10px] font-label font-semibold px-1.5 py-0.5 rounded border ${CONDICION_COLOR[condicion]}`}>
+                                      <span className="material-symbols-outlined text-[11px]" style={{ fontVariationSettings: "'FILL' 1" }}>{CONDICION_ICON[condicion]}</span>
+                                      Entregado: {CONDICION_LABEL[condicion]}
                                     </span>
-                                    {p.salas && (
-                                      <span className="flex items-center gap-1 font-body text-xs text-on-surface-variant">
-                                        <span className="material-symbols-outlined text-[13px]">meeting_room</span>
-                                        {p.salas.nombre}
+                                    {/* Overdue / novedad badges */}
+                                    {isOverdue && (
+                                      <span className="inline-flex items-center gap-0.5 text-[10px] font-label font-semibold px-1.5 py-0.5 rounded bg-red-100 text-red-700 border border-red-200">
+                                        <span className="material-symbols-outlined text-[11px]">warning</span>Vencido
                                       </span>
                                     )}
                                   </div>
+                                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                                    <span className={`flex items-center gap-1 font-body text-xs ${isOverdue ? 'text-red-500 font-semibold' : 'text-on-surface-variant'}`}>
+                                      <span className="material-symbols-outlined text-[12px]">{isOverdue ? 'event_busy' : 'schedule'}</span>
+                                      {isOverdue ? 'Venció el ' : 'Devolver antes de: '}
+                                      {finDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Bogota' })} · {finDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })}
+                                    </span>
+                                    {p.salas && (
+                                      <span className="flex items-center gap-1 font-body text-xs text-on-surface-variant">
+                                        <span className="material-symbols-outlined text-[12px]">meeting_room</span>
+                                        {p.salas.nombre}
+                                      </span>
+                                    )}
+                                    {p.equipos?.marca && (
+                                      <span className="font-body text-xs text-on-surface-variant">{p.equipos.marca} · {p.equipos.tipo_equipo}</span>
+                                    )}
+                                  </div>
                                 </div>
-                                <div className="flex items-center gap-2 shrink-0">
+
+                                {/* Actions */}
+                                <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 shrink-0">
                                   <button
                                     onClick={() => {
                                       if (editandoPrestamoId === p.id) {
-                                        setEditandoPrestamoId(null)
-                                        setEditPrestamoError(null)
+                                        setEditandoPrestamoId(null); setEditPrestamoError(null)
                                       } else {
-                                        setEditandoPrestamoId(p.id)
-                                        setEditPrestamoReservaId(p.reserva_id ?? '')
-                                        setEditPrestamoError(null)
+                                        setEditandoPrestamoId(p.id); setEditPrestamoReservaId(p.reserva_id ?? ''); setEditPrestamoError(null)
                                       }
                                     }}
                                     className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-label font-semibold border transition-colors ${editandoPrestamoId === p.id ? 'bg-primary/10 text-primary border-primary/30' : 'bg-surface-container text-on-surface-variant border-outline-variant/20 hover:bg-blue-50 hover:text-blue-700'}`}
@@ -2070,16 +2295,11 @@ export default function MainMenuPage() {
                                     Editar
                                   </button>
                                   <button
-                                    onClick={() => handleDevolverEquipo(p.id)}
-                                    disabled={devolviendoPrestamo === p.id}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container text-on-surface text-xs font-label font-semibold hover:bg-green-50 hover:text-green-700 border border-outline-variant/20 transition-colors disabled:opacity-50"
+                                    onClick={() => handleAbrirDevolucion(p)}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-on-primary text-xs font-label font-semibold hover:opacity-90 border border-primary/30 transition-all shadow-sm"
                                   >
-                                    {devolviendoPrestamo === p.id ? (
-                                      <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                                    ) : (
-                                      <span className="material-symbols-outlined text-[14px]">assignment_return</span>
-                                    )}
-                                    Devolver
+                                    <span className="material-symbols-outlined text-[14px]">assignment_return</span>
+                                    Devolver equipo
                                   </button>
                                 </div>
                               </div>
@@ -2096,29 +2316,19 @@ export default function MainMenuPage() {
                                   >
                                     <option value="">— Selecciona una reserva —</option>
                                     {reservas.filter(r => r.estado !== 'cancelada').map(r => (
-                                      <option key={r.id} value={r.id}>
-                                        {r.titulo} · {r.salas?.nombre ?? 'Sin sala'} · {r.fecha} {r.hora_inicio.slice(0,5)}–{r.hora_fin.slice(0,5)}
-                                      </option>
+                                      <option key={r.id} value={r.id}>{r.titulo} · {r.salas?.nombre ?? 'Sin sala'} · {r.fecha} {r.hora_inicio.slice(0,5)}–{r.hora_fin.slice(0,5)}</option>
                                     ))}
                                   </select>
                                   {editPrestamoError && (
                                     <p className="text-xs font-body text-error flex items-center gap-1">
-                                      <span className="material-symbols-outlined text-[13px]">error</span>
-                                      {editPrestamoError}
+                                      <span className="material-symbols-outlined text-[13px]">error</span>{editPrestamoError}
                                     </p>
                                   )}
                                   <div className="flex gap-2">
-                                    <button
-                                      onClick={handleEditarPrestamo}
-                                      disabled={!editPrestamoReservaId || savingEditPrestamo}
-                                      className="flex-1 py-2 rounded-lg bg-primary text-on-primary text-xs font-label font-semibold hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
+                                    <button onClick={handleEditarPrestamo} disabled={!editPrestamoReservaId || savingEditPrestamo} className="flex-1 py-2 rounded-lg bg-primary text-on-primary text-xs font-label font-semibold hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed">
                                       {savingEditPrestamo ? 'Guardando…' : 'Guardar cambio'}
                                     </button>
-                                    <button
-                                      onClick={() => { setEditandoPrestamoId(null); setEditPrestamoError(null) }}
-                                      className="px-4 py-2 rounded-lg border border-outline-variant/30 text-xs font-label text-on-surface-variant hover:bg-surface-container transition"
-                                    >
+                                    <button onClick={() => { setEditandoPrestamoId(null); setEditPrestamoError(null) }} className="px-4 py-2 rounded-lg border border-outline-variant/30 text-xs font-label text-on-surface-variant hover:bg-surface-container transition">
                                       Cancelar
                                     </button>
                                   </div>
@@ -3132,89 +3342,200 @@ export default function MainMenuPage() {
                       )}
                     </div>
 
-                    {/* ── Préstamos activos (admin view) ──────────── */}
+                    {/* ── Gestión de Préstamos (admin) ───────────────────── */}
                     <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 shadow-sm overflow-hidden">
-                      <div className="flex items-center gap-2 px-5 py-3.5 border-b border-outline-variant/15 bg-surface-container">
-                        <span className="material-symbols-outlined text-primary text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>assignment</span>
-                        <h3 className="font-label text-sm font-bold text-on-surface">Préstamos en Curso</h3>
-                        {prestamosAdmin.length > 0 && (
-                          <span className="ml-auto inline-flex items-center justify-center min-w-[20px] h-5 rounded-full bg-primary text-on-primary text-[10px] font-bold px-1">{prestamosAdmin.length}</span>
-                        )}
+                      {/* Header con tabs */}
+                      <div className="border-b border-outline-variant/15 bg-surface-container">
+                        <div className="flex items-center gap-2 px-5 py-3">
+                          <span className="material-symbols-outlined text-primary text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>assignment</span>
+                          <h3 className="font-label text-sm font-bold text-on-surface">Gestión de Préstamos</h3>
+                          <button
+                            onClick={() => { loadPrestamosAdmin(); loadPrestamosHistorial(prestamosAdminTab) }}
+                            className="ml-auto p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container-low transition-colors"
+                            title="Actualizar"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">refresh</span>
+                          </button>
+                        </div>
+                        {/* Tab bar */}
+                        <div className="flex gap-1 px-4 pb-0">
+                          {([
+                            { id: 'activos', label: 'Activos & Vencidos', icon: 'hourglass_top' },
+                            { id: 'novedades', label: 'Con Novedad', icon: 'warning' },
+                            { id: 'historial', label: 'Historial', icon: 'history' },
+                          ] as const).map(tab => (
+                            <button
+                              key={tab.id}
+                              onClick={() => {
+                                setPrestamosAdminTab(tab.id)
+                                loadPrestamosHistorial(tab.id)
+                              }}
+                              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-label font-semibold border-b-2 transition-all -mb-px ${
+                                prestamosAdminTab === tab.id
+                                  ? 'border-primary text-primary'
+                                  : 'border-transparent text-on-surface-variant hover:text-on-surface'
+                              }`}
+                            >
+                              <span className="material-symbols-outlined text-[14px]" style={prestamosAdminTab === tab.id ? { fontVariationSettings: "'FILL' 1" } : undefined}>{tab.icon}</span>
+                              {tab.label}
+                              {tab.id === 'novedades' && prestamosHistorial.filter(p => p.novedad).length > 0 && (
+                                <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-500 text-white text-[9px] font-bold">{prestamosHistorial.filter(p => p.novedad).length}</span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                      {loadingPrestamosAdmin ? (
-                        <div className="flex items-center justify-center gap-2 py-10 text-sm font-body text-on-surface-variant">
-                          <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                          Cargando préstamos…
-                        </div>
-                      ) : prestamosAdmin.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-10 gap-2 text-center">
-                          <span className="material-symbols-outlined text-on-surface-variant text-3xl">assignment_turned_in</span>
-                          <p className="font-body text-sm text-on-surface-variant">No hay préstamos activos en este momento.</p>
-                        </div>
-                      ) : (
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-sm">
-                            <thead className="bg-surface-container border-b border-outline-variant/20">
-                              <tr>
-                                <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-5 py-3">Equipo</th>
-                                <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-5 py-3 hidden md:table-cell">Usuario</th>
-                                <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-5 py-3 hidden sm:table-cell">Sala de uso</th>
-                                <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-5 py-3">Devolver antes de</th>
-                                <th className="text-left font-label text-xs uppercase tracking-widest text-on-surface-variant px-5 py-3">Acción</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-outline-variant/10">
-                              {prestamosAdmin.map(p => {
-                                const finDate = new Date(p.fecha_fin_esperada)
-                                const isOverdue = finDate < new Date()
-                                return (
-                                  <tr key={p.id} className={`hover:bg-surface-container/40 transition-colors ${isOverdue ? 'bg-red-50/30' : ''}`}>
-                                    <td className="px-5 py-3 font-body font-medium text-on-surface">
-                                      <div className="flex items-center gap-2">
-                                        {p.equipos?.imagen_url ? (
-                                          <img src={p.equipos.imagen_url} alt="" className="w-7 h-7 rounded-md object-cover shrink-0 border border-outline-variant/15" />
-                                        ) : (
-                                          <div className="w-7 h-7 rounded-md bg-surface-container flex items-center justify-center shrink-0">
-                                            <span className="material-symbols-outlined text-on-surface-variant text-[14px]">devices</span>
+
+                      {/* Content */}
+                      {(() => {
+                        const isLoading = prestamosAdminTab === 'activos' ? loadingPrestamosAdmin : loadingHistorial
+                        const items = prestamosAdminTab === 'activos'
+                          ? prestamosAdmin
+                          : prestamosAdminTab === 'novedades'
+                          ? prestamosHistorial.filter(p => p.novedad)
+                          : prestamosHistorial
+
+                        if (isLoading) return (
+                          <div className="flex items-center justify-center gap-2 py-10 text-sm font-body text-on-surface-variant">
+                            <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                            Cargando…
+                          </div>
+                        )
+
+                        if (items.length === 0) return (
+                          <div className="flex flex-col items-center justify-center py-10 gap-2 text-center">
+                            <span className="material-symbols-outlined text-on-surface-variant text-3xl">
+                              {prestamosAdminTab === 'novedades' ? 'check_circle' : 'assignment_turned_in'}
+                            </span>
+                            <p className="font-body text-sm text-on-surface-variant">
+                              {prestamosAdminTab === 'activos' ? 'No hay préstamos activos.' : prestamosAdminTab === 'novedades' ? 'Sin novedades registradas.' : 'Sin historial disponible.'}
+                            </p>
+                          </div>
+                        )
+
+                        return (
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                              <thead className="bg-surface-container border-b border-outline-variant/20">
+                                <tr>
+                                  <th className="text-left font-label text-[11px] uppercase tracking-widest text-on-surface-variant px-4 py-3">Equipo · Acta</th>
+                                  <th className="text-left font-label text-[11px] uppercase tracking-widest text-on-surface-variant px-4 py-3 hidden md:table-cell">Usuario</th>
+                                  <th className="text-left font-label text-[11px] uppercase tracking-widest text-on-surface-variant px-4 py-3 hidden lg:table-cell">Condición</th>
+                                  <th className="text-left font-label text-[11px] uppercase tracking-widest text-on-surface-variant px-4 py-3">Estado · Fecha</th>
+                                  <th className="text-left font-label text-[11px] uppercase tracking-widest text-on-surface-variant px-4 py-3">Acciones</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-outline-variant/10">
+                                {items.map(p => {
+                                  const finDate = new Date(p.fecha_fin_esperada)
+                                  const isOverdue = p.estado === 'activo' && finDate < new Date()
+                                  return (
+                                    <tr key={p.id} className={`hover:bg-surface-container/40 transition-colors ${isOverdue ? 'bg-red-50/20' : p.novedad ? 'bg-amber-50/20' : ''}`}>
+                                      {/* Equipo */}
+                                      <td className="px-4 py-3">
+                                        <div className="flex items-center gap-2">
+                                          {p.equipos?.imagen_url ? (
+                                            <img src={p.equipos.imagen_url} alt="" className="w-8 h-8 rounded-lg object-cover shrink-0 border border-outline-variant/15" />
+                                          ) : (
+                                            <div className="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center shrink-0">
+                                              <span className="material-symbols-outlined text-on-surface-variant text-[16px]">devices</span>
+                                            </div>
+                                          )}
+                                          <div className="min-w-0">
+                                            <p className="font-body text-sm font-semibold text-on-surface truncate max-w-[140px]">{p.equipos?.nombre ?? '—'}</p>
+                                            {p.num_acta && <p className="font-mono text-[10px] text-on-surface-variant">{p.num_acta}</p>}
                                           </div>
-                                        )}
-                                        <span className="truncate max-w-[140px] text-sm">{p.equipos?.nombre ?? '—'}</span>
-                                      </div>
-                                    </td>
-                                    <td className="px-5 py-3 hidden md:table-cell">
-                                      <p className="font-body text-sm text-on-surface">{p.usuarios?.nombre ?? '—'}</p>
-                                      <p className="font-body text-xs text-on-surface-variant/70">{p.usuarios?.correo}</p>
-                                    </td>
-                                    <td className="px-5 py-3 font-body text-sm text-on-surface-variant hidden sm:table-cell">
-                                      {p.salas?.nombre ?? '—'}
-                                    </td>
-                                    <td className="px-5 py-3">
-                                      <span className={`font-body text-sm flex items-center gap-1 ${isOverdue ? 'text-red-500 font-semibold' : 'text-on-surface-variant'}`}>
-                                        {isOverdue && <span className="material-symbols-outlined text-[14px]">warning</span>}
-                                        {finDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' })} {finDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })}
-                                      </span>
-                                    </td>
-                                    <td className="px-5 py-3">
-                                      <button
-                                        onClick={() => handleDevolverPrestamoAdmin(p.id, p.equipo_id)}
-                                        disabled={devolviendoAdmin === p.id}
-                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container text-on-surface text-xs font-label font-semibold hover:bg-green-50 hover:text-green-700 border border-outline-variant/20 transition-colors disabled:opacity-50"
-                                      >
-                                        {devolviendoAdmin === p.id ? (
-                                          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                                        ) : (
-                                          <span className="material-symbols-outlined text-[14px]">assignment_return</span>
-                                        )}
-                                        Registrar devolución
-                                      </button>
-                                    </td>
-                                  </tr>
-                                )
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
+                                        </div>
+                                      </td>
+                                      {/* Usuario */}
+                                      <td className="px-4 py-3 hidden md:table-cell">
+                                        <p className="font-body text-sm text-on-surface">{p.usuarios?.nombre ?? '—'}</p>
+                                        <a href={`mailto:${p.usuarios?.correo}`} className="font-body text-xs text-primary hover:underline">{p.usuarios?.correo}</a>
+                                      </td>
+                                      {/* Condición */}
+                                      <td className="px-4 py-3 hidden lg:table-cell">
+                                        <div className="flex flex-col gap-1">
+                                          <span className={`inline-flex items-center gap-0.5 text-[10px] font-label font-semibold px-1.5 py-0.5 rounded border w-fit ${CONDICION_COLOR[p.condicion_entrega ?? 'bueno']}`}>
+                                            ↑ {CONDICION_LABEL[p.condicion_entrega ?? 'bueno']}
+                                          </span>
+                                          {p.condicion_devolucion && (
+                                            <span className={`inline-flex items-center gap-0.5 text-[10px] font-label font-semibold px-1.5 py-0.5 rounded border w-fit ${CONDICION_COLOR[p.condicion_devolucion]}`}>
+                                              ↓ {CONDICION_LABEL[p.condicion_devolucion]}
+                                            </span>
+                                          )}
+                                          {p.novedad && (
+                                            <span className="inline-flex items-center gap-0.5 text-[10px] font-label font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200 w-fit">
+                                              <span className="material-symbols-outlined text-[10px]" style={{ fontVariationSettings: "'FILL' 1" }}>warning</span>
+                                              {p.tipo_novedad ? NOVEDAD_LABEL[p.tipo_novedad] : 'Novedad'}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </td>
+                                      {/* Estado */}
+                                      <td className="px-4 py-3">
+                                        <div className="space-y-0.5">
+                                          {p.estado === 'activo' && !isOverdue && (
+                                            <span className="inline-flex items-center gap-0.5 text-[10px] font-label font-semibold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 border border-blue-200">
+                                              <span className="material-symbols-outlined text-[10px]" style={{ fontVariationSettings: "'FILL' 1" }}>hourglass_top</span>Activo
+                                            </span>
+                                          )}
+                                          {isOverdue && (
+                                            <span className="inline-flex items-center gap-0.5 text-[10px] font-label font-semibold px-1.5 py-0.5 rounded bg-red-100 text-red-700 border border-red-200">
+                                              <span className="material-symbols-outlined text-[10px]" style={{ fontVariationSettings: "'FILL' 1" }}>event_busy</span>Vencido
+                                            </span>
+                                          )}
+                                          {p.estado === 'devuelto' && (
+                                            <span className="inline-flex items-center gap-0.5 text-[10px] font-label font-semibold px-1.5 py-0.5 rounded bg-green-100 text-green-700 border border-green-200">
+                                              <span className="material-symbols-outlined text-[10px]" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>Devuelto
+                                            </span>
+                                          )}
+                                          <p className={`font-body text-xs ${isOverdue ? 'text-red-500' : 'text-on-surface-variant'}`}>
+                                            {p.estado === 'devuelto' && p.fecha_devolucion
+                                              ? new Date(p.fecha_devolucion).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' })
+                                              : `${finDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' })} ${finDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })}`
+                                            }
+                                          </p>
+                                          {p.salas && <p className="font-body text-[10px] text-on-surface-variant/70">{p.salas.nombre}</p>}
+                                        </div>
+                                      </td>
+                                      {/* Acciones */}
+                                      <td className="px-4 py-3">
+                                        <div className="flex flex-col gap-1.5">
+                                          {(p.estado === 'activo' || p.estado === 'vencido') && (
+                                            <button
+                                              onClick={() => handleAbrirDevolucionAdmin(p)}
+                                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary text-on-primary text-xs font-label font-semibold hover:opacity-90 transition"
+                                            >
+                                              <span className="material-symbols-outlined text-[13px]">assignment_return</span>
+                                              Registrar
+                                            </button>
+                                          )}
+                                          {p.foto_devolucion_url && (
+                                            <a
+                                              href={p.foto_devolucion_url}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-surface-container text-on-surface-variant text-xs font-label hover:bg-surface-container-low transition border border-outline-variant/20"
+                                            >
+                                              <span className="material-symbols-outlined text-[12px]">photo_camera</span>
+                                              Ver foto
+                                            </a>
+                                          )}
+                                          {p.novedad && p.descripcion_novedad && (
+                                            <p className="font-body text-[10px] text-amber-700 bg-amber-50 rounded px-1.5 py-1 border border-amber-100 max-w-[160px]" title={p.descripcion_novedad}>
+                                              {p.descripcion_novedad.slice(0, 50)}{p.descripcion_novedad.length > 50 ? '…' : ''}
+                                            </p>
+                                          )}
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )
+                      })()}
                     </div>
 
                   </div>
@@ -4664,7 +4985,7 @@ export default function MainMenuPage() {
                 </div>
                 <div>
                   <label className="font-label text-xs text-on-surface-variant block mb-1.5">
-                    Hora de devolución
+                    Hora de devolución <span className="text-error">*</span>
                   </label>
                   <input
                     type="time"
@@ -4694,10 +5015,29 @@ export default function MainMenuPage() {
                 />
               </div>
 
+              {/* Condición de entrega */}
+              <div>
+                <label className="font-label text-xs text-on-surface-variant block mb-1.5 uppercase tracking-widest">Condición del equipo al recibirlo *</label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {CONDICIONES_ENTREGA.map(c => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setLoanForm(f => ({ ...f, condicion_entrega: c }))}
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-label font-semibold transition-all ${loanForm.condicion_entrega === c ? `${CONDICION_COLOR[c]} ring-2 ring-offset-1 ring-current` : 'border-outline-variant/30 text-on-surface-variant hover:bg-surface-container'}`}
+                    >
+                      <span className="material-symbols-outlined text-[14px]" style={{ fontVariationSettings: "'FILL' 1" }}>{CONDICION_ICON[c]}</span>
+                      {CONDICION_LABEL[c]}
+                    </button>
+                  ))}
+                </div>
+                <p className="font-body text-[11px] text-on-surface-variant mt-1.5">Esta condición queda registrada en el acta del préstamo.</p>
+              </div>
+
               {/* Info chip */}
               <div className="flex items-start gap-2 bg-surface-container rounded-lg px-3 py-2.5 text-xs font-body text-on-surface-variant">
                 <span className="material-symbols-outlined text-[16px] text-primary shrink-0 mt-0.5">info</span>
-                <span>El equipo quedará como <strong>reservado</strong> desde ahora. Puedes devolverlo anticipadamente desde tu panel de préstamos activos.</span>
+                <span>El equipo quedará como <strong>reservado</strong>. Al devolverlo deberás documentar su condición y tomar una foto. Se generará un acta electrónica automáticamente.</span>
               </div>
 
               {/* Error */}
@@ -4714,7 +5054,8 @@ export default function MainMenuPage() {
                   <span className="material-symbols-outlined text-[22px] text-green-500 shrink-0 mt-0.5" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
                   <div>
                     <p className="font-label text-sm font-bold text-green-800">¡Préstamo registrado!</p>
-                    <p className="font-body text-xs text-green-700 mt-0.5">El equipo ha sido asignado a tu nombre correctamente.</p>
+                    {loanActa && <p className="font-mono text-xs text-green-600 mt-0.5">Acta: {loanActa}</p>}
+                    <p className="font-body text-xs text-green-700 mt-0.5">Se ha enviado confirmación a tu correo. Recuerda devolver el equipo en las mismas condiciones.</p>
                   </div>
                 </div>
               )}
@@ -4731,7 +5072,7 @@ export default function MainMenuPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={loanSubmitting || loanSuccess || !loanForm.reserva_id}
+                  disabled={loanSubmitting || loanSuccess || !loanForm.reserva_id || !loanForm.fecha || !loanForm.hora_devolucion}
                   className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-primary text-on-primary font-label text-sm font-medium hover:brightness-105 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {loanSubmitting ? (
@@ -4748,6 +5089,437 @@ export default function MainMenuPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ══ MODAL: DEVOLUCIÓN DE EQUIPO ══════════════════════════ */}
+      {returnModalOpen && returnPrestamo && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={() => { if (!returnSubmitting) setReturnModalOpen(false) }} />
+          <div className="relative w-full max-w-lg bg-surface rounded-2xl shadow-2xl border border-outline-variant/20 flex flex-col max-h-[92vh]">
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-5 border-b border-outline-variant/15">
+              <div className="flex items-center gap-3">
+                <div className="bg-primary/10 text-primary w-9 h-9 rounded-lg flex items-center justify-center">
+                  <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>assignment_return</span>
+                </div>
+                <div>
+                  <h2 className="font-headline text-base font-bold text-on-surface">Devolver equipo</h2>
+                  {returnPrestamo.num_acta && <p className="font-mono text-[11px] text-on-surface-variant">{returnPrestamo.num_acta}</p>}
+                </div>
+              </div>
+              <button onClick={() => { if (!returnSubmitting) setReturnModalOpen(false) }} className="p-1.5 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant">
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            {/* Step indicator */}
+            {!returnSuccess && (
+              <div className="flex items-center gap-1 px-6 py-3 border-b border-outline-variant/10 bg-surface-container/30">
+                {([1, 2, 3] as const).map(s => (
+                  <div key={s} className="flex items-center gap-1">
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-label font-bold transition-colors ${returnStep >= s ? 'bg-primary text-on-primary' : 'bg-surface-container text-on-surface-variant'}`}>{s}</div>
+                    <span className={`text-[11px] font-label hidden sm:block ${returnStep >= s ? 'text-primary font-semibold' : 'text-on-surface-variant'}`}>
+                      {s === 1 ? 'Condición' : s === 2 ? 'Documentación' : 'Confirmar'}
+                    </span>
+                    {s < 3 && <div className={`w-8 h-px mx-1 ${returnStep > s ? 'bg-primary' : 'bg-outline-variant/30'}`} />}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="overflow-y-auto flex-1 px-6 py-5">
+              {/* Equipo info */}
+              <div className="flex items-center gap-3 mb-5 p-3 bg-surface-container rounded-xl">
+                {returnPrestamo.equipos?.imagen_url ? (
+                  <img src={returnPrestamo.equipos.imagen_url} alt="" className="w-12 h-12 rounded-lg object-cover border border-outline-variant/15 shrink-0" />
+                ) : (
+                  <div className="w-12 h-12 rounded-lg bg-surface-container-high flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-on-surface-variant text-[24px]">devices</span>
+                  </div>
+                )}
+                <div>
+                  <p className="font-body font-semibold text-sm text-on-surface">{returnPrestamo.equipos?.nombre}</p>
+                  <p className="font-body text-xs text-on-surface-variant">{returnPrestamo.equipos?.marca} · {returnPrestamo.equipos?.tipo_equipo}</p>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <span className={`inline-flex items-center gap-0.5 text-[10px] font-label font-semibold px-1.5 py-0.5 rounded border ${CONDICION_COLOR[returnPrestamo.condicion_entrega ?? 'bueno']}`}>
+                      <span className="material-symbols-outlined text-[10px]" style={{ fontVariationSettings: "'FILL' 1" }}>{CONDICION_ICON[returnPrestamo.condicion_entrega ?? 'bueno']}</span>
+                      Al prestar: {CONDICION_LABEL[returnPrestamo.condicion_entrega ?? 'bueno']}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── STEP 1: Condición de devolución ─────────────── */}
+              {returnStep === 1 && !returnSuccess && (
+                <div className="space-y-4">
+                  <div>
+                    <p className="font-label text-xs font-bold text-on-surface uppercase tracking-widest mb-3">¿En qué condición devuelves el equipo?</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {CONDICIONES_DEVOLUCION.map(c => (
+                        <button
+                          key={c}
+                          onClick={() => {
+                            setReturnCondicion(c)
+                            if (['dano_leve','dano_grave','perdido'].includes(c)) setReturnNovedad(true)
+                            else setReturnNovedad(false)
+                          }}
+                          className={`flex items-center gap-2 px-3 py-3 rounded-xl border text-sm font-label font-semibold transition-all text-left ${returnCondicion === c ? `${CONDICION_COLOR[c]} ring-2 ring-offset-1 ring-current` : 'border-outline-variant/30 text-on-surface-variant hover:bg-surface-container'}`}
+                        >
+                          <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>{CONDICION_ICON[c]}</span>
+                          <span>{CONDICION_LABEL[c]}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Auto-novedad warning */}
+                  {['dano_leve','dano_grave','perdido'].includes(returnCondicion) && (
+                    <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 text-xs font-body text-amber-800">
+                      <span className="material-symbols-outlined text-[15px] text-amber-500 shrink-0 mt-0.5">warning</span>
+                      Se registrará automáticamente una <strong>novedad</strong> y se notificará al equipo de TI.
+                    </div>
+                  )}
+
+                  <button onClick={() => setReturnStep(2)} className="w-full py-2.5 rounded-xl bg-primary text-on-primary font-label font-semibold text-sm hover:opacity-90 transition">
+                    Continuar →
+                  </button>
+                </div>
+              )}
+
+              {/* ── STEP 2: Documentación ───────────────────────── */}
+              {returnStep === 2 && !returnSuccess && (
+                <div className="space-y-4">
+                  {/* Foto de devolución */}
+                  <div>
+                    <label className="font-label text-xs font-bold text-on-surface uppercase tracking-widest block mb-2">
+                      Foto del equipo
+                      {['dano_leve','dano_grave'].includes(returnCondicion) && <span className="ml-1 text-red-500">*</span>}
+                    </label>
+                    {returnFotoPreview ? (
+                      <div className="relative">
+                        <img src={returnFotoPreview} alt="preview" className="w-full h-40 object-cover rounded-xl border border-outline-variant/20" />
+                        <button onClick={() => { setReturnFotoFile(null); setReturnFotoPreview(null) }} className="absolute top-2 right-2 bg-black/50 text-white p-1 rounded-full hover:bg-black/70 transition">
+                          <span className="material-symbols-outlined text-[16px]">close</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="flex flex-col items-center gap-2 py-8 border-2 border-dashed border-outline-variant/40 rounded-xl cursor-pointer hover:border-primary/50 hover:bg-surface-container/30 transition">
+                        <span className="material-symbols-outlined text-on-surface-variant text-4xl">add_a_photo</span>
+                        <span className="font-body text-sm text-on-surface-variant">Toca para adjuntar foto</span>
+                        <span className="font-body text-xs text-on-surface-variant/60">JPG, PNG, WEBP · máx 10 MB</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          className="hidden"
+                          onChange={e => {
+                            const f = e.target.files?.[0]
+                            if (f) {
+                              setReturnFotoFile(f)
+                              setReturnFotoPreview(URL.createObjectURL(f))
+                            }
+                          }}
+                        />
+                      </label>
+                    )}
+                    <p className="font-body text-[11px] text-on-surface-variant mt-1">Obligatoria. Toma la foto ahora mostrando el estado visible completo del equipo.</p>
+                  </div>
+
+                  {/* Observaciones */}
+                  <div>
+                    <label className="font-label text-xs font-bold text-on-surface uppercase tracking-widest block mb-1.5">Observaciones <span className="text-on-surface-variant font-normal">(opcional)</span></label>
+                    <textarea
+                      value={returnObservaciones}
+                      onChange={e => setReturnObservaciones(e.target.value)}
+                      rows={3}
+                      maxLength={500}
+                      placeholder="Describe cualquier detalle relevante sobre el estado del equipo al momento de la devolución…"
+                      className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition resize-none"
+                    />
+                  </div>
+
+                  {/* Novedad toggle */}
+                  <div className="border border-outline-variant/20 rounded-xl overflow-hidden">
+                    <button
+                      onClick={() => setReturnNovedad(v => !v)}
+                      className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-label font-semibold transition-colors ${returnNovedad ? 'bg-amber-50 text-amber-800' : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-low'}`}
+                    >
+                      <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: `'FILL' ${returnNovedad ? 1 : 0}` }}>warning</span>
+                      Reportar novedad o incidencia
+                      <span className="ml-auto material-symbols-outlined text-[18px]">{returnNovedad ? 'expand_less' : 'expand_more'}</span>
+                    </button>
+                    {returnNovedad && (
+                      <div className="px-4 py-3 bg-amber-50/50 space-y-3">
+                        <div>
+                          <label className="font-label text-xs text-on-surface-variant block mb-1">Tipo de novedad</label>
+                          <select value={returnTipoNovedad} onChange={e => setReturnTipoNovedad(e.target.value as TipoNovedad)} className="w-full rounded-lg border border-outline-variant/40 bg-white px-3 py-2 text-sm font-body focus:outline-none focus:ring-2 focus:ring-amber-400/40 appearance-none">
+                            {TIPOS_NOVEDAD.map(t => <option key={t} value={t}>{NOVEDAD_LABEL[t]}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="font-label text-xs text-on-surface-variant block mb-1">Descripción detallada <span className="text-red-500">*</span></label>
+                          <textarea
+                            value={returnDescNovedad}
+                            onChange={e => setReturnDescNovedad(e.target.value)}
+                            rows={2}
+                            maxLength={300}
+                            placeholder="Describe qué ocurrió con el equipo…"
+                            className={`w-full rounded-lg border px-3 py-2.5 text-sm font-body focus:outline-none focus:ring-2 focus:ring-amber-400/40 transition resize-none bg-white ${!returnDescNovedad.trim() ? 'border-red-300' : 'border-outline-variant/40'}`}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button onClick={() => setReturnStep(1)} className="px-4 py-2.5 rounded-xl border border-outline-variant/30 text-sm font-label text-on-surface-variant hover:bg-surface-container transition">← Atrás</button>
+                    <button
+                      onClick={() => setReturnStep(3)}
+                      disabled={!returnFotoFile || (returnNovedad && !returnDescNovedad.trim())}
+                      className="flex-1 py-2.5 rounded-xl bg-primary text-on-primary font-label font-semibold text-sm hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                      title={!returnFotoFile ? 'La foto es obligatoria' : (returnNovedad && !returnDescNovedad.trim()) ? 'Describe la novedad' : undefined}
+                    >
+                      Continuar → Revisar
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── STEP 3: Confirmar ───────────────────────────── */}
+              {returnStep === 3 && !returnSuccess && (
+                <div className="space-y-4">
+                  <p className="font-label text-xs font-bold text-on-surface uppercase tracking-widest">Resumen del acta de devolución</p>
+                  <div className="bg-surface-container rounded-xl p-4 space-y-2.5 text-sm font-body">
+                    <div className="flex justify-between">
+                      <span className="text-on-surface-variant">Condición de entrega</span>
+                      <span className={`font-semibold px-2 py-0.5 rounded text-xs border ${CONDICION_COLOR[returnPrestamo.condicion_entrega ?? 'bueno']}`}>{CONDICION_LABEL[returnPrestamo.condicion_entrega ?? 'bueno']}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-on-surface-variant">Condición de devolución</span>
+                      <span className={`font-semibold px-2 py-0.5 rounded text-xs border ${CONDICION_COLOR[returnCondicion]}`}>{CONDICION_LABEL[returnCondicion]}</span>
+                    </div>
+                    {returnObservaciones && (
+                      <div><span className="text-on-surface-variant text-xs">Observaciones: </span><span className="text-on-surface text-xs">{returnObservaciones}</span></div>
+                    )}
+                    {returnFotoFile && (
+                      <div className="flex items-center gap-1.5 text-xs text-green-700">
+                        <span className="material-symbols-outlined text-[14px]">check_circle</span> Foto adjunta: {returnFotoFile.name}
+                      </div>
+                    )}
+                    {returnNovedad && (
+                      <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 rounded-lg px-2 py-1.5">
+                        <span className="material-symbols-outlined text-[14px]">warning</span>
+                        Novedad: {NOVEDAD_LABEL[returnTipoNovedad]} {returnDescNovedad ? `· ${returnDescNovedad.slice(0,60)}…` : ''}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Acknowledgment */}
+                  <label className="flex items-start gap-3 cursor-pointer p-3 rounded-xl border border-outline-variant/20 hover:bg-surface-container/30 transition">
+                    <input
+                      type="checkbox"
+                      checked={returnConfirmed}
+                      onChange={e => setReturnConfirmed(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 accent-primary"
+                    />
+                    <span className="font-body text-xs text-on-surface leading-relaxed">
+                      Confirmo que la información registrada es correcta y que entrego el equipo al área de TI en las condiciones indicadas. Comprendo que cualquier diferencia con la condición de entrega puede generar responsabilidad a mi nombre.
+                    </span>
+                  </label>
+
+                  {returnError && (
+                    <div className="flex items-start gap-2 bg-error-container text-on-error-container rounded-lg px-4 py-3 text-sm font-body">
+                      <span className="material-symbols-outlined text-[18px] shrink-0 mt-0.5">error</span>{returnError}
+                    </div>
+                  )}
+
+                  <div className="flex gap-2">
+                    <button onClick={() => setReturnStep(2)} disabled={returnSubmitting} className="px-4 py-2.5 rounded-xl border border-outline-variant/30 text-sm font-label text-on-surface-variant hover:bg-surface-container transition disabled:opacity-50">← Atrás</button>
+                    <button
+                      onClick={handleSubmitDevolucion}
+                      disabled={!returnConfirmed || returnSubmitting}
+                      className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-label font-semibold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed ${returnNovedad ? 'bg-amber-600 text-white hover:bg-amber-700' : 'bg-primary text-on-primary hover:opacity-90'}`}
+                    >
+                      {returnSubmitting ? (
+                        <><span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />Procesando…</>
+                      ) : (
+                        <><span className="material-symbols-outlined text-[18px]">send</span>{returnNovedad ? 'Devolver y reportar novedad' : 'Confirmar devolución'}</>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── SUCCESS ─────────────────────────────────────── */}
+              {returnSuccess && (
+                <div className="flex flex-col items-center gap-4 py-4 text-center">
+                  <div className={`w-16 h-16 rounded-full flex items-center justify-center ${returnNovedad ? 'bg-amber-100' : 'bg-green-100'}`}>
+                    <span className={`material-symbols-outlined text-4xl ${returnNovedad ? 'text-amber-600' : 'text-green-600'}`} style={{ fontVariationSettings: "'FILL' 1" }}>
+                      {returnNovedad ? 'report' : 'check_circle'}
+                    </span>
+                  </div>
+                  <div>
+                    <p className="font-headline text-base font-bold text-on-surface">{returnNovedad ? 'Devolución registrada con novedad' : '¡Devolución registrada!'}</p>
+                    {returnSuccess.numActa && <p className="font-mono text-xs text-on-surface-variant mt-1">Acta: {returnSuccess.numActa}</p>}
+                    <p className="font-body text-sm text-on-surface-variant mt-2">
+                      {returnNovedad
+                        ? 'El equipo de TI ha sido notificado y revisará la novedad reportada. Recibirás un correo de confirmación.'
+                        : 'Hemos enviado la confirmación a tu correo. ¡Gracias por devolver el equipo correctamente!'}
+                    </p>
+                  </div>
+                  <button onClick={() => setReturnModalOpen(false)} className="px-6 py-2.5 rounded-xl bg-primary text-on-primary font-label font-semibold text-sm hover:opacity-90 transition">
+                    Cerrar
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ MODAL: DEVOLUCIÓN ADMIN ═══════════════════════════════ */}
+      {adminReturnModalOpen && adminReturnPrestamo && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={() => { if (!adminReturnSubmitting) setAdminReturnModalOpen(false) }} />
+          <div className="relative w-full max-w-lg bg-surface rounded-2xl shadow-2xl border border-outline-variant/20 flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-5 border-b border-outline-variant/15">
+              <div className="flex items-center gap-3">
+                <div className="bg-primary/10 text-primary w-9 h-9 rounded-lg flex items-center justify-center">
+                  <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>manage_accounts</span>
+                </div>
+                <div>
+                  <h2 className="font-headline text-base font-bold text-on-surface">Registrar devolución (Admin)</h2>
+                  {adminReturnPrestamo.num_acta && <p className="font-mono text-[11px] text-on-surface-variant">{adminReturnPrestamo.num_acta}</p>}
+                </div>
+              </div>
+              <button onClick={() => { if (!adminReturnSubmitting) setAdminReturnModalOpen(false) }} className="p-1.5 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant">
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
+              {/* Equipo + usuario info */}
+              <div className="flex items-center gap-3 p-3 bg-surface-container rounded-xl">
+                {adminReturnPrestamo.equipos?.imagen_url ? (
+                  <img src={adminReturnPrestamo.equipos.imagen_url} alt="" className="w-12 h-12 rounded-lg object-cover border border-outline-variant/15 shrink-0" />
+                ) : (
+                  <div className="w-12 h-12 rounded-lg bg-surface-container-high flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-on-surface-variant text-[24px]">devices</span>
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="font-body font-semibold text-sm text-on-surface">{adminReturnPrestamo.equipos?.nombre}</p>
+                  <p className="font-body text-xs text-on-surface-variant">{adminReturnPrestamo.equipos?.tipo_equipo}</p>
+                  <p className="font-body text-xs text-primary mt-0.5">{adminReturnPrestamo.usuarios?.nombre} · {adminReturnPrestamo.usuarios?.correo}</p>
+                </div>
+                <span className={`inline-flex items-center gap-0.5 text-[10px] font-label font-semibold px-1.5 py-0.5 rounded border ${CONDICION_COLOR[adminReturnPrestamo.condicion_entrega ?? 'bueno']}`}>
+                  <span className="material-symbols-outlined text-[10px]" style={{ fontVariationSettings: "'FILL' 1" }}>{CONDICION_ICON[adminReturnPrestamo.condicion_entrega ?? 'bueno']}</span>
+                  Al prestar: {CONDICION_LABEL[adminReturnPrestamo.condicion_entrega ?? 'bueno']}
+                </span>
+              </div>
+
+              {/* Condición de devolución */}
+              <div>
+                <label className="font-label text-xs font-bold text-on-surface uppercase tracking-widest block mb-2">Condición al devolver *</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {CONDICIONES_DEVOLUCION.map(c => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => {
+                        setAdminReturnCondicion(c)
+                        if (['dano_leve','dano_grave','perdido'].includes(c)) setAdminReturnNovedad(true)
+                      }}
+                      className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-label font-semibold transition-all text-left ${adminReturnCondicion === c ? `${CONDICION_COLOR[c]} ring-2 ring-offset-1 ring-current` : 'border-outline-variant/30 text-on-surface-variant hover:bg-surface-container'}`}
+                    >
+                      <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>{CONDICION_ICON[c]}</span>
+                      {CONDICION_LABEL[c]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Notas admin */}
+              <div>
+                <label className="font-label text-xs font-bold text-on-surface uppercase tracking-widest block mb-1.5">Notas internas del equipo de TI</label>
+                <textarea
+                  value={adminReturnNotas}
+                  onChange={e => setAdminReturnNotas(e.target.value)}
+                  rows={3}
+                  maxLength={500}
+                  placeholder="Registra observaciones sobre el estado del equipo, acción a tomar, responsable, etc."
+                  className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition resize-none"
+                />
+              </div>
+
+              {/* Novedad toggle */}
+              <div className="border border-outline-variant/20 rounded-xl overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setAdminReturnNovedad(v => !v)}
+                  className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-label font-semibold transition-colors ${adminReturnNovedad ? 'bg-amber-50 text-amber-800' : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-low'}`}
+                >
+                  <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: `'FILL' ${adminReturnNovedad ? 1 : 0}` }}>warning</span>
+                  Registrar novedad / incidencia
+                  <span className="ml-auto material-symbols-outlined text-[18px]">{adminReturnNovedad ? 'expand_less' : 'expand_more'}</span>
+                </button>
+                {adminReturnNovedad && (
+                  <div className="px-4 py-3 bg-amber-50/50 space-y-3">
+                    <div>
+                      <label className="font-label text-xs text-on-surface-variant block mb-1">Tipo de novedad</label>
+                      <select value={adminReturnTipoNovedad} onChange={e => setAdminReturnTipoNovedad(e.target.value)} className="w-full rounded-lg border border-outline-variant/40 bg-white px-3 py-2 text-sm font-body focus:outline-none focus:ring-2 focus:ring-amber-400/40 appearance-none">
+                        {TIPOS_NOVEDAD.map(t => <option key={t} value={t}>{NOVEDAD_LABEL[t]}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="font-label text-xs text-on-surface-variant block mb-1">Descripción <span className="text-red-500">*</span></label>
+                      <textarea
+                        value={adminReturnDescNovedad}
+                        onChange={e => setAdminReturnDescNovedad(e.target.value)}
+                        rows={2}
+                        maxLength={300}
+                        placeholder="Describe la novedad con detalle para el registro oficial…"
+                        className={`w-full rounded-lg border px-3 py-2.5 text-sm font-body focus:outline-none focus:ring-2 focus:ring-amber-400/40 transition resize-none bg-white ${adminReturnNovedad && !adminReturnDescNovedad.trim() ? 'border-red-300' : 'border-outline-variant/40'}`}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {adminReturnError && (
+                <div className="flex items-start gap-2 bg-error-container text-on-error-container rounded-lg px-4 py-3 text-sm font-body">
+                  <span className="material-symbols-outlined text-[18px] shrink-0 mt-0.5">error</span>
+                  {adminReturnError}
+                </div>
+              )}
+
+              <div className="flex gap-3 pb-1">
+                <button
+                  type="button"
+                  onClick={() => setAdminReturnModalOpen(false)}
+                  disabled={adminReturnSubmitting}
+                  className="px-5 py-2.5 rounded-xl border border-outline-variant/30 text-sm font-label text-on-surface-variant hover:bg-surface-container transition disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSubmitDevolucionAdmin}
+                  disabled={adminReturnSubmitting || (adminReturnNovedad && !adminReturnDescNovedad.trim())}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-label font-semibold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed ${adminReturnNovedad ? 'bg-amber-600 text-white hover:bg-amber-700' : 'bg-primary text-on-primary hover:opacity-90'}`}
+                >
+                  {adminReturnSubmitting ? (
+                    <><span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />Procesando…</>
+                  ) : (
+                    <><span className="material-symbols-outlined text-[18px]">send</span>{adminReturnNovedad ? 'Registrar con novedad' : 'Confirmar devolución'}</>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
