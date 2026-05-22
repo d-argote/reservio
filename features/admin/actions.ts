@@ -416,7 +416,7 @@ export interface PrestamoEquipoAdmin {
   fecha_inicio: string
   fecha_fin_esperada: string
   fecha_devolucion: string | null
-  estado: 'activo' | 'devuelto' | 'vencido'
+  estado: 'activo' | 'devuelto' | 'vencido' | 'pendiente_revision'
   notas: string | null
   condicion_entrega: string
   condicion_devolucion: string | null
@@ -441,7 +441,7 @@ const PRESTAMOS_SELECT = `
   salas:sala_id ( id, nombre )
 `
 
-// Préstamos activos + vencidos
+// Préstamos activos + vencidos + pendiente_revision (requieren acción del admin)
 export async function getPrestamosAdmin(): Promise<{ data?: PrestamoEquipoAdmin[]; error?: string }> {
   const guard = await assertAdmin()
   if (guard) return { error: guard.error }
@@ -452,7 +452,7 @@ export async function getPrestamosAdmin(): Promise<{ data?: PrestamoEquipoAdmin[
   const { data, error } = await supabase
     .from('prestamos_equipo')
     .select(PRESTAMOS_SELECT)
-    .in('estado', ['activo', 'vencido'])
+    .in('estado', ['activo', 'vencido', 'pendiente_revision'])
     .order('fecha_fin_esperada', { ascending: true })
 
   if (error) {
@@ -548,6 +548,181 @@ export async function actualizarNotasAdmin(
     .eq('id', prestamoId)
 
   if (error) return { error: error.message }
+  return { success: true }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// REVISIÓN DE DEVOLUCIONES — flujo pendiente_revision → devuelto
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * El administrador confirma la revisión de un equipo devuelto por el usuario.
+ * Transiciona el préstamo de 'pendiente_revision' → 'devuelto' y actualiza el
+ * estado del equipo a 'disponible' o 'mantenimiento' según la condición.
+ */
+export async function confirmarRevisionAdmin(
+  prestamoId: string,
+  equipoId: string,
+  condicionDevolucion: string,
+  notasAdmin: string | null,
+  novedadTipo?: string | null,
+  descripcionNovedad?: string | null,
+): Promise<{ success?: boolean; error?: string }> {
+  const guard = await assertAdmin()
+  if (guard) return { error: guard.error }
+
+  const supabase = getSupabaseAdmin()
+  if (!supabase) return { error: 'Error interno del servidor' }
+
+  // Verify the loan is indeed in pendiente_revision
+  const { data: prestamo } = await supabase
+    .from('prestamos_equipo')
+    .select('estado')
+    .eq('id', prestamoId)
+    .single()
+
+  if (!prestamo) return { error: 'Préstamo no encontrado' }
+  if (prestamo.estado !== 'pendiente_revision') {
+    return { error: 'Este préstamo no está en estado de revisión pendiente.' }
+  }
+
+  const novedadFinal = !!novedadTipo || ['dano_leve', 'dano_grave', 'perdido'].includes(condicionDevolucion)
+
+  const { error } = await supabase
+    .from('prestamos_equipo')
+    .update({
+      estado: 'devuelto',
+      notas_admin: notasAdmin,
+      novedad: novedadFinal,
+      tipo_novedad: novedadFinal ? (novedadTipo ?? 'dano_fisico') : null,
+      descripcion_novedad: novedadFinal ? descripcionNovedad : null,
+    })
+    .eq('id', prestamoId)
+
+  if (error) return { error: error.message }
+
+  // Update equipment state based on condition
+  const nuevoEstadoEquipo: Equipo['estado'] =
+    condicionDevolucion === 'perdido' || condicionDevolucion === 'dano_grave'
+      ? 'mantenimiento'
+      : 'disponible'
+
+  await supabase.from('equipos').update({ estado: nuevoEstadoEquipo }).eq('id', equipoId)
+
+  return { success: true }
+}
+
+/**
+ * El administrador reasigna un equipo similar al usuario cuyo equipo original
+ * fue devuelto dañado. Pasos:
+ *  1. Cierra el préstamo original (pendiente_revision → devuelto con novedad)
+ *  2. Marca el equipo original como 'mantenimiento'
+ *  3. Crea un nuevo préstamo 'activo' con el equipo de reemplazo para el mismo usuario,
+ *     conservando fechas y sala del préstamo original.
+ */
+export async function reasignarEquipoAdmin(
+  prestamoOriginalId: string,
+  equipoOriginalId: string,
+  equipoReemplazoId: string,
+  usuarioId: string,
+  notasAdmin: string | null,
+): Promise<{ success?: boolean; error?: string }> {
+  const guard = await assertAdmin()
+  if (guard) return { error: guard.error }
+
+  const supabase = getSupabaseAdmin()
+  if (!supabase) return { error: 'Error interno del servidor' }
+
+  // Fetch original loan details
+  const { data: original } = await supabase
+    .from('prestamos_equipo')
+    .select('estado, sala_id, fecha_inicio, fecha_fin_esperada, condicion_entrega, condicion_devolucion, reserva_id')
+    .eq('id', prestamoOriginalId)
+    .single()
+
+  if (!original) return { error: 'Préstamo original no encontrado' }
+  if (!['pendiente_revision', 'activo', 'vencido'].includes(original.estado)) {
+    return { error: 'Solo se puede reasignar desde un préstamo activo o pendiente de revisión.' }
+  }
+
+  // Verify replacement equipment exists and is available
+  const { data: equipoReemplazo } = await supabase
+    .from('equipos')
+    .select('estado')
+    .eq('id', equipoReemplazoId)
+    .single()
+
+  if (!equipoReemplazo) return { error: 'Equipo de reemplazo no encontrado' }
+  if (equipoReemplazo.estado !== 'disponible') {
+    return { error: 'El equipo de reemplazo no está disponible (puede estar en uso, pendiente de revisión o en mantenimiento).' }
+  }
+
+  // Verify no active/pending loans exist for the replacement equipment
+  const { data: prestamosActivos } = await supabase
+    .from('prestamos_equipo')
+    .select('id, estado, fecha_inicio, fecha_fin_esperada')
+    .eq('equipo_id', equipoReemplazoId)
+    .in('estado', ['activo', 'pendiente_revision', 'vencido'])
+    .limit(1)
+
+  if (prestamosActivos && prestamosActivos.length > 0) {
+    return { error: 'El equipo de reemplazo tiene préstamos activos o pendientes de revisión y no puede ser reasignado.' }
+  }
+
+  // Verify no date overlap with existing loans for the replacement equipment
+  if (original.fecha_fin_esperada) {
+    const { data: solapados } = await supabase
+      .from('prestamos_equipo')
+      .select('id')
+      .eq('equipo_id', equipoReemplazoId)
+      .in('estado', ['activo', 'vencido'])
+      .lt('fecha_inicio', original.fecha_fin_esperada)
+      .limit(1)
+
+    if (solapados && solapados.length > 0) {
+      return { error: 'El equipo de reemplazo tiene préstamos con fechas que se solapan con el periodo del préstamo original.' }
+    }
+  }
+
+  // 1. Close original loan as devuelto with novedad (damaged)
+  const { error: closeErr } = await supabase
+    .from('prestamos_equipo')
+    .update({
+      estado: 'devuelto',
+      fecha_devolucion: new Date().toISOString(),
+      notas_admin: notasAdmin,
+      novedad: true,
+      tipo_novedad: 'dano_fisico',
+      descripcion_novedad: notasAdmin ?? 'Equipo reasignado por administrador',
+    })
+    .eq('id', prestamoOriginalId)
+
+  if (closeErr) return { error: closeErr.message }
+
+  // 2. Mark original equipment as mantenimiento
+  await supabase.from('equipos').update({ estado: 'mantenimiento' }).eq('id', equipoOriginalId)
+
+  // 3. Create new loan with replacement equipment
+  // Preserve original end date; start now
+  const { error: newLoanErr } = await supabase
+    .from('prestamos_equipo')
+    .insert({
+      equipo_id: equipoReemplazoId,
+      usuario_id: usuarioId,
+      sala_id: original.sala_id,
+      reserva_id: original.reserva_id,
+      fecha_inicio: new Date().toISOString(),
+      fecha_fin_esperada: original.fecha_fin_esperada,
+      estado: 'activo',
+      condicion_entrega: original.condicion_entrega ?? 'bueno',
+      notas: `Reemplazo del equipo original (acta vinculada al préstamo ${prestamoOriginalId})`,
+    })
+
+  if (newLoanErr) return { error: newLoanErr.message }
+
+  // 4. Mark replacement equipment as reservado
+  await supabase.from('equipos').update({ estado: 'reservado' }).eq('id', equipoReemplazoId)
+
   return { success: true }
 }
 

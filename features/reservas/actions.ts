@@ -795,19 +795,22 @@ export async function getReportData(): Promise<{ data?: ReportData; error?: stri
   const adminClient = getSupabaseAdmin()
   const queryClient = adminClient ?? supabase
 
-  const [equiposRes, salasRes, reservasRes, salasListaRes, equiposListaRes, reservasListaRes] = await Promise.allSettled([
+  const [equiposRes, salasRes, reservasRes, salasListaRes, equiposListaRes, reservasListaRes, usuariosNombresRes] = await Promise.allSettled([
     queryClient.from('equipos').select('id, categoria, estado'),
     queryClient.from('salas').select('id, estado'),
     queryClient.from('reservas').select('id, estado, fecha'),
     queryClient.from('salas').select('id, nombre, capacidad, ubicacion, estado').order('nombre'),
     queryClient.from('equipos').select('id, nombre, categoria, marca, tipo_equipo, estado, numero_serie').order('nombre').limit(200),
-    // Try to join usuarios; fall back gracefully if the FK isn't named "usuarios"
+    // Only join salas (known FK works); usuarios is looked up separately below
+    // to avoid PostgREST errors when reservas.usuario_id references auth.users.
     queryClient
       .from('reservas')
-      .select('id, titulo, fecha, hora_inicio, hora_fin, estado, salas(nombre), usuarios(nombre)')
+      .select('id, titulo, fecha, hora_inicio, hora_fin, estado, usuario_id, salas:sala_id(nombre)')
       .order('fecha', { ascending: false })
       .order('hora_inicio', { ascending: false })
       .limit(500),
+    // Parallel lookup of all user names from public.usuarios
+    queryClient.from('usuarios').select('id, nombre').limit(2000),
   ])
 
   const equiposData: { id: string; categoria: string; estado: string }[] =
@@ -822,10 +825,22 @@ export async function getReportData(): Promise<{ data?: ReportData; error?: stri
   const equiposLista: { id: string; nombre: string; categoria: string; marca: string; tipo_equipo: string; estado: string; numero_serie: string | null }[] =
     equiposListaRes.status === 'fulfilled' ? (equiposListaRes.value.data ?? []) : []
 
+  // Build userId → nombre map from the separate usuarios lookup
+  const usuariosNombresMap = new Map<string, string>()
+  if (usuariosNombresRes.status === 'fulfilled') {
+    for (const u of (usuariosNombresRes.value.data ?? []) as { id: string; nombre: string }[]) {
+      usuariosNombresMap.set(u.id, u.nombre)
+    }
+  }
+
+  if (reservasListaRes.status === 'fulfilled' && reservasListaRes.value.error) {
+    console.error('[getReportData] reservasLista query error:', reservasListaRes.value.error)
+  }
+
   type RawReserva = {
-    id: string; titulo: string; fecha: string; hora_inicio: string; hora_fin: string; estado: string
+    id: string; titulo: string; fecha: string; hora_inicio: string; hora_fin: string
+    estado: string; usuario_id: string | null
     salas: { nombre: string } | null
-    usuarios: { nombre: string } | null
   }
   const reservasListaRaw: RawReserva[] =
     reservasListaRes.status === 'fulfilled' ? ((reservasListaRes.value.data ?? []) as unknown as RawReserva[]) : []
@@ -837,7 +852,7 @@ export async function getReportData(): Promise<{ data?: ReportData; error?: stri
     hora_fin: r.hora_fin,
     estado: r.estado,
     sala_nombre: r.salas?.nombre ?? null,
-    usuario_nombre: r.usuarios?.nombre ?? null,
+    usuario_nombre: r.usuario_id ? (usuariosNombresMap.get(r.usuario_id) ?? null) : null,
   }))
 
   // Equipos por categoría
@@ -969,7 +984,7 @@ export interface PrestamoEquipo {
   fecha_inicio: string
   fecha_fin_esperada: string
   fecha_devolucion: string | null
-  estado: 'activo' | 'devuelto' | 'vencido'
+  estado: 'activo' | 'devuelto' | 'vencido' | 'pendiente_revision'
   notas: string | null
   // Gestión profesional de condición
   condicion_entrega: CondicionEquipo
@@ -1140,7 +1155,7 @@ export async function getMisPrestamos(): Promise<{ data?: PrestamoEquipo[]; erro
       salas:sala_id ( id, nombre )
     `)
     .eq('usuario_id', user.id)
-    .eq('estado', 'activo')
+    .in('estado', ['activo', 'pendiente_revision'])
     .order('fecha_fin_esperada', { ascending: true })
 
   if (error) {
@@ -1218,7 +1233,10 @@ export async function devolverEquipo(
   const novedadFinal = tieneNovedad || condicionesDegradadas.includes(condicionDevolucion)
 
   const updateData: Record<string, unknown> = {
-    estado: 'devuelto',
+    // Transition to 'pendiente_revision' so the admin can inspect the returned
+    // equipment before marking it definitively as 'devuelto' and making it
+    // available (or sending it to maintenance).
+    estado: 'pendiente_revision',
     fecha_devolucion: new Date().toISOString(),
     condicion_devolucion: condicionDevolucion,
     observaciones_devolucion: observaciones,
@@ -1236,8 +1254,9 @@ export async function devolverEquipo(
 
   if (error) return { error: error.message }
 
-  // Recalcular estado real del equipo
-  await recalcularEstadoEquipo(prestamo.equipo_id)
+  // Do NOT recalculate equipment state here — the equipment is physically back
+  // but the admin must review its condition before it becomes 'disponible'.
+  // Equipment stays 'reservado' until admin confirms via confirmarRevisionAdmin().
 
   // Email best-effort
   try {
