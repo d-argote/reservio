@@ -550,3 +550,97 @@ export async function actualizarNotasAdmin(
   if (error) return { error: error.message }
   return { success: true }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ALERTAS DE EQUIPOS — para el panel de administración
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface AlertaEquipoAdmin {
+  prestamo_id: string
+  equipo_id: string
+  equipo_nombre: string
+  usuario_nombre: string
+  usuario_correo: string
+  fecha_inicio: string
+  fecha_fin_esperada: string
+  num_acta: string | null
+  /** activo_ahora = en uso ahora; vencido = pasó su fecha y no se devolvió; proximo_24h / proximo_48h = empieza pronto */
+  tipo: 'activo_ahora' | 'vencido' | 'proximo_24h' | 'proximo_48h'
+}
+
+/**
+ * Devuelve:
+ *  - Préstamos activos en este momento (incluye los vencidos sin devolución)
+ *  - Préstamos programados que empiezan en las próximas 48 h
+ */
+export async function getAlertasEquiposAdmin(): Promise<{ data?: AlertaEquipoAdmin[]; error?: string }> {
+  const guard = await assertAdmin()
+  if (guard) return { error: guard.error }
+
+  const supabase = getSupabaseAdmin()
+  if (!supabase) return { error: 'Error interno del servidor' }
+
+  const ahora = new Date()
+  const ahoraISO = ahora.toISOString()
+  const en48hISO = new Date(ahora.getTime() + 48 * 60 * 60 * 1000).toISOString()
+
+  const ALERTA_SELECT = `
+    id, equipo_id, fecha_inicio, fecha_fin_esperada, num_acta,
+    equipos:equipo_id ( nombre ),
+    usuarios:usuario_id ( nombre, correo )
+  `
+
+  // Préstamos que ya comenzaron (activos ahora o vencidos sin devolución)
+  const { data: activosData } = await supabase
+    .from('prestamos_equipo')
+    .select(ALERTA_SELECT)
+    .eq('estado', 'activo')
+    .lte('fecha_inicio', ahoraISO)
+    .order('fecha_fin_esperada', { ascending: true })
+
+  // Próximos en las próximas 48 h
+  const { data: proximosData } = await supabase
+    .from('prestamos_equipo')
+    .select(ALERTA_SELECT)
+    .eq('estado', 'activo')
+    .gt('fecha_inicio', ahoraISO)
+    .lte('fecha_inicio', en48hISO)
+    .order('fecha_inicio', { ascending: true })
+
+  type AlertaRow = {
+    id: string
+    equipo_id: string
+    fecha_inicio: string
+    fecha_fin_esperada: string
+    num_acta: string | null
+    equipos: { nombre: string } | null
+    usuarios: { nombre: string; correo: string } | null
+  }
+
+  const toAlerta = (row: AlertaRow, tipo: AlertaEquipoAdmin['tipo']): AlertaEquipoAdmin => ({
+    prestamo_id: row.id,
+    equipo_id: row.equipo_id,
+    equipo_nombre: row.equipos?.nombre ?? '—',
+    usuario_nombre: row.usuarios?.nombre ?? '—',
+    usuario_correo: row.usuarios?.correo ?? '—',
+    fecha_inicio: row.fecha_inicio,
+    fecha_fin_esperada: row.fecha_fin_esperada,
+    num_acta: row.num_acta,
+    tipo,
+  })
+
+  const alertas: AlertaEquipoAdmin[] = [
+    ...(activosData ?? []).map(row => {
+      const tipo: AlertaEquipoAdmin['tipo'] =
+        new Date(row.fecha_fin_esperada) < ahora ? 'vencido' : 'activo_ahora'
+      return toAlerta(row as AlertaRow, tipo)
+    }),
+    ...(proximosData ?? []).map(row => {
+      const horasHasta = (new Date(row.fecha_inicio).getTime() - ahora.getTime()) / (1000 * 60 * 60)
+      const tipo: AlertaEquipoAdmin['tipo'] = horasHasta <= 24 ? 'proximo_24h' : 'proximo_48h'
+      return toAlerta(row as AlertaRow, tipo)
+    }),
+  ]
+
+  return { data: alertas }
+}

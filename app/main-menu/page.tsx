@@ -26,10 +26,12 @@ import {
   getPrestamosAdminHistorial,
   devolverPrestamoAdmin,
   actualizarNotasAdmin,
+  getAlertasEquiposAdmin,
   type UsuarioAdmin,
   type Equipo,
   type SalaAdmin,
   type PrestamoEquipoAdmin,
+  type AlertaEquipoAdmin,
 } from '@/features/admin/actions'
 import { getSistemas, getMarcas, getTipos, getTiposDirectos, isTechCategory, TIPO_EQUIPO_LABELS, CATEGORIA_LABELS } from '@/lib/equipo-catalogo'
 import {
@@ -45,6 +47,7 @@ import {
   getSalasConDisponibilidadFecha,
   getDisponibilidadSala,
   recalcularEstadosEquiposDB,
+  getEquiposRetornos,
   type ReportData,
   type PrestamoEquipo,
   type CondicionEquipo,
@@ -417,6 +420,8 @@ export default function MainMenuPage() {
   // ── Availability timeline state ───────────────────────────────────
   const [modalFranjas, setModalFranjas] = useState<FranjaOcupada[]>([])
   const [loadingFranjas, setLoadingFranjas] = useState(false)
+  /** Incremented by realtime handler to force the modal timeline to re-fetch */
+  const [realtimeTick, setRealtimeTick] = useState(0)
 
   // ── HU-08: Preview modal de sala ─────────────────────────────────
   const [previewSala, setPreviewSala] = useState<Sala | null>(null)
@@ -430,6 +435,8 @@ export default function MainMenuPage() {
   // ── HU-07: Admin — Equipos ────────────────────────────────────────
   const [equipos, setEquipos] = useState<Equipo[]>([])
   const [loadingEquipos, setLoadingEquipos] = useState(false)
+  // Map equipo_id -> fecha_fin_esperada (ISO) para equipos actualmente prestados
+  const [equiposRetornos, setEquiposRetornos] = useState<Map<string, string>>(new Map())
   const [equipoForm, setEquipoForm] = useState({
     nombre: '',
     categoria: '',
@@ -499,6 +506,9 @@ export default function MainMenuPage() {
   const [prestamosAdminTab, setPrestamosAdminTab] = useState<'activos' | 'novedades' | 'historial'>('activos')
   const [prestamosHistorial, setPrestamosHistorial] = useState<PrestamoEquipoAdmin[]>([])
   const [loadingHistorial, setLoadingHistorial] = useState(false)
+  // ── Admin: alertas de equipos ─────────────────────────────────────────────
+  const [alertasEquipos, setAlertasEquipos] = useState<AlertaEquipoAdmin[]>([])
+  const [loadingAlertas, setLoadingAlertas] = useState(false)
   // ── Modal devolución admin ────────────────────────────────────────────────
   const [adminReturnModalOpen, setAdminReturnModalOpen] = useState(false)
   const [adminReturnPrestamo, setAdminReturnPrestamo] = useState<PrestamoEquipoAdmin | null>(null)
@@ -650,6 +660,72 @@ export default function MainMenuPage() {
     init()
   }, [router, fetchReservas, fetchCalendarReservas])
 
+  // ── Real-time: shared availability across ALL users ───────────────
+  // Subscribes to DB changes so any reservation or loan made by any user
+  // is reflected immediately on all active sessions — no page reload needed.
+  useEffect(() => {
+    let salasTimer: ReturnType<typeof setTimeout> | null = null
+    let equiposTimer: ReturnType<typeof setTimeout> | null = null
+
+    // Silent refresh: updates state without showing loading spinners
+    const triggerSalasRefresh = () => {
+      if (salasTimer) clearTimeout(salasTimer)
+      salasTimer = setTimeout(async () => {
+        const { dateStr } = getBogotaNow()
+        const result = await getSalasConDisponibilidadFecha(dateStr)
+        if (result.data) {
+          setSalas(result.data as Sala[])
+          // Nudge open reservation modal to re-fetch its timeline
+          setRealtimeTick(t => t + 1)
+        }
+      }, 1500)
+    }
+
+    const triggerEquiposRefresh = () => {
+      if (equiposTimer) clearTimeout(equiposTimer)
+      equiposTimer = setTimeout(async () => {
+        const [eqResult, retResult] = await Promise.all([getEquipos(), getEquiposRetornos()])
+        if (eqResult.data) setEquipos(eqResult.data)
+        if (retResult.data) setEquiposRetornos(new Map(retResult.data.map(r => [r.equipo_id, r.fecha_fin_esperada])))
+      }, 1500)
+    }
+
+    // Reservas table: INSERT/UPDATE/DELETE → refresh room availability + modal timeline
+    const reservasChannel = supabase
+      .channel('availability:reservas')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reservas' }, triggerSalasRefresh)
+      .subscribe()
+
+    // Salas table: UPDATE (e.g. DB trigger recalculates estado, or admin changes maintenance)
+    // This fires AFTER the DB trigger fn_recalcular_sala_estado runs, so the estado is current.
+    const salasChannel = supabase
+      .channel('availability:salas')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'salas' }, triggerSalasRefresh)
+      .subscribe()
+
+    // Prestamos table: INSERT/UPDATE/DELETE → refresh equipment availability
+    const prestamosChannel = supabase
+      .channel('availability:prestamos')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'prestamos_equipo' }, triggerEquiposRefresh)
+      .subscribe()
+
+    // Equipos table: UPDATE (DB trigger recalculates estado, or admin changes maintenance/details)
+    const equiposChannel = supabase
+      .channel('availability:equipos')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'equipos' }, triggerEquiposRefresh)
+      .subscribe()
+
+    return () => {
+      if (salasTimer) clearTimeout(salasTimer)
+      if (equiposTimer) clearTimeout(equiposTimer)
+      supabase.removeChannel(reservasChannel)
+      supabase.removeChannel(salasChannel)
+      supabase.removeChannel(prestamosChannel)
+      supabase.removeChannel(equiposChannel)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // mount-only: all referenced functions/setters are stable
+
   // ── Fetch availability whenever sala or date changes inside modal ─
   useEffect(() => {
     if (!modalOpen || !form.sala_id || !form.fecha) {
@@ -666,7 +742,8 @@ export default function MainMenuPage() {
     })
     return () => { cancelled = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modalOpen, form.sala_id, form.fecha])
+  // Note: editingReservaId intentionally omitted (stable during modal lifetime)
+  }, [modalOpen, form.sala_id, form.fecha, realtimeTick])
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
@@ -698,8 +775,9 @@ export default function MainMenuPage() {
     setLoadingEquipos(true)
     // Recalcular estados de equipos antes de cargar (fire-and-forget best-effort)
     recalcularEstadosEquiposDB().catch(() => {})
-    const result = await getEquipos()
+    const [result, retornos] = await Promise.all([getEquipos(), getEquiposRetornos()])
     if (result.data) setEquipos(result.data)
+    if (retornos.data) setEquiposRetornos(new Map(retornos.data.map(r => [r.equipo_id, r.fecha_fin_esperada])))
     setLoadingEquipos(false)
   }, [])
 
@@ -716,6 +794,13 @@ export default function MainMenuPage() {
     const result = await getPrestamosAdmin()
     if (result.data) setPrestamosAdmin(result.data)
     setLoadingPrestamosAdmin(false)
+  }, [])
+
+  const loadAlertasEquipos = useCallback(async () => {
+    setLoadingAlertas(true)
+    const result = await getAlertasEquiposAdmin()
+    if (result.data) setAlertasEquipos(result.data)
+    setLoadingAlertas(false)
   }, [])
 
   const loadPrestamosHistorial = useCallback(async (tab: 'activos' | 'novedades' | 'historial') => {
@@ -1543,7 +1628,7 @@ export default function MainMenuPage() {
                 <span>Usuarios</span>
               </button>
               <button
-                onClick={() => { handleAdminTab(); setAdminSubTab('equipment'); loadPrestamosAdmin() }}
+                onClick={() => { handleAdminTab(); setAdminSubTab('equipment'); loadPrestamosAdmin(); loadAlertasEquipos() }}
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200 ${
                   activeTab === 'admin' && adminSubTab === 'equipment'
                     ? 'border-l-[3px] border-primary bg-surface-container-lowest text-primary font-semibold'
@@ -1665,7 +1750,7 @@ export default function MainMenuPage() {
                     <span>Usuarios</span>
                   </button>
                   <button
-                    onClick={() => { handleAdminTab(); setAdminSubTab('equipment'); loadPrestamosAdmin(); setMobileMenuOpen(false) }}
+                    onClick={() => { handleAdminTab(); setAdminSubTab('equipment'); loadPrestamosAdmin(); loadAlertasEquipos(); setMobileMenuOpen(false) }}
                     className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200 ${
                       activeTab === 'admin' && adminSubTab === 'equipment'
                         ? 'bg-surface-container-lowest text-primary font-semibold'
@@ -1779,7 +1864,7 @@ export default function MainMenuPage() {
             )}
             {activeTab === 'rooms' && (
               <button
-                onClick={() => openModal()}
+                onClick={() => { if (!FEATURES.reservations) { showComingSoon(); return }; openModal() }}
                 className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label font-medium text-sm shadow-sm hover:shadow-md hover:brightness-105 transition-all duration-200"
               >
                 <span className="material-symbols-outlined text-[20px]">add</span>
@@ -2057,9 +2142,9 @@ export default function MainMenuPage() {
                     mantenimiento: { bg: 'bg-yellow-500/20', text: 'text-yellow-50', border: 'border-yellow-500/30', dot: 'bg-yellow-400',                                         label: 'Mantenimiento' },
                   }[disp] ?? { bg: 'bg-surface/20', text: 'text-on-surface', border: 'border-outline/30', dot: 'bg-outline', label: sala.estado }
 
-                  const HORA_APERTURA_MIN = 7 * 60    // 07:00 → 420 min
-                  const HORA_CIERRE_MIN   = 22 * 60   // 22:00 → 1320 min
-                  const jornada = HORA_CIERRE_MIN - HORA_APERTURA_MIN  // 900 min
+                  const HORA_APERTURA_MIN = 0          // 00:00 → 0 min
+                  const HORA_CIERRE_MIN   = 24 * 60   // 24:00 → 1440 min
+                  const jornada = HORA_CIERRE_MIN - HORA_APERTURA_MIN  // 1440 min
 
                   const toMin = (t: string) => {
                     const [h, m] = t.split(':').map(Number)
@@ -2114,9 +2199,9 @@ export default function MainMenuPage() {
                         const showNow = nowMin >= HORA_APERTURA_MIN && nowMin <= HORA_CIERRE_MIN
                         return (
                           <div className="mt-4">
-                            {/* Hour tick labels */}
+                            {/* Hour tick labels: every 6 h across full day (00 → 06 → 12 → 18) */}
                             <div className="relative h-3 mb-0.5">
-                              {[7, 10, 13, 16, 19, 22].map(h => {
+                              {[0, 6, 12, 18].map(h => {
                                 const pct = ((h * 60 - HORA_APERTURA_MIN) / jornada) * 100
                                 return (
                                   <span
@@ -2412,18 +2497,30 @@ export default function MainMenuPage() {
                           )}
                           <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-80" />
                           <div className="absolute bottom-4 left-4 right-4 flex justify-between items-end">
-                            <span className={`inline-flex items-center gap-1.5 text-xs font-label font-bold px-2.5 py-1 rounded-md uppercase tracking-wider backdrop-blur-md ${
-                              item.estado === 'disponible'     ? 'bg-green-500/20 text-green-50 border border-green-500/30'  :
-                              item.estado === 'reservado'      ? 'bg-blue-500/20 text-blue-50 border border-blue-500/30'     :
-                              'bg-orange-500/20 text-orange-50 border border-orange-500/30'
-                            }`}>
-                              <span className={`w-1.5 h-1.5 rounded-full ${
-                                item.estado === 'disponible' ? 'bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.8)]' :
-                                item.estado === 'reservado'  ? 'bg-blue-400' :
-                                'bg-orange-400'
-                              }`} />
-                              {item.estado === 'disponible' ? 'Disponible' : item.estado === 'reservado' ? 'Reservado' : 'Mantenimiento'}
-                            </span>
+                            {(() => {
+                              const retorno = equiposRetornos.get(item.id)
+                              const estaEnUsoAhora = item.estado === 'reservado' && !!retorno
+                              const estaReservadoFuturo = item.estado === 'reservado' && !retorno
+                              return (
+                                <span className={`inline-flex items-center gap-1.5 text-xs font-label font-bold px-2.5 py-1 rounded-md uppercase tracking-wider backdrop-blur-md ${
+                                  item.estado === 'disponible'  ? 'bg-green-500/20 text-green-50 border border-green-500/30'  :
+                                  estaEnUsoAhora               ? 'bg-blue-500/20 text-blue-50 border border-blue-500/30'     :
+                                  estaReservadoFuturo          ? 'bg-sky-500/20 text-sky-100 border border-sky-400/30'       :
+                                  'bg-orange-500/20 text-orange-50 border border-orange-500/30'
+                                }`}>
+                                  <span className={`w-1.5 h-1.5 rounded-full ${
+                                    item.estado === 'disponible' ? 'bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.8)]' :
+                                    estaEnUsoAhora               ? 'bg-blue-400' :
+                                    estaReservadoFuturo          ? 'bg-sky-300' :
+                                    'bg-orange-400'
+                                  }`} />
+                                  {item.estado === 'disponible' ? 'Disponible' :
+                                   estaEnUsoAhora               ? 'En uso' :
+                                   estaReservadoFuturo          ? 'Reservado' :
+                                   'Mantenimiento'}
+                                </span>
+                              )
+                            })()}
                           </div>
                         </div>
 
@@ -2450,6 +2547,26 @@ export default function MainMenuPage() {
                             )}
                           </div>
 
+                          {/* Información de disponibilidad temporal */}
+                          {item.estado === 'reservado' && (() => {
+                            const retorno = equiposRetornos.get(item.id)
+                            if (retorno) {
+                              const retornoDate = new Date(retorno)
+                              return (
+                                <div className="mt-2 flex items-center gap-1.5 text-xs font-body text-blue-600 bg-blue-50 border border-blue-100 rounded-lg px-2.5 py-1.5">
+                                  <span className="material-symbols-outlined text-[13px]" style={{ fontVariationSettings: "'FILL' 1" }}>schedule</span>
+                                  Disponible aprox. {retornoDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' })} {retornoDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })}
+                                </div>
+                              )
+                            }
+                            return (
+                              <div className="mt-2 flex items-center gap-1.5 text-xs font-body text-sky-600 bg-sky-50 border border-sky-100 rounded-lg px-2.5 py-1.5">
+                                <span className="material-symbols-outlined text-[13px]" style={{ fontVariationSettings: "'FILL' 1" }}>event_upcoming</span>
+                                Reservado para una fecha futura
+                              </div>
+                            )
+                          })()}
+
                           <div className="mt-6 pt-4 border-t border-outline-variant/15 mt-auto">
                             <button
                               onClick={() => handleSolicitarEquipo(item)}
@@ -2461,7 +2578,12 @@ export default function MainMenuPage() {
                                   <span className="material-symbols-outlined text-[18px]">add_shopping_cart</span>
                                   Solicitar Equipo
                                 </>
-                              ) : item.estado === 'reservado' ? 'Actualmente Reservado' : 'En Mantenimiento'}
+                              ) : item.estado === 'reservado' ? (
+                                <>
+                                  <span className="material-symbols-outlined text-[18px]">block</span>
+                                  {equiposRetornos.has(item.id) ? 'En uso — no disponible' : 'Reservado — no disponible'}
+                                </>
+                              ) : 'En Mantenimiento'}
                             </button>
                           </div>
                         </div>
@@ -2539,7 +2661,7 @@ export default function MainMenuPage() {
                   </span>
                 </button>
                 <button
-                  onClick={() => { setAdminSubTab('equipment'); loadEquipos() }}
+                  onClick={() => { setAdminSubTab('equipment'); loadEquipos(); loadAlertasEquipos() }}
                   className={`px-5 py-2.5 text-sm font-label font-semibold rounded-t-lg border-b-2 transition-colors ${
                     adminSubTab === 'equipment'
                       ? 'border-primary text-primary'
@@ -3342,6 +3464,133 @@ export default function MainMenuPage() {
                       )}
                     </div>
 
+                    {/* ── Panel de Alertas de Inventario ─────────────────── */}
+                    {(loadingAlertas || alertasEquipos.length > 0) && (() => {
+                      const vencidos      = alertasEquipos.filter(a => a.tipo === 'vencido')
+                      const enUso         = alertasEquipos.filter(a => a.tipo === 'activo_ahora')
+                      const proximos24    = alertasEquipos.filter(a => a.tipo === 'proximo_24h')
+                      const proximos48    = alertasEquipos.filter(a => a.tipo === 'proximo_48h')
+                      return (
+                        <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 shadow-sm overflow-hidden">
+                          <div className="flex items-center gap-2 px-5 py-3 border-b border-outline-variant/15 bg-surface-container">
+                            <span className="material-symbols-outlined text-amber-500 text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>notification_important</span>
+                            <h3 className="font-label text-sm font-bold text-on-surface">Alertas de Inventario</h3>
+                            {vencidos.length > 0 && (
+                              <span className="ml-1 inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-[10px] font-bold">{vencidos.length} vencido{vencidos.length !== 1 ? 's' : ''}</span>
+                            )}
+                            {(proximos24.length + proximos48.length) > 0 && (
+                              <span className="ml-1 inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-bold">{proximos24.length + proximos48.length} próximo{(proximos24.length + proximos48.length) !== 1 ? 's' : ''}</span>
+                            )}
+                            <button onClick={loadAlertasEquipos} className="ml-auto p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container-low transition-colors" title="Actualizar alertas">
+                              <span className={`material-symbols-outlined text-[16px] ${loadingAlertas ? 'animate-spin' : ''}`}>refresh</span>
+                            </button>
+                          </div>
+                          {loadingAlertas ? (
+                            <div className="flex items-center justify-center gap-2 py-6 text-sm font-body text-on-surface-variant">
+                              <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                              Cargando alertas…
+                            </div>
+                          ) : (
+                            <div className="p-4 space-y-4">
+                              {/* Préstamos vencidos */}
+                              {vencidos.length > 0 && (
+                                <div>
+                                  <p className="font-label text-[11px] uppercase tracking-widest text-red-600 mb-2 flex items-center gap-1">
+                                    <span className="material-symbols-outlined text-[13px]" style={{ fontVariationSettings: "'FILL' 1" }}>event_busy</span>
+                                    No devueltos — vencidos ({vencidos.length})
+                                  </p>
+                                  <div className="space-y-1.5">
+                                    {vencidos.map(a => (
+                                      <div key={a.prestamo_id} className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                                        <span className="material-symbols-outlined text-red-500 text-[16px]" style={{ fontVariationSettings: "'FILL' 1" }}>devices</span>
+                                        <div className="flex-1 min-w-0">
+                                          <span className="font-label text-xs font-bold text-on-surface">{a.equipo_nombre}</span>
+                                          <span className="font-body text-xs text-on-surface-variant ml-2">— {a.usuario_nombre}</span>
+                                          {a.num_acta && <span className="font-mono text-[10px] text-on-surface-variant/70 ml-2">{a.num_acta}</span>}
+                                        </div>
+                                        <span className="font-body text-[11px] text-red-500 whitespace-nowrap">
+                                          Venció {new Date(a.fecha_fin_esperada).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' })}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {/* Equipos en uso ahora */}
+                              {enUso.length > 0 && (
+                                <div>
+                                  <p className="font-label text-[11px] uppercase tracking-widest text-blue-600 mb-2 flex items-center gap-1">
+                                    <span className="material-symbols-outlined text-[13px]" style={{ fontVariationSettings: "'FILL' 1" }}>hourglass_top</span>
+                                    En uso ahora ({enUso.length})
+                                  </p>
+                                  <div className="space-y-1.5">
+                                    {enUso.map(a => (
+                                      <div key={a.prestamo_id} className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                                        <span className="material-symbols-outlined text-blue-500 text-[16px]" style={{ fontVariationSettings: "'FILL' 1" }}>devices</span>
+                                        <div className="flex-1 min-w-0">
+                                          <span className="font-label text-xs font-bold text-on-surface">{a.equipo_nombre}</span>
+                                          <span className="font-body text-xs text-on-surface-variant ml-2">— {a.usuario_nombre}</span>
+                                        </div>
+                                        <span className="font-body text-[11px] text-blue-600 whitespace-nowrap">
+                                          Devuelve {new Date(a.fecha_fin_esperada).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' })} {new Date(a.fecha_fin_esperada).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {/* Próximos en 24 h */}
+                              {proximos24.length > 0 && (
+                                <div>
+                                  <p className="font-label text-[11px] uppercase tracking-widest text-amber-600 mb-2 flex items-center gap-1">
+                                    <span className="material-symbols-outlined text-[13px]" style={{ fontVariationSettings: "'FILL' 1" }}>event_upcoming</span>
+                                    Próximos en las siguientes 24 h — preparar ({proximos24.length})
+                                  </p>
+                                  <div className="space-y-1.5">
+                                    {proximos24.map(a => (
+                                      <div key={a.prestamo_id} className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                                        <span className="material-symbols-outlined text-amber-500 text-[16px]" style={{ fontVariationSettings: "'FILL' 1" }}>devices</span>
+                                        <div className="flex-1 min-w-0">
+                                          <span className="font-label text-xs font-bold text-on-surface">{a.equipo_nombre}</span>
+                                          <span className="font-body text-xs text-on-surface-variant ml-2">— {a.usuario_nombre}</span>
+                                        </div>
+                                        <span className="font-body text-[11px] text-amber-600 whitespace-nowrap">
+                                          Inicia {new Date(a.fecha_inicio).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' })} {new Date(a.fecha_inicio).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {/* Próximos en 48 h */}
+                              {proximos48.length > 0 && (
+                                <div>
+                                  <p className="font-label text-[11px] uppercase tracking-widest text-sky-600 mb-2 flex items-center gap-1">
+                                    <span className="material-symbols-outlined text-[13px]" style={{ fontVariationSettings: "'FILL' 1" }}>calendar_clock</span>
+                                    Próximos en 24–48 h ({proximos48.length})
+                                  </p>
+                                  <div className="space-y-1.5">
+                                    {proximos48.map(a => (
+                                      <div key={a.prestamo_id} className="flex items-center gap-2 bg-sky-50 border border-sky-100 rounded-lg px-3 py-2">
+                                        <span className="material-symbols-outlined text-sky-500 text-[16px]" style={{ fontVariationSettings: "'FILL' 1" }}>devices</span>
+                                        <div className="flex-1 min-w-0">
+                                          <span className="font-label text-xs font-bold text-on-surface">{a.equipo_nombre}</span>
+                                          <span className="font-body text-xs text-on-surface-variant ml-2">— {a.usuario_nombre}</span>
+                                        </div>
+                                        <span className="font-body text-[11px] text-sky-600 whitespace-nowrap">
+                                          Inicia {new Date(a.fecha_inicio).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' })} {new Date(a.fecha_inicio).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
+
                     {/* ── Gestión de Préstamos (admin) ───────────────────── */}
                     <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 shadow-sm overflow-hidden">
                       {/* Header con tabs */}
@@ -3350,7 +3599,7 @@ export default function MainMenuPage() {
                           <span className="material-symbols-outlined text-primary text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>assignment</span>
                           <h3 className="font-label text-sm font-bold text-on-surface">Gestión de Préstamos</h3>
                           <button
-                            onClick={() => { loadPrestamosAdmin(); loadPrestamosHistorial(prestamosAdminTab) }}
+                            onClick={() => { loadPrestamosAdmin(); loadPrestamosHistorial(prestamosAdminTab); loadAlertasEquipos() }}
                             className="ml-auto p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container-low transition-colors"
                             title="Actualizar"
                           >
@@ -3427,10 +3676,14 @@ export default function MainMenuPage() {
                               </thead>
                               <tbody className="divide-y divide-outline-variant/10">
                                 {items.map(p => {
+                                  const inicioDate = new Date(p.fecha_inicio)
                                   const finDate = new Date(p.fecha_fin_esperada)
-                                  const isOverdue = p.estado === 'activo' && finDate < new Date()
+                                  const ahora = new Date()
+                                  const isProgramado = p.estado === 'activo' && inicioDate > ahora
+                                  const isEnUso = p.estado === 'activo' && inicioDate <= ahora && finDate > ahora
+                                  const isOverdue = p.estado === 'activo' && finDate <= ahora
                                   return (
-                                    <tr key={p.id} className={`hover:bg-surface-container/40 transition-colors ${isOverdue ? 'bg-red-50/20' : p.novedad ? 'bg-amber-50/20' : ''}`}>
+                                    <tr key={p.id} className={`hover:bg-surface-container/40 transition-colors ${isOverdue ? 'bg-red-50/20' : isProgramado ? 'bg-sky-50/10' : p.novedad ? 'bg-amber-50/20' : ''}`}>
                                       {/* Equipo */}
                                       <td className="px-4 py-3">
                                         <div className="flex items-center gap-2">
@@ -3474,9 +3727,14 @@ export default function MainMenuPage() {
                                       {/* Estado */}
                                       <td className="px-4 py-3">
                                         <div className="space-y-0.5">
-                                          {p.estado === 'activo' && !isOverdue && (
+                                          {isProgramado && (
+                                            <span className="inline-flex items-center gap-0.5 text-[10px] font-label font-semibold px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 border border-sky-200">
+                                              <span className="material-symbols-outlined text-[10px]" style={{ fontVariationSettings: "'FILL' 1" }}>event_upcoming</span>Programado
+                                            </span>
+                                          )}
+                                          {isEnUso && (
                                             <span className="inline-flex items-center gap-0.5 text-[10px] font-label font-semibold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 border border-blue-200">
-                                              <span className="material-symbols-outlined text-[10px]" style={{ fontVariationSettings: "'FILL' 1" }}>hourglass_top</span>Activo
+                                              <span className="material-symbols-outlined text-[10px]" style={{ fontVariationSettings: "'FILL' 1" }}>hourglass_top</span>En uso
                                             </span>
                                           )}
                                           {isOverdue && (
@@ -3489,10 +3747,16 @@ export default function MainMenuPage() {
                                               <span className="material-symbols-outlined text-[10px]" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>Devuelto
                                             </span>
                                           )}
+                                          {/* Inicio para préstamos programados */}
+                                          {isProgramado && (
+                                            <p className="font-body text-[10px] text-sky-600">
+                                              Inicia: {inicioDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' })} {inicioDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })}
+                                            </p>
+                                          )}
                                           <p className={`font-body text-xs ${isOverdue ? 'text-red-500' : 'text-on-surface-variant'}`}>
                                             {p.estado === 'devuelto' && p.fecha_devolucion
                                               ? new Date(p.fecha_devolucion).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' })
-                                              : `${finDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' })} ${finDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })}`
+                                              : `Devol: ${finDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' })} ${finDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })}`
                                             }
                                           </p>
                                           {p.salas && <p className="font-body text-[10px] text-on-surface-variant/70">{p.salas.nombre}</p>}
@@ -3501,14 +3765,20 @@ export default function MainMenuPage() {
                                       {/* Acciones */}
                                       <td className="px-4 py-3">
                                         <div className="flex flex-col gap-1.5">
-                                          {(p.estado === 'activo' || p.estado === 'vencido') && (
+                                          {(p.estado === 'activo' || p.estado === 'vencido') && !isProgramado && (
                                             <button
                                               onClick={() => handleAbrirDevolucionAdmin(p)}
                                               className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary text-on-primary text-xs font-label font-semibold hover:opacity-90 transition"
                                             >
                                               <span className="material-symbols-outlined text-[13px]">assignment_return</span>
-                                              Registrar
+                                              Registrar devolución
                                             </button>
+                                          )}
+                                          {isProgramado && (
+                                            <span className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-sky-50 text-sky-600 border border-sky-200 text-xs font-label font-semibold">
+                                              <span className="material-symbols-outlined text-[13px]">schedule</span>
+                                              Pendiente de entrega
+                                            </span>
                                           )}
                                           {p.foto_devolucion_url && (
                                             <a
@@ -4533,10 +4803,16 @@ export default function MainMenuPage() {
                     <option
                       key={s.id}
                       value={s.id}
-                      disabled={s.estado !== 'disponible'}
+                      disabled={s.estado === 'mantenimiento'}
                     >
                       {s.nombre} — cap. {s.capacidad}
-                      {s.estado !== 'disponible' ? ` (${s.estado})` : ''}
+                      {s.estado === 'mantenimiento'
+                        ? ' (mantenimiento)'
+                        : s.disponibilidad === 'ocupada_total'
+                          ? ' (sin disponibilidad hoy)'
+                          : s.disponibilidad === 'parcial'
+                            ? ' (parcialmente ocupada hoy)'
+                            : ''}
                     </option>
                   ))}
                 </select>
@@ -4567,26 +4843,33 @@ export default function MainMenuPage() {
                 />
               </div>
 
-              {/* Availability timeline — shown once sala + fecha are selected */}
-              {form.sala_id && form.fecha && (
-                <AvailabilityTimeline
-                  franjas={modalFranjas}
-                  horaInicio={form.hora_inicio || undefined}
-                  horaFin={form.hora_fin || undefined}
-                  loading={loadingFranjas}
-                  onSelectWindow={(inicio, fin) => {
-                    setForm(f => {
-                      const next = { ...f, hora_inicio: inicio }
-                      if (duracionPreset !== 'libre' && duracionPreset !== 'dia' && typeof duracionPreset === 'number') {
-                        const calculated = addHoras(inicio, duracionPreset)
-                        next.hora_fin = calculated <= fin ? calculated : fin
-                      } else {
-                        next.hora_fin = fin
-                      }
-                      return next
-                    })
-                  }}
-                />
+              {/* Availability timeline — always visible; shows prompt until sala is chosen */}
+              {form.fecha && (
+                form.sala_id ? (
+                  <AvailabilityTimeline
+                    franjas={modalFranjas}
+                    horaInicio={form.hora_inicio || undefined}
+                    horaFin={form.hora_fin || undefined}
+                    loading={loadingFranjas}
+                    onSelectWindow={(inicio, fin) => {
+                      setForm(f => {
+                        const next = { ...f, hora_inicio: inicio }
+                        if (duracionPreset !== 'libre' && duracionPreset !== 'dia' && typeof duracionPreset === 'number') {
+                          const calculated = addHoras(inicio, duracionPreset)
+                          next.hora_fin = calculated <= fin ? calculated : fin
+                        } else {
+                          next.hora_fin = fin
+                        }
+                        return next
+                      })
+                    }}
+                  />
+                ) : (
+                  <div className="rounded-xl border border-outline-variant/20 bg-surface-container-lowest px-4 py-3 flex items-center gap-3 text-sm font-body text-on-surface-variant">
+                    <span className="material-symbols-outlined text-[20px] text-outline shrink-0">schedule</span>
+                    <span>Selecciona una sala para ver su disponibilidad</span>
+                  </div>
+                )
               )}
 
               {/* Duración preestablecida */}
@@ -4832,11 +5115,15 @@ export default function MainMenuPage() {
                     setPreviewSala(null)
                     openModal(previewSala?.id)
                   }}
-                  disabled={previewSala?.estado !== 'disponible'}
+                  disabled={previewSala?.estado === 'mantenimiento'}
                   className="w-full py-3 rounded-xl bg-primary text-on-primary font-label text-sm font-bold hover:brightness-105 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   <span className="material-symbols-outlined text-[18px]">calendar_add_on</span>
-                  {previewSala?.estado === 'disponible' ? 'Reservar esta sala' : 'No disponible'}
+                  {previewSala?.estado === 'mantenimiento'
+                    ? 'En mantenimiento'
+                    : previewSala?.estado === 'ocupada'
+                      ? 'Ver horarios / Reservar'
+                      : 'Reservar esta sala'}
                 </button>
                 <button
                   onClick={() => setPreviewSala(null)}

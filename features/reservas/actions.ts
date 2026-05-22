@@ -424,9 +424,23 @@ export async function createReserva(
   const adminClient = getSupabaseAdmin()
   const writeClient = adminClient ?? supabase
 
-  // ── 1. Pre-insert conflict checks + fetch sala nombre — TODO en paralelo ──
-  // Sala overlap + todos los equipos en UNA sola query + nombre de sala para email.
-  const [salaCheck, equipoCheck, salaInfoResult] = await Promise.all([
+  // ── 1. Pre-insert conflict checks + fetch sala nombre — todo en paralelo ──
+  // Three checks run in parallel:
+  //   a) Room overlap check (via reservas table)
+  //   b) Equipment check via reserva_equipos (user reservations)
+  //   c) Equipment check via prestamos_equipo (standalone admin loans that don't go through reserva_equipos)
+  //   d) Sala name for the confirmation email
+  //
+  // Note: these are application-layer early-return guards for a good UX.
+  // The DB-level EXCLUDE constraints (no_sala_overlap, no_equipo_overlap) are the
+  // atomic safety net that prevents race conditions when two users submit simultaneously.
+  const horaInicioStr    = data.hora_inicio.length === 5 ? `${data.hora_inicio}:00` : data.hora_inicio
+  const horaFinStr       = data.hora_fin.length === 5    ? `${data.hora_fin}:00`    : data.hora_fin
+  const fechaInicioCk    = `${data.fecha}T${horaInicioStr}-05:00`
+  const fechaFinCk       = `${data.fecha}T${horaFinStr}-05:00`
+
+  const [salaCheck, equipoReservaCheck, equipoPrestamoCheck, salaInfoResult] = await Promise.all([
+    // a) Room: no other confirmed/pending reservation overlaps this slot
     supabase
       .from('reservas')
       .select('id', { count: 'exact', head: true })
@@ -436,6 +450,7 @@ export async function createReserva(
       .lt('hora_inicio', data.hora_fin)
       .gt('hora_fin', data.hora_inicio),
 
+    // b) Equipment: no other confirmed/pending reservation uses these equipos at this time
     equiposIds.length > 0
       ? writeClient
           .from('reserva_equipos')
@@ -447,14 +462,29 @@ export async function createReserva(
           .gt('reservas.hora_fin', data.hora_inicio)
       : Promise.resolve({ data: [] as { equipo_id: string }[], error: null }),
 
+    // c) Equipment: no standalone admin loan overlaps this time window
+    equiposIds.length > 0
+      ? writeClient
+          .from('prestamos_equipo')
+          .select('equipo_id', { count: 'exact', head: true })
+          .in('equipo_id', equiposIds)
+          .eq('estado', 'activo')
+          .lt('fecha_inicio', fechaFinCk)
+          .gt('fecha_fin_esperada', fechaInicioCk)
+      : Promise.resolve({ count: 0, error: null }),
+
+    // d) Sala name for the email
     supabase.from('salas').select('nombre').eq('id', data.sala_id).single(),
   ])
 
   if ((salaCheck.count ?? 0) > 0) {
     return { error: 'La sala ya tiene una reserva en ese horario. Elige otra franja horaria.' }
   }
-  if (equipoCheck.data && equipoCheck.data.length > 0) {
+  if (equipoReservaCheck.data && equipoReservaCheck.data.length > 0) {
     return { error: 'El equipo seleccionado ya está reservado en esa franja horaria. Elige otro horario o equipo.' }
+  }
+  if ((equipoPrestamoCheck.count ?? 0) > 0) {
+    return { error: 'Uno de los equipos seleccionados tiene un préstamo activo en ese horario. Elige otro equipo.' }
   }
 
   // ── 2. Insertar reserva ───────────────────────────────────────────────────
@@ -472,13 +502,18 @@ export async function createReserva(
     .select('id')
     .single()
 
-  if (error) return { error: error.message }
+  if (error) {
+    // 23P01 = PostgreSQL exclusion_violation (DB-level atomic overlap constraint)
+    if (error.code === '23P01') {
+      return { error: 'La sala ya tiene una reserva en ese horario. Elige otra franja horaria.' }
+    }
+    return { error: error.message }
+  }
   if (!reserva) return { error: 'Error al crear la reserva' }
 
   // ── 3. Insertar pivote + préstamos en paralelo ────────────────────────────
   if (equiposIds.length > 0) {
-    const horaInicioStr    = data.hora_inicio.length === 5 ? `${data.hora_inicio}:00` : data.hora_inicio
-    const horaFinStr       = data.hora_fin.length === 5    ? `${data.hora_fin}:00`    : data.hora_fin
+    // horaInicioStr / horaFinStr already declared above in the conflict-check block
     const fechaInicio      = `${data.fecha}T${horaInicioStr}-05:00`
     const fechaFinEsperada = `${data.fecha}T${horaFinStr}-05:00`
 
@@ -504,6 +539,10 @@ export async function createReserva(
     }
     if (prestamosRes.error) {
       console.error('[createReserva] Error inserting prestamos_equipo:', prestamosRes.error)
+      // 23P01 = exclusion_violation — equipment already booked at this time by another user
+      if (prestamosRes.error.code === '23P01') {
+        return { data: { id: reserva.id }, prestamosError: 'Uno de los equipos ya fue reservado por otro usuario en ese horario. Elige equipos diferentes.' }
+      }
       return { data: { id: reserva.id }, prestamosError: prestamosRes.error.message }
     }
 
@@ -918,8 +957,12 @@ export async function createPrestamoEquipo(
     .single()
 
   if (!equipo) return { error: 'Equipo no encontrado' }
-  if (equipo.estado !== 'disponible') {
-    return { error: 'El equipo ya no está disponible. Puede que alguien más lo haya solicitado.' }
+  // Only block on maintenance — a 'reservado' estado means a CURRENT active loan,
+  // but the time-overlap check below correctly handles future/non-overlapping schedules.
+  // Using the stale estado column to block all non-'disponible' equipment would
+  // incorrectly prevent valid loans when the existing loan does not overlap.
+  if (equipo.estado === 'mantenimiento') {
+    return { error: 'El equipo se encuentra en mantenimiento y no puede ser prestado.' }
   }
   // Validar que el equipo pertenece a la sala de la reserva (si tiene sala asignada)
   if (equipo.sala_id && equipo.sala_id !== reserva.sala_id) {
@@ -937,6 +980,22 @@ export async function createPrestamoEquipo(
     ? `${reservaDetalle.fecha}T${String(reservaDetalle.hora_inicio).slice(0, 8)}-05:00`
     : new Date().toISOString()
 
+  // Verificar que no haya préstamos activos que se solapen con este horario
+  // Solape: existente.inicio < nuevo.fin  Y  existente.fin > nuevo.inicio
+  const fechaFinConZona = `${fechaFinEsperada}-05:00`
+  const { count: conflictos, error: errorConflicto } = await supabase
+    .from('prestamos_equipo')
+    .select('id', { count: 'exact', head: true })
+    .eq('equipo_id', equipoId)
+    .eq('estado', 'activo')
+    .lt('fecha_inicio', fechaFinConZona)
+    .gt('fecha_fin_esperada', horaInicioReserva)
+
+  if (errorConflicto) return { error: 'Error al verificar disponibilidad del equipo.' }
+  if ((conflictos ?? 0) > 0) {
+    return { error: 'El equipo ya tiene un préstamo registrado que se solapa con el horario de tu reserva. Por favor elige otro equipo o un horario diferente.' }
+  }
+
   const { data: prestamo, error } = await supabase
     .from('prestamos_equipo')
     .insert({
@@ -952,7 +1011,14 @@ export async function createPrestamoEquipo(
     .select('id, num_acta')
     .single()
 
-  if (error) return { error: error.message }
+  if (error) {
+    // 23P01 = exclusion_violation — DB-level atomic constraint caught a race condition
+    // (two users requested the same equipment at the exact same instant)
+    if (error.code === '23P01') {
+      return { error: 'El equipo ya fue reservado por otro usuario en ese horario. Por favor elige otro equipo o un horario diferente.' }
+    }
+    return { error: error.message }
+  }
   if (!prestamo) return { error: 'Error al registrar el préstamo' }
 
   // Marcar equipo como 'reservado' solo si la reserva está activa AHORA
@@ -1014,6 +1080,45 @@ export async function getMisPrestamos(): Promise<{ data?: PrestamoEquipo[]; erro
     return { error: error.message }
   }
   return { data: (data ?? []) as unknown as PrestamoEquipo[] }
+}
+
+/**
+ * Devuelve la fecha estimada de retorno para equipos actualmente prestados.
+ * Sólo expone el equipo_id y la fecha — sin datos del usuario — para su uso
+ * en la vista pública de equipos.
+ */
+export async function getEquiposRetornos(): Promise<{
+  data?: { equipo_id: string; fecha_fin_esperada: string }[]
+  error?: string
+}> {
+  const { user, supabase } = await getAuthUser()
+  if (!user) return { data: [] }
+
+  const ahora = new Date().toISOString()
+
+  const { data, error } = await supabase
+    .from('prestamos_equipo')
+    .select('equipo_id, fecha_fin_esperada')
+    .eq('estado', 'activo')
+    .lte('fecha_inicio', ahora)
+    .gt('fecha_fin_esperada', ahora)
+    .order('fecha_fin_esperada', { ascending: true })
+
+  if (error) {
+    if (error.code === '42P01') return { data: [] }
+    return { error: error.message }
+  }
+
+  // Si un equipo tiene múltiples filas (no debería con el overlap check), quedarse con la más lejana
+  const map = new Map<string, string>()
+  for (const row of data ?? []) {
+    const existing = map.get(row.equipo_id)
+    if (!existing || row.fecha_fin_esperada > existing) {
+      map.set(row.equipo_id, row.fecha_fin_esperada)
+    }
+  }
+
+  return { data: Array.from(map.entries()).map(([equipo_id, fecha_fin_esperada]) => ({ equipo_id, fecha_fin_esperada })) }
 }
 
 export async function devolverEquipo(
@@ -1135,9 +1240,10 @@ export async function updatePrestamoReserva(
 // DISPONIBILIDAD POR FRANJA HORARIA
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Horario operativo del sistema (debe coincidir con HOUR_START / HOUR_END del calendario)
-const HORA_APERTURA = '07:00'
-const HORA_CIERRE   = '22:00'
+// Horario operativo del sistema: día completo 00:00 – 23:59
+// (debe coincidir con APERTURA / CIERRE de AvailabilityTimeline y HOUR_START / HOUR_END del calendario)
+const HORA_APERTURA = '00:00'
+const HORA_CIERRE   = '23:59'
 
 /**
  * Calcula el estado de disponibilidad de una sala para una fecha dada.
@@ -1190,14 +1296,17 @@ function calcularDisponibilidadSala(
 export async function getSalasConDisponibilidadFecha(
   fecha: string,  // 'YYYY-MM-DD'
 ): Promise<{ data?: SalaDisponibilidad[]; error?: string }> {
-  const supabase = await createClient()
+  // Use admin client so RLS does not hide reservations made by other users.
+  // Availability data is read-only and must reflect all reservations.
+  const admin = getSupabaseAdmin()
+  if (!admin) return { error: 'Admin client no disponible' }
 
   const [salasResult, reservasResult] = await Promise.allSettled([
-    supabase
+    admin
       .from('salas')
       .select('id, nombre, descripcion, capacidad, ubicacion, imagen_url, estado')
       .order('nombre'),
-    supabase
+    admin
       .from('reservas')
       .select('sala_id, hora_inicio, hora_fin, titulo, estado')
       .eq('fecha', fecha)
@@ -1255,9 +1364,12 @@ export async function getDisponibilidadSala(
   fecha: string,
   excludeReservaId?: string,
 ): Promise<{ franjas?: FranjaOcupada[]; error?: string }> {
-  const supabase = await createClient()
+  // Use admin client so RLS does not hide reservations made by other users.
+  // The timeline must show ALL booked slots regardless of who made them.
+  const admin = getSupabaseAdmin()
+  if (!admin) return { error: 'Admin client no disponible' }
 
-  let query = supabase
+  let query = admin
     .from('reservas')
     .select('hora_inicio, hora_fin, titulo')
     .eq('sala_id', salaId)
