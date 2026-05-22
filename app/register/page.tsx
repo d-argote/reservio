@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { signUpUser } from '@/features/auth/actions'
+import { animate, spring, stagger } from 'animejs'
 
 const SimpleParallax = dynamic(() => import('simple-parallax-js'), { ssr: false })
 
@@ -284,6 +285,63 @@ export default function RegisterPage() {
   const [isSuccess, setIsSuccess] = useState(false)
   const [emailAlreadyExists, setEmailAlreadyExists] = useState(false)
 
+  // ── Animation refs ───────────────────────────────────────────────
+  const asideRef    = useRef<HTMLElement>(null)
+  const cardRef     = useRef<HTMLDivElement>(null)
+  const logoCardRef = useRef<HTMLDivElement>(null)
+  const taglineRef  = useRef<HTMLDivElement>(null)
+  const mainRef     = useRef<HTMLElement>(null)
+  const submitRef   = useRef<HTMLButtonElement>(null)
+
+  // ── Entrance animation on mount ──────────────────────────────────
+  useEffect(() => {
+    const aside     = asideRef.current
+    const logoCard  = logoCardRef.current
+    const tagline   = taglineRef.current
+    const card      = cardRef.current
+    const fields    = mainRef.current ? Array.from(mainRef.current.querySelectorAll<HTMLElement>('[data-field]')) : []
+
+    // Set initial state in JS so elements are visible if animations fail
+    if (aside)    { aside.style.opacity = '0' }
+    if (logoCard) { logoCard.style.opacity = '0'; logoCard.style.transform = 'scale(0.9)' }
+    if (tagline)  { tagline.style.opacity = '0'; tagline.style.transform = 'translateY(20px)' }
+    if (card)     { card.style.opacity = '0'; card.style.transform = 'translateY(24px)' }
+    fields.forEach(f => { f.style.opacity = '0'; f.style.transform = 'translateY(10px)' })
+
+    if (aside) animate(aside, { opacity: [0, 1], duration: 500, ease: 'out(2)', delay: 0 })
+
+    if (logoCard) animate(logoCard, {
+      opacity: [0, 1], scale: [0.9, 1],
+      duration: 560, ease: spring({ stiffness: 220, damping: 18, mass: 1 }), delay: 160,
+    })
+
+    if (tagline) animate(tagline, {
+      opacity: [0, 1], translateY: [20, 0],
+      duration: 480, ease: 'out(3)', delay: 340,
+    })
+
+    if (card) animate(card, {
+      opacity: [0, 1], translateY: [24, 0],
+      duration: 520, ease: spring({ stiffness: 240, damping: 22, mass: 0.9 }), delay: 80,
+    })
+
+    if (fields.length) animate(fields, {
+      opacity: [0, 1], translateY: [10, 0],
+      delay: stagger(65, { start: 280 }),
+      duration: 340, ease: 'out(3)',
+    })
+  }, [])
+
+  const handleButtonPress = () => {
+    const el = submitRef.current
+    if (!el) return
+    animate(el, {
+      scale: [1, 0.96, 1],
+      duration: 300,
+      ease: spring({ stiffness: 400, damping: 14 }),
+    })
+  }
+
   // ═══════════════════════════════════════════════════════════════════════
   // HANDLERS DE EVENTOS
   // ═══════════════════════════════════════════════════════════════════════
@@ -429,7 +487,7 @@ export default function RegisterPage() {
           sticky + h-screen keeps it locked regardless of how
           tall the right panel grows (keyboard, errors, etc.)
           ════════════════════════════════════════════════════ */}
-      <aside className="hidden lg:flex lg:w-1/2 flex-col h-screen sticky top-0 relative bg-[#001529] overflow-hidden">
+      <aside ref={asideRef} className="hidden lg:flex lg:w-1/2 flex-col h-screen sticky top-0 relative bg-[#001529] overflow-hidden">
 
         {/* ── Background image — plain img, absolutely fills the panel ── */}
         <img
@@ -449,7 +507,7 @@ export default function RegisterPage() {
 
           {/* Logo inside frosted-glass card */}
           <div className="flex-1 flex items-center justify-center">
-            <div className="bg-white/[0.18] backdrop-blur-md rounded-2xl px-8 py-6 border border-white/[0.28] shadow-2xl shadow-black/40">
+            <div ref={logoCardRef} className="bg-white/[0.18] backdrop-blur-md rounded-2xl px-8 py-6 border border-white/[0.28] shadow-2xl shadow-black/40">
               <SimpleParallax scale={1.08} delay={0.4} orientation="up" overflow={false}>
                 <img
                   src="/Reservi1.png?v=3"
@@ -461,7 +519,7 @@ export default function RegisterPage() {
           </div>
 
           {/* Tagline anchored to the bottom */}
-          <div className="max-w-sm">
+          <div ref={taglineRef} className="max-w-sm">
             <h2 className="font-headline text-4xl xl:text-5xl font-black text-white mb-3 leading-[1.15] tracking-tight">
               Tu espacio,<br />tu control.
             </h2>
@@ -475,21 +533,21 @@ export default function RegisterPage() {
       {/* ════════════════════════════════════════════════════
           RIGHT PANEL — Form
           ════════════════════════════════════════════════════ */}
-      <main className="flex-1 flex items-center justify-center p-6 sm:p-10 min-h-screen bg-surface">
+      <main ref={mainRef} className="flex-1 flex items-center justify-center p-6 sm:p-10 min-h-screen bg-surface">
         <div className="w-full max-w-md">
 
           {/* Mobile logo */}
-          <div className="flex justify-center lg:hidden mb-8">
+          <div className="flex justify-center lg:hidden mb-8" data-field>
             <div className="w-14 h-14 rounded-2xl bg-primary flex items-center justify-center shadow-lg shadow-primary/25">
               <img src="/logo.png" alt="Reservio" className="w-8 h-8 object-contain" />
             </div>
           </div>
 
           {/* Card */}
-          <div className="bg-surface-container-lowest rounded-2xl p-8 sm:p-10 shadow-xl shadow-black/[0.06] border border-outline-variant/10">
+          <div ref={cardRef} className="bg-surface-container-lowest rounded-2xl p-8 sm:p-10 shadow-xl shadow-black/[0.06] border border-outline-variant/10">
 
             {/* Card header */}
-            <div className="mb-8">
+            <div className="mb-8" data-field>
               <h1 className="font-headline text-2xl font-bold text-on-surface tracking-tight">
                 Crea tu cuenta
               </h1>
@@ -583,7 +641,7 @@ export default function RegisterPage() {
             noValidate
           >
             {/* ── Nombre Completo ──────────────────────────────────── */}
-            <div className="space-y-1.5">
+            <div className="space-y-1.5" data-field>
               <label
                 htmlFor="fullName"
                 className="block font-label text-sm font-semibold text-on-surface"
@@ -614,7 +672,7 @@ export default function RegisterPage() {
             </div>
 
             {/* ── Correo Electrónico ───────────────────────────────── */}
-            <div className="space-y-1.5">
+            <div className="space-y-1.5" data-field>
               <label
                 htmlFor="email"
                 className="block font-label text-sm font-semibold text-on-surface"
@@ -645,7 +703,7 @@ export default function RegisterPage() {
             </div>
 
             {/* ── Contraseña ───────────────────────────────────────── */}
-            <div className="space-y-1.5">
+            <div className="space-y-1.5" data-field>
               <label
                 htmlFor="password"
                 className="block font-label text-sm font-semibold text-on-surface"
@@ -689,18 +747,20 @@ export default function RegisterPage() {
             </div>
 
             {/* ── Submit Button ────────────────────────────────────── */}
-            <div className="pt-4">
+            <div className="pt-4" data-field>
               <button
+                ref={submitRef}
                 type="submit"
                 disabled={isLoading || isSuccess}
+                onMouseDown={handleButtonPress}
                 className={`
-                  w-full flex justify-center items-center gap-2
+                  btn-press w-full flex justify-center items-center gap-2
                   py-3.5 px-4 rounded-xl text-base font-semibold
                   transition-all duration-300
                   disabled:opacity-60 disabled:cursor-not-allowed
                   ${isLoading
                     ? 'bg-primary/80 text-on-primary cursor-wait'
-                    : 'bg-primary text-on-primary hover:bg-primary-container hover:shadow-lg hover:shadow-primary/20 active:scale-[0.98]'
+                    : 'bg-primary text-on-primary hover:bg-primary-container hover:shadow-lg hover:shadow-primary/20'
                   }
                 `}
               >

@@ -1,9 +1,12 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { FEATURES } from '@/config/features'
+import { animate, spring } from 'animejs'
+import { AnimatedToast } from '@/components/ui/AnimatedToast'
+import { TabContent } from '@/components/ui/TabContent'
 import {
   getUsuarios,
   updateUserRole,
@@ -25,6 +28,8 @@ import {
   getPrestamosAdmin,
   getPrestamosAdminHistorial,
   devolverPrestamoAdmin,
+  confirmarRevisionAdmin,
+  reasignarEquipoAdmin,
   actualizarNotasAdmin,
   getAlertasEquiposAdmin,
   type UsuarioAdmin,
@@ -510,7 +515,7 @@ export default function MainMenuPage() {
   // ── Admin: préstamos activos ──────────────────────────────────────────────
   const [prestamosAdmin, setPrestamosAdmin] = useState<PrestamoEquipoAdmin[]>([])
   const [loadingPrestamosAdmin, setLoadingPrestamosAdmin] = useState(false)
-  const [prestamosAdminTab, setPrestamosAdminTab] = useState<'activos' | 'novedades' | 'historial'>('activos')
+  const [prestamosAdminTab, setPrestamosAdminTab] = useState<'activos' | 'pendiente_revision' | 'novedades' | 'historial'>('activos')
   const [prestamosHistorial, setPrestamosHistorial] = useState<PrestamoEquipoAdmin[]>([])
   const [loadingHistorial, setLoadingHistorial] = useState(false)
   // ── Admin: alertas de equipos ─────────────────────────────────────────────
@@ -526,6 +531,23 @@ export default function MainMenuPage() {
   const [adminReturnDescNovedad, setAdminReturnDescNovedad] = useState('')
   const [adminReturnSubmitting, setAdminReturnSubmitting] = useState(false)
   const [adminReturnError, setAdminReturnError] = useState<string | null>(null)
+  // ── Modal confirmación revisión (pendiente_revision → devuelto) ──────────
+  const [revisionModalOpen, setRevisionModalOpen] = useState(false)
+  const [revisionPrestamo, setRevisionPrestamo] = useState<PrestamoEquipoAdmin | null>(null)
+  const [revisionCondicion, setRevisionCondicion] = useState<string>('bueno')
+  const [revisionNotas, setRevisionNotas] = useState('')
+  const [revisionNovedad, setRevisionNovedad] = useState(false)
+  const [revisionTipoNovedad, setRevisionTipoNovedad] = useState<string>('dano_fisico')
+  const [revisionDescNovedad, setRevisionDescNovedad] = useState('')
+  const [revisionSubmitting, setRevisionSubmitting] = useState(false)
+  const [revisionError, setRevisionError] = useState<string | null>(null)
+  // ── Modal reasignación de equipo ─────────────────────────────────────────
+  const [reasignarModalOpen, setReasignarModalOpen] = useState(false)
+  const [reasignarPrestamo, setReasignarPrestamo] = useState<PrestamoEquipoAdmin | null>(null)
+  const [reasignarEquipoId, setReasignarEquipoId] = useState<string>('')
+  const [reasignarNotas, setReasignarNotas] = useState('')
+  const [reasignarSubmitting, setReasignarSubmitting] = useState(false)
+  const [reasignarError, setReasignarError] = useState<string | null>(null)
   // ── Misc admin state ─────────────────────────────────────────────
   const [asignandoSala, setAsignandoSala] = useState<string | null>(null)
   const [devolviendoAdmin, setDevolviendoAdmin] = useState<string | null>(null)
@@ -820,7 +842,7 @@ export default function MainMenuPage() {
     setLoadingAlertas(false)
   }, [])
 
-  const loadPrestamosHistorial = useCallback(async (tab: 'activos' | 'novedades' | 'historial') => {
+  const loadPrestamosHistorial = useCallback(async (tab: 'activos' | 'pendiente_revision' | 'novedades' | 'historial') => {
     setLoadingHistorial(true)
     let result
     if (tab === 'activos') {
@@ -1024,6 +1046,92 @@ export default function MainMenuPage() {
   const handleToggleEquipo = async (id: string, estado: Equipo['estado']) => {
     await updateEquipoEstado(id, estado)
     setEquipos(prev => prev.map(e => e.id === id ? { ...e, estado } : e))
+  }
+
+  // ── Handlers: confirmación de revisión (pendiente_revision → devuelto) ───
+  const handleAbrirRevision = (p: PrestamoEquipoAdmin) => {
+    setRevisionPrestamo(p)
+    setRevisionCondicion(p.condicion_devolucion ?? 'bueno')
+    setRevisionNotas('')
+    setRevisionNovedad(p.novedad)
+    setRevisionTipoNovedad(p.tipo_novedad ?? 'dano_fisico')
+    setRevisionDescNovedad(p.descripcion_novedad ?? '')
+    setRevisionError(null)
+    setRevisionModalOpen(true)
+  }
+
+  const handleSubmitRevision = async () => {
+    if (!revisionPrestamo) return
+    if (revisionNovedad && !revisionDescNovedad.trim()) {
+      setRevisionError('Debes describir la novedad antes de continuar.')
+      return
+    }
+    setRevisionSubmitting(true)
+    setRevisionError(null)
+    const result = await confirmarRevisionAdmin(
+      revisionPrestamo.id,
+      revisionPrestamo.equipo_id,
+      revisionCondicion,
+      revisionNotas || null,
+      revisionNovedad ? revisionTipoNovedad : null,
+      revisionNovedad && revisionDescNovedad ? revisionDescNovedad : null,
+    )
+    if (result.error) {
+      setRevisionError(result.error)
+      setRevisionSubmitting(false)
+      return
+    }
+    setPrestamosAdmin(prev => prev.filter(p => p.id !== revisionPrestamo.id))
+    const nuevoEstadoEquipo = revisionCondicion === 'perdido' || revisionCondicion === 'dano_grave' ? 'mantenimiento' : 'disponible'
+    setEquipos(prev => prev.map(e => e.id === revisionPrestamo.equipo_id ? { ...e, estado: nuevoEstadoEquipo as Equipo['estado'] } : e))
+    setRevisionModalOpen(false)
+    setRevisionSubmitting(false)
+  }
+
+  // ── Handlers: reasignación de equipo ─────────────────────────────────────
+  const handleAbrirReasignar = (p: PrestamoEquipoAdmin) => {
+    setReasignarPrestamo(p)
+    setReasignarEquipoId('')
+    setReasignarNotas('')
+    setReasignarError(null)
+    setReasignarModalOpen(true)
+  }
+
+  const handleSubmitReasignar = async () => {
+    if (!reasignarPrestamo) return
+    if (!reasignarEquipoId) {
+      setReasignarError('Debes seleccionar un equipo de reemplazo.')
+      return
+    }
+    if (reasignarEquipoId === reasignarPrestamo.equipo_id) {
+      setReasignarError('El equipo de reemplazo debe ser diferente al original.')
+      return
+    }
+    setReasignarSubmitting(true)
+    setReasignarError(null)
+    const result = await reasignarEquipoAdmin(
+      reasignarPrestamo.id,
+      reasignarPrestamo.equipo_id,
+      reasignarEquipoId,
+      reasignarPrestamo.usuario_id,
+      reasignarNotas || null,
+    )
+    if (result.error) {
+      setReasignarError(result.error)
+      setReasignarSubmitting(false)
+      return
+    }
+    // Update original equipment to mantenimiento, reassigned to reservado
+    setEquipos(prev => prev.map(e => {
+      if (e.id === reasignarPrestamo.equipo_id) return { ...e, estado: 'mantenimiento' as Equipo['estado'] }
+      if (e.id === reasignarEquipoId) return { ...e, estado: 'reservado' as Equipo['estado'] }
+      return e
+    }))
+    setPrestamosAdmin(prev => prev.filter(p => p.id !== reasignarPrestamo.id))
+    setReasignarModalOpen(false)
+    setReasignarSubmitting(false)
+    // Reload admin loans to show the new active loan
+    await loadPrestamosAdmin()
   }
 
   const handleDeleteEquipo = async (id: string) => {
@@ -1585,18 +1693,18 @@ export default function MainMenuPage() {
 
       {/* ── Coming Soon toast ────────────────────────────────── */}
       {comingSoon && (
-        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 bg-[#001529] text-white px-5 py-3 rounded-xl shadow-2xl border border-white/10 animate-fadeIn">
+        <AnimatedToast className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 bg-[#001529] text-white px-5 py-3 rounded-xl shadow-2xl border border-white/10">
           <span className="material-symbols-outlined text-[20px] text-yellow-400" style={{ fontVariationSettings: "'FILL' 1" }}>rocket_launch</span>
           <span className="font-label text-sm font-medium">Próximamente — disponible en el siguiente Sprint</span>
-        </div>
+        </AnimatedToast>
       )}
 
       {/* ── Global Error toast ────────────────────────────────── */}
       {globalError && (
-        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[105] flex items-center gap-3 bg-error-container text-on-error-container border border-error/20 shadow-2xl px-5 py-3 rounded-xl animate-fadeIn max-w-[90vw] md:max-w-md">
+        <AnimatedToast className="fixed top-6 left-1/2 -translate-x-1/2 z-[105] flex items-center gap-3 bg-error-container text-on-error-container border border-error/20 shadow-2xl px-5 py-3 rounded-xl max-w-[90vw] md:max-w-md">
           <span className="material-symbols-outlined text-[20px] shrink-0" style={{ fontVariationSettings: "'FILL' 1" }}>error</span>
           <span className="font-body text-sm font-medium leading-tight">{globalError}</span>
-        </div>
+        </AnimatedToast>
       )}
       {/* ── Sidebar (desktop) ─────────────────────────────────── */}
       <nav className="bg-surface text-primary font-body hidden h-screen w-72 flex-col border-r border-outline-variant/20 fixed left-0 top-0 z-50 md:flex">
@@ -1910,7 +2018,7 @@ export default function MainMenuPage() {
                 )}
                 <button
                   onClick={handleNuevaReserva}
-                  className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label font-medium text-sm shadow-sm hover:shadow-md hover:brightness-105 transition-all duration-200"
+                  className="btn-press inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label font-medium text-sm shadow-sm hover:shadow-md hover:brightness-105 transition-all duration-200"
                 >
                   <span className="material-symbols-outlined text-[20px]">add</span>
                   Nueva Reserva
@@ -1920,13 +2028,16 @@ export default function MainMenuPage() {
             {activeTab === 'rooms' && (
               <button
                 onClick={() => { if (!FEATURES.reservations) { showComingSoon(); return }; openModal() }}
-                className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label font-medium text-sm shadow-sm hover:shadow-md hover:brightness-105 transition-all duration-200"
+                className="btn-press inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label font-medium text-sm shadow-sm hover:shadow-md hover:brightness-105 transition-all duration-200"
               >
                 <span className="material-symbols-outlined text-[20px]">add</span>
                 Nueva Reserva
               </button>
             )}
           </div>
+
+          {/* ══ TAB CONTENT WRAPPER — animates on tab change ══════ */}
+          <TabContent tabKey={activeTab === 'admin' ? `admin-${adminSubTab}` : activeTab}>
 
           {/* ══ TAB: RESERVATIONS ══════════════════════════════════ */}
           {activeTab === 'reservations' && (
@@ -1939,7 +2050,7 @@ export default function MainMenuPage() {
             {loadingReservas ? (
               <SkeletonSummaryCard />
             ) : (
-              <div className="bg-surface-container-lowest rounded-xl p-5 border border-outline-variant/25 shadow-none hover:shadow-sm transition-shadow flex items-start gap-4">
+              <div className="bg-surface-container-lowest rounded-xl p-5 border border-outline-variant/25 card-lift flex items-start gap-4" data-anim>
                 <div className="bg-primary/10 text-primary w-10 h-10 rounded-lg flex items-center justify-center shrink-0">
                   <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
                     event_available
@@ -1967,7 +2078,7 @@ export default function MainMenuPage() {
             {loadingSalas ? (
               <SkeletonSummaryCard />
             ) : (
-              <div className="bg-surface-container-lowest rounded-xl p-5 border border-outline-variant/25 shadow-none hover:shadow-sm transition-shadow flex items-start gap-4">
+              <div className="bg-surface-container-lowest rounded-xl p-5 border border-outline-variant/25 card-lift flex items-start gap-4" data-anim>
                 <div className="bg-primary/10 text-primary w-10 h-10 rounded-lg flex items-center justify-center shrink-0">
                   <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
                     meeting_room
@@ -1989,7 +2100,7 @@ export default function MainMenuPage() {
             )}
 
             {/* Card: rol */}
-            <div className="bg-surface-container-lowest rounded-xl p-5 border border-outline-variant/25 shadow-none hover:shadow-sm transition-shadow flex items-start gap-4">
+            <div className="bg-surface-container-lowest rounded-xl p-5 border border-outline-variant/25 card-lift flex items-start gap-4" data-anim>
               <div className="bg-primary/10 text-primary w-10 h-10 rounded-lg flex items-center justify-center shrink-0">
                 <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
                   {isAdmin ? 'shield_person' : 'account_circle'}
@@ -2348,7 +2459,7 @@ export default function MainMenuPage() {
                   }
 
                   return (
-                  <div key={sala.id} className="bg-surface-container-lowest rounded-2xl overflow-hidden border border-outline-variant/15 shadow-none hover:shadow-md transition-shadow duration-200 group flex flex-col">
+                  <div key={sala.id} className="bg-surface-container-lowest rounded-2xl overflow-hidden border border-outline-variant/15 card-lift group flex flex-col" data-anim>
                     <div className="relative h-48 overflow-hidden bg-surface-container">
                       <img 
                         src={sala.imagen_url || getRoomImage(idx)} 
@@ -2492,7 +2603,7 @@ export default function MainMenuPage() {
                   <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 shadow-sm overflow-hidden">
                     <div className="flex items-center gap-2 px-5 py-3.5 border-b border-outline-variant/15 bg-surface-container">
                       <span className="material-symbols-outlined text-primary text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>inventory_2</span>
-                      <h3 className="font-label text-sm font-bold text-on-surface">Mis Préstamos Activos</h3>
+                      <h3 className="font-label text-sm font-bold text-on-surface">Mis Préstamos</h3>
                       {misPrestamos.length > 0 && (
                         <span className="ml-auto inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary text-on-primary text-[10px] font-bold">{misPrestamos.length}</span>
                       )}
@@ -2506,11 +2617,12 @@ export default function MainMenuPage() {
                       <div className="divide-y divide-outline-variant/10">
                         {misPrestamos.map(p => {
                           const finDate = new Date(p.fecha_fin_esperada)
-                          const isOverdue = finDate < new Date()
+                          const isOverdue = finDate < new Date() && p.estado === 'activo'
+                          const isPendienteRevision = p.estado === 'pendiente_revision'
                           const condicion = p.condicion_entrega ?? 'bueno'
                           return (
                             <div key={p.id} className="divide-y divide-outline-variant/10">
-                              <div className={`flex items-start gap-3 px-5 py-4 ${isOverdue ? 'bg-red-50/30' : ''}`}>
+                              <div className={`flex items-start gap-3 px-5 py-4 ${isOverdue ? 'bg-red-50/30' : isPendienteRevision ? 'bg-orange-50/20' : ''}`}>
                                 {/* Equipo imagen */}
                                 <div className="shrink-0">
                                   {p.equipos?.imagen_url ? (
@@ -2541,13 +2653,25 @@ export default function MainMenuPage() {
                                         <span className="material-symbols-outlined text-[11px]">warning</span>Vencido
                                       </span>
                                     )}
+                                    {isPendienteRevision && (
+                                      <span className="inline-flex items-center gap-0.5 text-[10px] font-label font-semibold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 border border-orange-200">
+                                        <span className="material-symbols-outlined text-[11px]" style={{ fontVariationSettings: "'FILL' 1" }}>manage_search</span>En revisión
+                                      </span>
+                                    )}
                                   </div>
                                   <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
-                                    <span className={`flex items-center gap-1 font-body text-xs ${isOverdue ? 'text-red-500 font-semibold' : 'text-on-surface-variant'}`}>
-                                      <span className="material-symbols-outlined text-[12px]">{isOverdue ? 'event_busy' : 'schedule'}</span>
-                                      {isOverdue ? 'Venció el ' : 'Devolver antes de: '}
-                                      {finDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Bogota' })} · {finDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })}
-                                    </span>
+                                    {isPendienteRevision ? (
+                                      <span className="flex items-center gap-1 font-body text-xs text-orange-600">
+                                        <span className="material-symbols-outlined text-[12px]">info</span>
+                                        Equipo entregado · pendiente de revisión por el administrador
+                                      </span>
+                                    ) : (
+                                      <span className={`flex items-center gap-1 font-body text-xs ${isOverdue ? 'text-red-500 font-semibold' : 'text-on-surface-variant'}`}>
+                                        <span className="material-symbols-outlined text-[12px]">{isOverdue ? 'event_busy' : 'schedule'}</span>
+                                        {isOverdue ? 'Venció el ' : 'Devolver antes de: '}
+                                        {finDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Bogota' })} · {finDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })}
+                                      </span>
+                                    )}
                                     {p.salas && (
                                       <span className="flex items-center gap-1 font-body text-xs text-on-surface-variant">
                                         <span className="material-symbols-outlined text-[12px]">meeting_room</span>
@@ -2562,30 +2686,38 @@ export default function MainMenuPage() {
 
                                 {/* Actions */}
                                 <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 shrink-0">
-                                  <button
-                                    onClick={() => {
-                                      if (editandoPrestamoId === p.id) {
-                                        setEditandoPrestamoId(null); setEditPrestamoError(null)
-                                      } else {
-                                        setEditandoPrestamoId(p.id); setEditPrestamoReservaId(p.reserva_id ?? ''); setEditPrestamoError(null)
-                                      }
-                                    }}
-                                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-label font-semibold border transition-colors ${editandoPrestamoId === p.id ? 'bg-primary/10 text-primary border-primary/30' : 'bg-surface-container text-on-surface-variant border-outline-variant/20 hover:bg-blue-50 hover:text-blue-700'}`}
-                                  >
-                                    <span className="material-symbols-outlined text-[14px]">edit</span>
-                                    Editar
-                                  </button>
-                                  <button
-                                    onClick={() => handleAbrirDevolucion(p)}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-on-primary text-xs font-label font-semibold hover:opacity-90 border border-primary/30 transition-all shadow-sm"
-                                  >
-                                    <span className="material-symbols-outlined text-[14px]">assignment_return</span>
-                                    Devolver equipo
-                                  </button>
+                                  {!isPendienteRevision && (
+                                    <>
+                                      <button
+                                        onClick={() => {
+                                          if (editandoPrestamoId === p.id) {
+                                            setEditandoPrestamoId(null); setEditPrestamoError(null)
+                                          } else {
+                                            setEditandoPrestamoId(p.id); setEditPrestamoReservaId(p.reserva_id ?? ''); setEditPrestamoError(null)
+                                          }
+                                        }}
+                                        className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-label font-semibold border transition-colors ${editandoPrestamoId === p.id ? 'bg-primary/10 text-primary border-primary/30' : 'bg-surface-container text-on-surface-variant border-outline-variant/20 hover:bg-blue-50 hover:text-blue-700'}`}
+                                      >
+                                        <span className="material-symbols-outlined text-[14px]">edit</span>
+                                        Editar
+                                      </button>
+                                      <button
+                                        onClick={() => handleAbrirDevolucion(p)}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-on-primary text-xs font-label font-semibold hover:opacity-90 border border-primary/30 transition-all shadow-sm"
+                                      >
+                                        <span className="material-symbols-outlined text-[14px]">assignment_return</span>
+                                        Devolver equipo
+                                      </button>
+                                    </>
+                                  )}
+                                  {isPendienteRevision && (
+                                    <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-orange-50 text-orange-700 border border-orange-200 text-xs font-label font-semibold">
+                                      <span className="material-symbols-outlined text-[14px]" style={{ fontVariationSettings: "'FILL' 1" }}>manage_search</span>
+                                      En revisión
+                                    </span>
+                                  )}
                                 </div>
                               </div>
-
-                              {/* Inline edit form */}
                               {editandoPrestamoId === p.id && (
                                 <div className="px-5 py-3 bg-surface-container/40 space-y-2.5">
                                   <p className="font-label text-xs text-on-surface-variant uppercase tracking-widest">Cambiar reserva vinculada</p>
@@ -2678,7 +2810,7 @@ export default function MainMenuPage() {
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                     {filteredTech.map((item) => (
-                      <div key={item.id} className="bg-surface-container-lowest rounded-2xl overflow-hidden border border-outline-variant/15 shadow-none hover:shadow-md transition-shadow duration-200 group flex flex-col">
+                      <div key={item.id} className="bg-surface-container-lowest rounded-2xl overflow-hidden border border-outline-variant/15 card-lift group flex flex-col" data-anim>
                         <div className="relative h-48 overflow-hidden bg-surface-container">
                           {item.imagen_url ? (
                             <img
@@ -3806,6 +3938,7 @@ export default function MainMenuPage() {
                         <div className="flex gap-1 px-4 pb-0">
                           {([
                             { id: 'activos', label: 'Activos & Vencidos', icon: 'hourglass_top' },
+                            { id: 'pendiente_revision', label: 'Pendiente Revisión', icon: 'manage_search' },
                             { id: 'novedades', label: 'Con Novedad', icon: 'warning' },
                             { id: 'historial', label: 'Historial', icon: 'history' },
                           ] as const).map(tab => (
@@ -3823,6 +3956,9 @@ export default function MainMenuPage() {
                             >
                               <span className="material-symbols-outlined text-[14px]" style={prestamosAdminTab === tab.id ? { fontVariationSettings: "'FILL' 1" } : undefined}>{tab.icon}</span>
                               {tab.label}
+                              {tab.id === 'pendiente_revision' && prestamosAdmin.filter(p => p.estado === 'pendiente_revision').length > 0 && (
+                                <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-orange-500 text-white text-[9px] font-bold">{prestamosAdmin.filter(p => p.estado === 'pendiente_revision').length}</span>
+                              )}
                               {tab.id === 'novedades' && prestamosHistorial.filter(p => p.novedad).length > 0 && (
                                 <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-500 text-white text-[9px] font-bold">{prestamosHistorial.filter(p => p.novedad).length}</span>
                               )}
@@ -3833,9 +3969,11 @@ export default function MainMenuPage() {
 
                       {/* Content */}
                       {(() => {
-                        const isLoading = prestamosAdminTab === 'activos' ? loadingPrestamosAdmin : loadingHistorial
+                        const isLoading = prestamosAdminTab === 'activos' || prestamosAdminTab === 'pendiente_revision' ? loadingPrestamosAdmin : loadingHistorial
                         const items = prestamosAdminTab === 'activos'
-                          ? prestamosAdmin
+                          ? prestamosAdmin.filter(p => p.estado === 'activo' || p.estado === 'vencido')
+                          : prestamosAdminTab === 'pendiente_revision'
+                          ? prestamosAdmin.filter(p => p.estado === 'pendiente_revision')
                           : prestamosAdminTab === 'novedades'
                           ? prestamosHistorial.filter(p => p.novedad)
                           : prestamosHistorial
@@ -3850,10 +3988,10 @@ export default function MainMenuPage() {
                         if (items.length === 0) return (
                           <div className="flex flex-col items-center justify-center py-10 gap-2 text-center">
                             <span className="material-symbols-outlined text-on-surface-variant text-3xl">
-                              {prestamosAdminTab === 'novedades' ? 'check_circle' : 'assignment_turned_in'}
+                              {prestamosAdminTab === 'novedades' ? 'check_circle' : prestamosAdminTab === 'pendiente_revision' ? 'inventory_2' : 'assignment_turned_in'}
                             </span>
                             <p className="font-body text-sm text-on-surface-variant">
-                              {prestamosAdminTab === 'activos' ? 'No hay préstamos activos.' : prestamosAdminTab === 'novedades' ? 'Sin novedades registradas.' : 'Sin historial disponible.'}
+                              {prestamosAdminTab === 'activos' ? 'No hay préstamos activos.' : prestamosAdminTab === 'pendiente_revision' ? 'No hay devoluciones pendientes de revisión.' : prestamosAdminTab === 'novedades' ? 'Sin novedades registradas.' : 'Sin historial disponible.'}
                             </p>
                           </div>
                         )
@@ -3879,7 +4017,7 @@ export default function MainMenuPage() {
                                   const isEnUso = p.estado === 'activo' && inicioDate <= ahora && finDate > ahora
                                   const isOverdue = p.estado === 'activo' && finDate <= ahora
                                   return (
-                                    <tr key={p.id} className={`hover:bg-surface-container/40 transition-colors ${isOverdue ? 'bg-red-50/20' : isProgramado ? 'bg-sky-50/10' : p.novedad ? 'bg-amber-50/20' : ''}`}>
+                                    <tr key={p.id} className={`hover:bg-surface-container/40 transition-colors ${isOverdue ? 'bg-red-50/20' : p.estado === 'pendiente_revision' ? 'bg-orange-50/20' : isProgramado ? 'bg-sky-50/10' : p.novedad ? 'bg-amber-50/20' : ''}`}>
                                       {/* Equipo */}
                                       <td className="px-4 py-3">
                                         <div className="flex items-center gap-2">
@@ -3938,20 +4076,24 @@ export default function MainMenuPage() {
                                               <span className="material-symbols-outlined text-[10px]" style={{ fontVariationSettings: "'FILL' 1" }}>event_busy</span>Vencido
                                             </span>
                                           )}
+                                          {p.estado === 'pendiente_revision' && (
+                                            <span className="inline-flex items-center gap-0.5 text-[10px] font-label font-semibold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 border border-orange-200">
+                                              <span className="material-symbols-outlined text-[10px]" style={{ fontVariationSettings: "'FILL' 1" }}>manage_search</span>Pendiente revisión
+                                            </span>
+                                          )}
                                           {p.estado === 'devuelto' && (
                                             <span className="inline-flex items-center gap-0.5 text-[10px] font-label font-semibold px-1.5 py-0.5 rounded bg-green-100 text-green-700 border border-green-200">
                                               <span className="material-symbols-outlined text-[10px]" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>Devuelto
                                             </span>
                                           )}
-                                          {/* Inicio para préstamos programados */}
                                           {isProgramado && (
                                             <p className="font-body text-[10px] text-sky-600">
                                               Inicia: {inicioDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' })} {inicioDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })}
                                             </p>
                                           )}
                                           <p className={`font-body text-xs ${isOverdue ? 'text-red-500' : 'text-on-surface-variant'}`}>
-                                            {p.estado === 'devuelto' && p.fecha_devolucion
-                                              ? new Date(p.fecha_devolucion).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' })
+                                            {(p.estado === 'devuelto' || p.estado === 'pendiente_revision') && p.fecha_devolucion
+                                              ? `Entregado: ${new Date(p.fecha_devolucion).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' })}`
                                               : `Devol: ${finDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' })} ${finDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })}`
                                             }
                                           </p>
@@ -3961,6 +4103,7 @@ export default function MainMenuPage() {
                                       {/* Acciones */}
                                       <td className="px-4 py-3">
                                         <div className="flex flex-col gap-1.5">
+                                          {/* Activo/Vencido sin programar → registrar devolución manual */}
                                           {(p.estado === 'activo' || p.estado === 'vencido') && !isProgramado && (
                                             <button
                                               onClick={() => handleAbrirDevolucionAdmin(p)}
@@ -3975,6 +4118,25 @@ export default function MainMenuPage() {
                                               <span className="material-symbols-outlined text-[13px]">schedule</span>
                                               Pendiente de entrega
                                             </span>
+                                          )}
+                                          {/* Pendiente revisión → acciones de revisión */}
+                                          {p.estado === 'pendiente_revision' && (
+                                            <>
+                                              <button
+                                                onClick={() => handleAbrirRevision(p)}
+                                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-orange-600 text-white text-xs font-label font-semibold hover:bg-orange-700 transition"
+                                              >
+                                                <span className="material-symbols-outlined text-[13px]">fact_check</span>
+                                                Confirmar revisión
+                                              </button>
+                                              <button
+                                                onClick={() => handleAbrirReasignar(p)}
+                                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-surface-container text-on-surface text-xs font-label font-semibold hover:bg-surface-container-low border border-outline-variant/30 transition"
+                                              >
+                                                <span className="material-symbols-outlined text-[13px]">swap_horiz</span>
+                                                Reasignar equipo
+                                              </button>
+                                            </>
                                           )}
                                           {p.foto_devolucion_url && (
                                             <a
@@ -4845,6 +5007,7 @@ export default function MainMenuPage() {
             </div>
           )}
 
+          </TabContent>
         </div>
       </main>
 
@@ -5931,6 +6094,349 @@ export default function MainMenuPage() {
                     <><span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />Procesando…</>
                   ) : (
                     <><span className="material-symbols-outlined text-[18px]">send</span>{adminReturnNovedad ? 'Registrar con novedad' : 'Confirmar devolución'}</>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ MODAL: CONFIRMACIÓN DE REVISIÓN ══════════════════════════ */}
+      {revisionModalOpen && revisionPrestamo && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={() => { if (!revisionSubmitting) setRevisionModalOpen(false) }} />
+          <div className="relative w-full max-w-lg bg-surface rounded-2xl shadow-2xl border border-outline-variant/20 flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-5 border-b border-outline-variant/15">
+              <div className="flex items-center gap-3">
+                <div className="bg-orange-100 text-orange-700 w-9 h-9 rounded-lg flex items-center justify-center">
+                  <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>fact_check</span>
+                </div>
+                <div>
+                  <h2 className="font-headline text-base font-bold text-on-surface">Revisar devolución del equipo</h2>
+                  {revisionPrestamo.num_acta && <p className="font-mono text-[11px] text-on-surface-variant">{revisionPrestamo.num_acta}</p>}
+                </div>
+              </div>
+              <button onClick={() => { if (!revisionSubmitting) setRevisionModalOpen(false) }} className="p-1.5 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant">
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
+              {/* Equipo + usuario info */}
+              <div className="flex items-center gap-3 p-3 bg-surface-container rounded-xl">
+                {revisionPrestamo.equipos?.imagen_url ? (
+                  <img src={revisionPrestamo.equipos.imagen_url} alt="" className="w-12 h-12 rounded-lg object-cover border border-outline-variant/15 shrink-0" />
+                ) : (
+                  <div className="w-12 h-12 rounded-lg bg-surface-container-high flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-on-surface-variant text-[24px]">devices</span>
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="font-body font-semibold text-sm text-on-surface">{revisionPrestamo.equipos?.nombre}</p>
+                  <p className="font-body text-xs text-on-surface-variant">{revisionPrestamo.equipos?.tipo_equipo}</p>
+                  <p className="font-body text-xs text-primary mt-0.5">{revisionPrestamo.usuarios?.nombre} · {revisionPrestamo.usuarios?.correo}</p>
+                </div>
+                <span className={`inline-flex items-center gap-0.5 text-[10px] font-label font-semibold px-1.5 py-0.5 rounded border ${CONDICION_COLOR[revisionPrestamo.condicion_entrega ?? 'bueno']}`}>
+                  Al prestar: {CONDICION_LABEL[revisionPrestamo.condicion_entrega ?? 'bueno']}
+                </span>
+              </div>
+
+              {/* Condición reportada por el usuario */}
+              {revisionPrestamo.condicion_devolucion && (
+                <div className="flex items-start gap-3 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+                  <span className="material-symbols-outlined text-blue-600 text-[18px] mt-0.5" style={{ fontVariationSettings: "'FILL' 1" }}>info</span>
+                  <div>
+                    <p className="font-label text-xs font-semibold text-blue-800 uppercase tracking-wide">Reportado por el usuario</p>
+                    <p className="font-body text-sm text-blue-700 mt-0.5">
+                      Condición: <strong>{CONDICION_LABEL[revisionPrestamo.condicion_devolucion]}</strong>
+                    </p>
+                    {revisionPrestamo.observaciones_devolucion && (
+                      <p className="font-body text-xs text-blue-600 mt-1">{revisionPrestamo.observaciones_devolucion}</p>
+                    )}
+                    {revisionPrestamo.novedad && revisionPrestamo.descripcion_novedad && (
+                      <p className="font-body text-xs text-orange-700 mt-1 font-medium">Novedad: {revisionPrestamo.descripcion_novedad}</p>
+                    )}
+                  </div>
+                  {revisionPrestamo.foto_devolucion_url && (
+                    <a href={revisionPrestamo.foto_devolucion_url} target="_blank" rel="noopener noreferrer" className="ml-auto shrink-0 inline-flex items-center gap-1 px-2 py-1 bg-white border border-blue-200 rounded-lg text-xs text-blue-700 font-label hover:bg-blue-50 transition">
+                      <span className="material-symbols-outlined text-[14px]">photo_camera</span>Foto
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {/* Condición confirmada por admin */}
+              <div>
+                <label className="font-label text-xs font-bold text-on-surface uppercase tracking-widest block mb-2">Condición física verificada por admin *</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {CONDICIONES_DEVOLUCION.map(c => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => {
+                        setRevisionCondicion(c)
+                        if (['dano_leve', 'dano_grave', 'perdido'].includes(c)) setRevisionNovedad(true)
+                      }}
+                      className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-label font-semibold transition-all text-left ${revisionCondicion === c ? `${CONDICION_COLOR[c]} ring-2 ring-offset-1 ring-current` : 'border-outline-variant/30 text-on-surface-variant hover:bg-surface-container'}`}
+                    >
+                      <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>{CONDICION_ICON[c]}</span>
+                      {CONDICION_LABEL[c]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Notas admin */}
+              <div>
+                <label className="font-label text-xs font-bold text-on-surface uppercase tracking-widest block mb-1.5">Notas de la revisión</label>
+                <textarea
+                  value={revisionNotas}
+                  onChange={e => setRevisionNotas(e.target.value)}
+                  rows={3}
+                  maxLength={500}
+                  placeholder="Observaciones sobre el estado físico del equipo, accesorios verificados, acción tomada…"
+                  className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition resize-none"
+                />
+              </div>
+
+              {/* Novedad toggle */}
+              <div className="border border-outline-variant/20 rounded-xl overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setRevisionNovedad(v => !v)}
+                  className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-label font-semibold transition-colors ${revisionNovedad ? 'bg-amber-50 text-amber-800' : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-low'}`}
+                >
+                  <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: `'FILL' ${revisionNovedad ? 1 : 0}` }}>warning</span>
+                  Registrar novedad / daño detectado
+                  <span className="ml-auto material-symbols-outlined text-[18px]">{revisionNovedad ? 'expand_less' : 'expand_more'}</span>
+                </button>
+                {revisionNovedad && (
+                  <div className="px-4 py-3 bg-amber-50/50 space-y-3">
+                    <div>
+                      <label className="font-label text-xs text-on-surface-variant block mb-1">Tipo de novedad</label>
+                      <select value={revisionTipoNovedad} onChange={e => setRevisionTipoNovedad(e.target.value)} className="w-full rounded-lg border border-outline-variant/40 bg-white px-3 py-2 text-sm font-body focus:outline-none focus:ring-2 focus:ring-amber-400/40 appearance-none">
+                        {TIPOS_NOVEDAD.map(t => <option key={t} value={t}>{NOVEDAD_LABEL[t]}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="font-label text-xs text-on-surface-variant block mb-1">Descripción <span className="text-red-500">*</span></label>
+                      <textarea
+                        value={revisionDescNovedad}
+                        onChange={e => setRevisionDescNovedad(e.target.value)}
+                        rows={2}
+                        maxLength={300}
+                        placeholder="Describe el daño o novedad detectada durante la revisión…"
+                        className={`w-full rounded-lg border px-3 py-2.5 text-sm font-body focus:outline-none focus:ring-2 focus:ring-amber-400/40 transition resize-none bg-white ${revisionNovedad && !revisionDescNovedad.trim() ? 'border-red-300' : 'border-outline-variant/40'}`}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Info: si hay daño grave, sugerir reasignación */}
+              {(revisionCondicion === 'dano_grave' || revisionCondicion === 'perdido') && (
+                <div className="flex items-start gap-3 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                  <span className="material-symbols-outlined text-amber-600 text-[18px] mt-0.5" style={{ fontVariationSettings: "'FILL' 1" }}>tip</span>
+                  <p className="font-body text-xs text-amber-800">
+                    El equipo pasará a <strong>mantenimiento</strong>. Si el usuario aún necesita el equipo,
+                    puedes usar <strong>"Reasignar equipo"</strong> en la tabla para asignarle uno similar.
+                  </p>
+                </div>
+              )}
+
+              {revisionError && (
+                <div className="flex items-start gap-2 bg-error-container text-on-error-container rounded-lg px-4 py-3 text-sm font-body">
+                  <span className="material-symbols-outlined text-[18px] shrink-0 mt-0.5">error</span>
+                  {revisionError}
+                </div>
+              )}
+
+              <div className="flex gap-3 pb-1">
+                <button
+                  type="button"
+                  onClick={() => setRevisionModalOpen(false)}
+                  disabled={revisionSubmitting}
+                  className="px-5 py-2.5 rounded-xl border border-outline-variant/30 text-sm font-label text-on-surface-variant hover:bg-surface-container transition disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSubmitRevision}
+                  disabled={revisionSubmitting || (revisionNovedad && !revisionDescNovedad.trim())}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-label font-semibold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed ${revisionNovedad ? 'bg-amber-600 text-white hover:bg-amber-700' : 'bg-orange-600 text-white hover:bg-orange-700'}`}
+                >
+                  {revisionSubmitting ? (
+                    <><span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />Procesando…</>
+                  ) : (
+                    <><span className="material-symbols-outlined text-[18px]">done_all</span>{revisionNovedad ? 'Confirmar con novedad' : 'Aprobar devolución'}</>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ MODAL: REASIGNACIÓN DE EQUIPO ════════════════════════════ */}
+      {reasignarModalOpen && reasignarPrestamo && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={() => { if (!reasignarSubmitting) setReasignarModalOpen(false) }} />
+          <div className="relative w-full max-w-lg bg-surface rounded-2xl shadow-2xl border border-outline-variant/20 flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-5 border-b border-outline-variant/15">
+              <div className="flex items-center gap-3">
+                <div className="bg-surface-container-high text-on-surface-variant w-9 h-9 rounded-lg flex items-center justify-center">
+                  <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>swap_horiz</span>
+                </div>
+                <div>
+                  <h2 className="font-headline text-base font-bold text-on-surface">Reasignar equipo similar</h2>
+                  <p className="font-body text-xs text-on-surface-variant">El equipo original pasará a mantenimiento</p>
+                </div>
+              </div>
+              <button onClick={() => { if (!reasignarSubmitting) setReasignarModalOpen(false) }} className="p-1.5 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant">
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
+              {/* Equipo original */}
+              <div className="flex items-center gap-3 p-3 bg-red-50 border border-red-200 rounded-xl">
+                {reasignarPrestamo.equipos?.imagen_url ? (
+                  <img src={reasignarPrestamo.equipos.imagen_url} alt="" className="w-10 h-10 rounded-lg object-cover border border-red-200 shrink-0" />
+                ) : (
+                  <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-red-500 text-[20px]">devices</span>
+                  </div>
+                )}
+                <div>
+                  <p className="font-label text-[10px] text-red-600 uppercase tracking-wide font-semibold">Equipo a reemplazar → Mantenimiento</p>
+                  <p className="font-body text-sm font-semibold text-red-800">{reasignarPrestamo.equipos?.nombre}</p>
+                  <p className="font-body text-xs text-red-600">{reasignarPrestamo.usuarios?.nombre}</p>
+                </div>
+              </div>
+
+              {/* Selección de equipo de reemplazo */}
+              <div>
+                <label className="font-label text-xs font-bold text-on-surface uppercase tracking-widest block mb-2">Equipo de reemplazo *</label>
+                <select
+                  value={reasignarEquipoId}
+                  onChange={e => setReasignarEquipoId(e.target.value)}
+                  className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition appearance-none"
+                >
+                  <option value="">— Seleccionar equipo disponible —</option>
+                  {(() => {
+                    // IDs de equipos que tienen préstamos activos, vencidos o pendiente revisión
+                    const equiposOcupados = new Set(
+                      prestamosAdmin
+                        .filter(p => ['activo', 'pendiente_revision', 'vencido'].includes(p.estado))
+                        .map(p => p.equipo_id)
+                    )
+                    // IDs de equipos con préstamos que se solapan con el periodo del préstamo original
+                    const fechaFinNuevo = reasignarPrestamo.fecha_fin_esperada
+                    const equiposConSolapamiento = new Set(
+                      prestamosAdmin
+                        .filter(p =>
+                          p.equipo_id !== reasignarPrestamo.equipo_id &&
+                          ['activo', 'vencido'].includes(p.estado) &&
+                          p.fecha_inicio < fechaFinNuevo
+                        )
+                        .map(p => p.equipo_id)
+                    )
+                    return equipos
+                      .filter(e =>
+                        e.estado === 'disponible' &&
+                        e.id !== reasignarPrestamo.equipo_id &&
+                        !equiposOcupados.has(e.id) &&
+                        !equiposConSolapamiento.has(e.id)
+                      )
+                      .map(e => (
+                        <option key={e.id} value={e.id}>
+                          {e.nombre} · {e.tipo_equipo} · {e.marca}
+                          {e.numero_serie ? ` (S/N: ${e.numero_serie})` : ''}
+                        </option>
+                      ))
+                  })()}
+                </select>
+                {(() => {
+                  const equiposOcupados = new Set(
+                    prestamosAdmin
+                      .filter(p => ['activo', 'pendiente_revision', 'vencido'].includes(p.estado))
+                      .map(p => p.equipo_id)
+                  )
+                  const fechaFinNuevo = reasignarPrestamo.fecha_fin_esperada
+                  const equiposConSolapamiento = new Set(
+                    prestamosAdmin
+                      .filter(p =>
+                        p.equipo_id !== reasignarPrestamo.equipo_id &&
+                        ['activo', 'vencido'].includes(p.estado) &&
+                        p.fecha_inicio < fechaFinNuevo
+                      )
+                      .map(p => p.equipo_id)
+                  )
+                  const disponibles = equipos.filter(e =>
+                    e.estado === 'disponible' &&
+                    e.id !== reasignarPrestamo.equipo_id &&
+                    !equiposOcupados.has(e.id) &&
+                    !equiposConSolapamiento.has(e.id)
+                  )
+                  return disponibles.length === 0
+                    ? <p className="font-body text-xs text-amber-700 mt-2">No hay equipos disponibles en este momento.</p>
+                    : null
+                })()}
+              </div>
+
+              {/* Notas */}
+              <div>
+                <label className="font-label text-xs font-bold text-on-surface uppercase tracking-widest block mb-1.5">Notas de la reasignación</label>
+                <textarea
+                  value={reasignarNotas}
+                  onChange={e => setReasignarNotas(e.target.value)}
+                  rows={3}
+                  maxLength={500}
+                  placeholder="Razón del reemplazo, detalles de la entrega del equipo de reemplazo, etc."
+                  className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition resize-none"
+                />
+              </div>
+
+              {/* Warning */}
+              <div className="flex items-start gap-3 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                <span className="material-symbols-outlined text-amber-600 text-[18px] mt-0.5" style={{ fontVariationSettings: "'FILL' 1" }}>warning</span>
+                <p className="font-body text-xs text-amber-800">
+                  Esta acción: <strong>(1)</strong> marcará el préstamo original como <em>devuelto con novedad</em>,
+                  <strong> (2)</strong> pondrá el equipo original en <em>mantenimiento</em>, y
+                  <strong> (3)</strong> creará un nuevo préstamo activo para el usuario con el equipo seleccionado.
+                </p>
+              </div>
+
+              {reasignarError && (
+                <div className="flex items-start gap-2 bg-error-container text-on-error-container rounded-lg px-4 py-3 text-sm font-body">
+                  <span className="material-symbols-outlined text-[18px] shrink-0 mt-0.5">error</span>
+                  {reasignarError}
+                </div>
+              )}
+
+              <div className="flex gap-3 pb-1">
+                <button
+                  type="button"
+                  onClick={() => setReasignarModalOpen(false)}
+                  disabled={reasignarSubmitting}
+                  className="px-5 py-2.5 rounded-xl border border-outline-variant/30 text-sm font-label text-on-surface-variant hover:bg-surface-container transition disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSubmitReasignar}
+                  disabled={reasignarSubmitting || !reasignarEquipoId}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary text-on-primary font-label font-semibold text-sm hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {reasignarSubmitting ? (
+                    <><span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />Procesando…</>
+                  ) : (
+                    <><span className="material-symbols-outlined text-[18px]">swap_horiz</span>Confirmar reasignación</>
                   )}
                 </button>
               </div>
