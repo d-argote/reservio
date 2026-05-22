@@ -31,9 +31,9 @@ const DIAS_SHORT = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
 const DIAS_FULL  = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 const MESES      = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
-const HOUR_START = 7
-const HOUR_END   = 22
-const SLOT_H     = 64   // px per hour
+const HOUR_START = 0
+const HOUR_END   = 24
+const SLOT_H     = 56   // px per hour (56×24=1344 px; scrollable container caps at 660 px)
 const HOURS      = Array.from({ length: HOUR_END - HOUR_START }, (_, i) => HOUR_START + i)
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

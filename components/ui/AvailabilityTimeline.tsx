@@ -17,11 +17,11 @@ interface Props {
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
-const APERTURA = '07:00'
-const CIERRE   = '22:00'
+const APERTURA = '00:00'
+const CIERRE   = '23:59'
 
-// Hour ticks shown below the timeline
-const TICK_HOURS = [7, 9, 11, 13, 15, 17, 19, 21]
+// Hour ticks shown below the timeline (every 4 h across the full 24-h day)
+const TICK_HOURS = [0, 4, 8, 12, 16, 20]
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function parseMin(hms: string): number {
