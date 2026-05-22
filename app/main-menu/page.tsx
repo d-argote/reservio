@@ -40,6 +40,7 @@ import {
   cancelarReserva,
   deleteReserva,
   getReportData,
+  getMisReservasHistorial,
   createPrestamoEquipo,
   getMisPrestamos,
   devolverEquipo,
@@ -49,6 +50,7 @@ import {
   recalcularEstadosEquiposDB,
   getEquiposRetornos,
   type ReportData,
+  type ReservaHistorial,
   type PrestamoEquipo,
   type CondicionEquipo,
   type CondicionDevolucion,
@@ -58,6 +60,11 @@ import {
   type FranjaOcupada,
 } from '@/features/reservas/actions'
 import { ReservasCalendar } from '@/components/ui/ReservasCalendar'
+import { D3BarChart } from '@/components/ui/charts/D3BarChart'
+import { D3DonutChart } from '@/components/ui/charts/D3DonutChart'
+import { D3HorizontalBars } from '@/components/ui/charts/D3HorizontalBars'
+import { D3AreaChart } from '@/components/ui/charts/D3AreaChart'
+import { LineChartMonthly } from '@/components/ui/charts/LineChartMonthly'
 import { AvailabilityTimeline, hasOverlap } from '@/components/ui/AvailabilityTimeline'
 
 // ── Types
@@ -574,6 +581,16 @@ export default function MainMenuPage() {
   const [reportPageSalas, setReportPageSalas] = useState(1)
   const [reportPageEquipos, setReportPageEquipos] = useState(1)
   const REPORT_PAGE_SIZE = 10
+
+  // ── Historial de reservas del usuario ────────────────────────────
+  const [reservasHistorial, setReservasHistorial] = useState<ReservaHistorial[]>([])
+  const [loadingHistorialReservas, setLoadingHistorialReservas] = useState(false)
+  const [historialReservasLoaded, setHistorialReservasLoaded] = useState(false)
+  const [reservaView2, setReservaView2] = useState<'upcoming' | 'history'>('upcoming')
+  const [historialSearch, setHistorialSearch] = useState('')
+  const [historialEstadoFilter, setHistorialEstadoFilter] = useState<'todos' | 'confirmada' | 'pendiente' | 'cancelada'>('todos')
+  const [historialPage, setHistorialPage] = useState(1)
+  const HISTORIAL_PAGE_SIZE = 8
 
   const fetchReservas = useCallback(async (uid: string) => {
     setLoadingReservas(true)
@@ -1526,6 +1543,16 @@ export default function MainMenuPage() {
     setLoadingReports(false)
   }, [])
 
+  // ── Historial de reservas del usuario ────────────────────────────
+  const loadHistorialReservas = useCallback(async () => {
+    if (historialReservasLoaded) return
+    setLoadingHistorialReservas(true)
+    const result = await getMisReservasHistorial()
+    if (result.data) setReservasHistorial(result.data)
+    setLoadingHistorialReservas(false)
+    setHistorialReservasLoaded(true)
+  }, [historialReservasLoaded])
+
   if (isLoading) {
     return (
       <div className="bg-surface flex h-screen items-center justify-center">
@@ -1828,31 +1855,59 @@ export default function MainMenuPage() {
             </div>
             {activeTab === 'reservations' && (
               <div className="flex items-center gap-2">
-                {/* List / Calendar toggle */}
+                {/* Upcoming / History / Calendar toggle */}
                 <div className="flex items-center gap-0.5 bg-surface-container rounded-xl p-1 border border-outline-variant/20">
                   <button
-                    onClick={() => setReservaView('list')}
-                    title="Vista lista"
-                    className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                      reservaView === 'list'
+                    onClick={() => setReservaView2('upcoming')}
+                    title="Próximas reservas"
+                    className={`flex items-center gap-1.5 px-3 h-8 rounded-lg transition-all font-label text-xs font-medium ${
+                      reservaView2 === 'upcoming'
                         ? 'bg-primary text-on-primary shadow-sm'
                         : 'text-on-surface-variant hover:bg-surface-container-high'
                     }`}
                   >
-                    <span className="material-symbols-outlined text-[18px]">view_list</span>
+                    <span className="material-symbols-outlined text-[16px]">upcoming</span>
+                    Próximas
                   </button>
                   <button
-                    onClick={() => setReservaView('calendar')}
-                    title="Vista calendario"
-                    className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                      reservaView === 'calendar'
+                    onClick={() => { setReservaView2('history'); loadHistorialReservas() }}
+                    title="Historial de reservas"
+                    className={`flex items-center gap-1.5 px-3 h-8 rounded-lg transition-all font-label text-xs font-medium ${
+                      reservaView2 === 'history'
                         ? 'bg-primary text-on-primary shadow-sm'
                         : 'text-on-surface-variant hover:bg-surface-container-high'
                     }`}
                   >
-                    <span className="material-symbols-outlined text-[18px]">calendar_month</span>
+                    <span className="material-symbols-outlined text-[16px]">history</span>
+                    Historial
                   </button>
                 </div>
+                {reservaView2 === 'upcoming' && (
+                  <div className="flex items-center gap-0.5 bg-surface-container rounded-xl p-1 border border-outline-variant/20">
+                    <button
+                      onClick={() => setReservaView('list')}
+                      title="Vista lista"
+                      className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                        reservaView === 'list'
+                          ? 'bg-primary text-on-primary shadow-sm'
+                          : 'text-on-surface-variant hover:bg-surface-container-high'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[18px]">view_list</span>
+                    </button>
+                    <button
+                      onClick={() => setReservaView('calendar')}
+                      title="Vista calendario"
+                      className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                        reservaView === 'calendar'
+                          ? 'bg-primary text-on-primary shadow-sm'
+                          : 'text-on-surface-variant hover:bg-surface-container-high'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[18px]">calendar_month</span>
+                    </button>
+                  </div>
+                )}
                 <button
                   onClick={handleNuevaReserva}
                   className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label font-medium text-sm shadow-sm hover:shadow-md hover:brightness-105 transition-all duration-200"
@@ -1876,6 +1931,7 @@ export default function MainMenuPage() {
           {/* ══ TAB: RESERVATIONS ══════════════════════════════════ */}
           {activeTab === 'reservations' && (
             <>
+          {reservaView2 === 'upcoming' && (<>
           {/* Summary cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
 
@@ -2119,6 +2175,146 @@ export default function MainMenuPage() {
             </div>
           </div>
           )} {/* end reservaView === 'list' */}
+          </>) /* end reservaView2 === 'upcoming' */}
+
+          {/* ── Historial de reservas ─────────────────────────────── */}
+          {reservaView2 === 'history' && (
+            <div className="space-y-5">
+              {/* Filters */}
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="relative flex-1">
+                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px] pointer-events-none">search</span>
+                  <input
+                    type="text"
+                    placeholder="Buscar por título o sala…"
+                    value={historialSearch}
+                    onChange={e => { setHistorialSearch(e.target.value); setHistorialPage(1) }}
+                    className="w-full pl-9 pr-4 py-2 rounded-lg border border-outline-variant/40 bg-surface-container-lowest font-body text-sm text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/40"
+                  />
+                </div>
+                <div className="flex gap-1 bg-surface-container rounded-xl p-1 border border-outline-variant/20 shrink-0">
+                  {(['todos', 'confirmada', 'pendiente', 'cancelada'] as const).map(est => (
+                    <button
+                      key={est}
+                      onClick={() => { setHistorialEstadoFilter(est); setHistorialPage(1) }}
+                      className={`px-3 py-1.5 rounded-lg font-label text-xs font-medium capitalize transition-all ${
+                        historialEstadoFilter === est
+                          ? 'bg-primary text-on-primary shadow-sm'
+                          : 'text-on-surface-variant hover:bg-surface-container-high'
+                      }`}
+                    >
+                      {est === 'todos' ? 'Todos' : est}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* List */}
+              {loadingHistorialReservas ? (
+                <div className="space-y-3">
+                  {[0,1,2,3].map(i => (
+                    <div key={i} className="h-20 bg-surface-container rounded-xl animate-pulse" />
+                  ))}
+                </div>
+              ) : (() => {
+                const q = historialSearch.toLowerCase()
+                const filtered = reservasHistorial.filter(r => {
+                  const matchSearch = !q || r.titulo.toLowerCase().includes(q) || (r.sala_nombre ?? '').toLowerCase().includes(q)
+                  const matchEstado = historialEstadoFilter === 'todos' || r.estado === historialEstadoFilter
+                  return matchSearch && matchEstado
+                })
+                const total = filtered.length
+                const pages = Math.ceil(total / HISTORIAL_PAGE_SIZE)
+                const page = filtered.slice((historialPage - 1) * HISTORIAL_PAGE_SIZE, historialPage * HISTORIAL_PAGE_SIZE)
+
+                if (filtered.length === 0) return (
+                  <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+                    <div className="w-14 h-14 rounded-full bg-surface-container flex items-center justify-center">
+                      <span className="material-symbols-outlined text-on-surface-variant text-3xl">history</span>
+                    </div>
+                    <p className="font-body font-semibold text-on-surface text-sm">
+                      {reservasHistorial.length === 0 ? 'No tienes reservas aún' : 'Sin resultados para esta búsqueda'}
+                    </p>
+                    <p className="font-body text-xs text-on-surface-variant">
+                      {reservasHistorial.length === 0 ? 'Tus reservas pasadas y activas aparecerán aquí' : 'Prueba con otro término o filtro'}
+                    </p>
+                  </div>
+                )
+
+                return (
+                  <div className="space-y-3">
+                    {page.map(r => {
+                      const isPast = r.fecha < new Date().toISOString().slice(0,10)
+                      return (
+                        <div
+                          key={r.id}
+                          className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-outline-variant/40 hover:shadow-sm transition-all"
+                        >
+                          <div className="flex items-start gap-4">
+                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+                              r.estado === 'cancelada' ? 'bg-red-100 text-red-500' :
+                              isPast ? 'bg-surface-container text-on-surface-variant' :
+                              'bg-primary/10 text-primary'
+                            }`}>
+                              <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>
+                                {r.estado === 'cancelada' ? 'event_busy' : isPast ? 'event_available' : 'pending_actions'}
+                              </span>
+                            </div>
+                            <div className="min-w-0">
+                              <h4 className="font-headline font-bold text-on-surface text-sm leading-snug truncate">{r.titulo}</h4>
+                              {r.sala_nombre && (
+                                <p className="font-body text-xs text-on-surface-variant mt-0.5">
+                                  <span className="material-symbols-outlined text-[13px] align-middle mr-0.5">meeting_room</span>
+                                  {r.sala_nombre}
+                                  {r.sala_ubicacion ? ` · ${r.sala_ubicacion}` : ''}
+                                </p>
+                              )}
+                              <p className="font-mono text-[11px] text-on-surface-variant mt-0.5">
+                                {formatFecha(r.fecha)} · {formatHora(r.hora_inicio)}–{formatHora(r.hora_fin)}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 shrink-0">
+                            <span className={`px-2.5 py-1 rounded-full text-[11px] font-label font-bold uppercase tracking-wide ${
+                              r.estado === 'confirmada' ? 'bg-emerald-100 text-emerald-700' :
+                              r.estado === 'cancelada' ? 'bg-red-100 text-red-600' :
+                              'bg-amber-100 text-amber-700'
+                            }`}>
+                              {r.estado}
+                            </span>
+                            {isPast && r.estado !== 'cancelada' && (
+                              <span className="bg-surface-container text-on-surface-variant text-[10px] font-label font-medium px-2 py-0.5 rounded-full uppercase tracking-wide">
+                                Pasada
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                    {pages > 1 && (
+                      <div className="flex items-center justify-between pt-2">
+                        <span className="font-body text-xs text-on-surface-variant">
+                          {total} reservas · página {historialPage} de {pages}
+                        </span>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setHistorialPage(p => Math.max(1, p - 1))}
+                            disabled={historialPage === 1}
+                            className="px-3 py-1.5 rounded-lg border border-outline-variant/40 font-label text-xs text-on-surface hover:bg-surface-container disabled:opacity-40 transition-all"
+                          >Anterior</button>
+                          <button
+                            onClick={() => setHistorialPage(p => Math.min(pages, p + 1))}
+                            disabled={historialPage === pages}
+                            className="px-3 py-1.5 rounded-lg border border-outline-variant/40 font-label text-xs text-on-surface hover:bg-surface-container disabled:opacity-40 transition-all"
+                          >Siguiente</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+            </div>
+          )}
             </>
           )}
 
@@ -4139,18 +4335,6 @@ export default function MainMenuPage() {
                   { label: 'Pendientes',  value: reportData?.reservas.pendientes  ?? 0, color: '#d97706' },
                   { label: 'Canceladas',  value: reportData?.reservas.canceladas  ?? 0, color: '#dc2626' },
                 ]
-                const donutTotal = donutData.reduce((s, d) => s + d.value, 0)
-                const donutGradient = (() => {
-                  if (!donutTotal) return 'conic-gradient(#e7eefe 0% 100%)'
-                  let cur = 0
-                  const stops = donutData.map(d => {
-                    const p1 = (cur / donutTotal) * 100
-                    cur += d.value
-                    const p2 = (cur / donutTotal) * 100
-                    return `${d.color} ${p1.toFixed(1)}% ${p2.toFixed(1)}%`
-                  })
-                  return `conic-gradient(${stops.join(', ')})`
-                })()
 
                 return (
                 <div className="space-y-6">
@@ -4234,51 +4418,37 @@ export default function MainMenuPage() {
                               <div className="flex justify-between items-center">
                                 <h4 className="font-label text-sm font-semibold text-on-surface">Estado de Reservas</h4>
                               </div>
-                              <div className="flex flex-col items-center gap-4">
-                                <div
-                                  className="relative w-44 h-44 rounded-full"
-                                  style={{ background: donutGradient }}
-                                >
-                                  <div className="absolute inset-[22%] bg-surface-container-lowest rounded-full flex flex-col items-center justify-center">
-                                    <span className="font-headline text-2xl font-bold text-on-surface">{donutTotal}</span>
-                                    <span className="font-body text-xs text-on-surface-variant">Total</span>
-                                  </div>
-                                </div>
-                                <div className="flex flex-wrap gap-x-4 gap-y-2 justify-center">
-                                  {donutData.map(d => (
-                                    <div key={d.label} className="flex items-center gap-1.5 text-xs font-body text-on-surface-variant">
-                                      <span className="w-3 h-3 rounded-full shrink-0" style={{ background: d.color }} />
-                                      {d.label} <span className="font-semibold text-on-surface">({d.value})</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
+                              <D3DonutChart
+                                data={donutData}
+                                size={180}
+                                showTotal
+                                totalLabel="Total"
+                              />
                             </div>
 
                             {/* Bar chart — Reservas por mes */}
                             <div className="lg:col-span-7 bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-5 shadow-sm flex flex-col gap-4">
                               <h4 className="font-label text-sm font-semibold text-on-surface">Reservas por Mes</h4>
-                              {reportData.reservas.porMes.length === 0 ? (
-                                <div className="flex-1 flex items-center justify-center text-on-surface-variant font-body text-sm">Sin datos</div>
-                              ) : (() => {
+                              {(() => {
                                 const maxV = Math.max(...reportData.reservas.porMes.map(e => e.total), 1)
                                 return (
                                   <div className="flex-1 flex flex-col gap-2">
-                                    {/* Vertical bars */}
-                                    <div className="flex items-end gap-2 h-40 border-b border-l border-outline-variant/30 pb-0 pl-0 relative">
+                                    <div className="flex items-end gap-1.5 h-40 border-b border-l border-outline-variant/30 relative">
                                       {reportData.reservas.porMes.map((entry, i) => (
                                         <div key={entry.mes} className="flex-1 flex flex-col items-center gap-1 h-full justify-end group">
                                           <span className="font-label text-[10px] text-on-surface font-semibold opacity-0 group-hover:opacity-100 transition-opacity">{entry.total}</span>
                                           <div
                                             className={`w-full rounded-t transition-all ${i === reportData.reservas.porMes.length - 1 ? 'bg-primary' : 'bg-primary/50 hover:bg-primary/70'}`}
-                                            style={{ height: `${(entry.total / maxV) * 90}%`, minHeight: entry.total > 0 ? '4px' : '0' }}
+                                            style={{ height: entry.total > 0 ? `${(entry.total / maxV) * 90}%` : '3px', opacity: entry.total > 0 ? 1 : 0.18 }}
                                           />
                                         </div>
                                       ))}
                                     </div>
-                                    <div className="flex gap-2">
+                                    <div className="flex gap-1.5">
                                       {reportData.reservas.porMes.map(entry => (
-                                        <span key={entry.mes} className="flex-1 text-center font-mono text-[9px] text-on-surface-variant truncate">{entry.mes.slice(5)}/{entry.mes.slice(2,4)}</span>
+                                        <span key={entry.mes} className="flex-1 text-center font-mono text-[9px] text-on-surface-variant truncate">
+                                          {entry.mes.slice(5)}/{entry.mes.slice(2, 4)}
+                                        </span>
                                       ))}
                                     </div>
                                   </div>
@@ -4291,36 +4461,16 @@ export default function MainMenuPage() {
                           {reportData.equipos.porCategoria.length > 0 && (
                             <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-5 shadow-sm">
                               <h4 className="font-label text-sm font-semibold text-on-surface mb-4">Equipos por Categoría</h4>
-                              <div className="space-y-3">
-                                {reportData.equipos.porCategoria
+                              <D3HorizontalBars
+                                data={reportData.equipos.porCategoria
                                   .sort((a, b) => b.total - a.total)
-                                  .map(cat => {
-                                    const maxC = Math.max(...reportData.equipos.porCategoria.map(c => c.total), 1)
-                                    const pctTotal = (cat.total / maxC) * 100
-                                    const pctDisp  = cat.total > 0 ? (cat.disponibles / cat.total) * 100 : 0
-                                    return (
-                                      <div key={cat.categoria}>
-                                        <div className="flex justify-between items-center mb-1.5">
-                                          <span className="font-body text-sm text-on-surface capitalize">{CATEGORIA_LABELS[cat.categoria] ?? cat.categoria}</span>
-                                          <div className="flex items-center gap-2">
-                                            <span className="font-label text-xs text-on-surface-variant">{cat.disponibles}/{cat.total}</span>
-                                            <span className="font-label text-xs text-green-600">{cat.total > 0 ? Math.round(pctDisp) : 0}% disp.</span>
-                                          </div>
-                                        </div>
-                                        <div className="h-2.5 bg-surface-container rounded-full overflow-hidden">
-                                          <div className="h-full relative" style={{ width: `${pctTotal}%` }}>
-                                            <div className="h-full bg-primary/30 rounded-full absolute inset-0" />
-                                            <div className="h-full bg-primary rounded-full absolute inset-0" style={{ width: `${pctDisp}%` }} />
-                                          </div>
-                                        </div>
-                                      </div>
-                                    )
-                                  })}
-                              </div>
-                              <div className="flex items-center gap-4 mt-4 pt-3 border-t border-outline-variant/20">
-                                <div className="flex items-center gap-1.5 font-body text-xs text-on-surface-variant"><span className="w-3 h-2.5 rounded bg-primary inline-block" /> Disponibles</div>
-                                <div className="flex items-center gap-1.5 font-body text-xs text-on-surface-variant"><span className="w-3 h-2.5 rounded bg-primary/30 inline-block" /> Total</div>
-                              </div>
+                                  .map(c => ({
+                                    label: c.categoria,
+                                    displayLabel: (CATEGORIA_LABELS as Record<string, string>)[c.categoria] ?? c.categoria,
+                                    available: c.disponibles,
+                                    total: c.total,
+                                  }))}
+                              />
                             </div>
                           )}
 
@@ -4373,30 +4523,13 @@ export default function MainMenuPage() {
                               ))}
                             </div>
 
-                            {/* Bar chart por mes */}
-                            {reportData.reservas.porMes.length > 0 && (() => {
-                              const maxV = Math.max(...reportData.reservas.porMes.map(e => e.total), 1)
-                              return (
-                                <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-5 shadow-sm">
-                                  <h4 className="font-label text-sm font-semibold text-on-surface mb-4">Evolución Mensual de Reservas</h4>
-                                  <div className="space-y-2">
-                                    {reportData.reservas.porMes.map(entry => (
-                                      <div key={entry.mes} className="flex items-center gap-3">
-                                        <span className="font-mono text-xs text-on-surface-variant w-16 shrink-0">{entry.mes}</span>
-                                        <div className="flex-1 h-5 bg-surface-container rounded overflow-hidden">
-                                          <div
-                                            className="h-full bg-primary/70 rounded flex items-center justify-end pr-2 transition-all"
-                                            style={{ width: `${(entry.total / maxV) * 100}%`, minWidth: entry.total > 0 ? '20px' : '0' }}
-                                          >
-                                            <span className="font-label text-[10px] font-bold text-white">{entry.total}</span>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )
-                            })()}
+                            {/* Line chart por mes */}
+                            {reportData.reservas.porMes.length > 0 && (
+                              <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-5 shadow-sm">
+                                <h4 className="font-label text-sm font-semibold text-on-surface mb-2">Evolución Mensual de Reservas</h4>
+                                <LineChartMonthly data={reportData.reservas.porMes} color="#00288e" height={280} quarterly />
+                              </div>
+                            )}
 
                             {/* Search + table */}
                             <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 shadow-sm overflow-hidden">
@@ -4621,19 +4754,14 @@ export default function MainMenuPage() {
                             {reportData.equipos.porCategoria.length > 0 && (
                               <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-5 shadow-sm">
                                 <h4 className="font-label text-sm font-semibold text-on-surface mb-4">Disponibilidad por Categoría</h4>
-                                <div className="space-y-3">
-                                  {reportData.equipos.porCategoria.sort((a, b) => b.total - a.total).map(cat => (
-                                    <div key={cat.categoria}>
-                                      <div className="flex justify-between items-center mb-1.5">
-                                        <span className="font-body text-sm text-on-surface capitalize">{CATEGORIA_LABELS[cat.categoria] ?? cat.categoria}</span>
-                                        <span className="font-label text-xs text-on-surface-variant">{cat.disponibles}/{cat.total} disp.</span>
-                                      </div>
-                                      <div className="h-2 bg-surface-container rounded-full overflow-hidden">
-                                        <div className="h-full bg-primary rounded-full transition-all" style={{ width: cat.total > 0 ? `${(cat.disponibles/cat.total)*100}%` : '0%' }} />
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
+                                <D3HorizontalBars
+                                  data={reportData.equipos.porCategoria.sort((a, b) => b.total - a.total).map(c => ({
+                                    label: c.categoria,
+                                    displayLabel: (CATEGORIA_LABELS as Record<string, string>)[c.categoria] ?? c.categoria,
+                                    available: c.disponibles,
+                                    total: c.total,
+                                  }))}
+                                />
                               </div>
                             )}
 

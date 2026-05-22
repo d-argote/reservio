@@ -549,7 +549,7 @@ export async function createReserva(
     // Marcar equipos 'reservado' si la reserva está activa AHORA (fire-and-forget)
     const { dateStr: today, timeStr: nowTime } = getBogotaNowServer()
     if (data.fecha === today && data.hora_inicio <= nowTime && data.hora_fin > nowTime) {
-      writeClient.from('equipos').update({ estado: 'reservado' }).in('id', equiposIds).catch(console.error)
+      writeClient.from('equipos').update({ estado: 'reservado' }).in('id', equiposIds).then(() => undefined, console.error)
     }
   }
 
@@ -791,18 +791,23 @@ export async function getReportData(): Promise<{ data?: ReportData; error?: stri
     return { error: 'FORBIDDEN' }
   }
 
+  // Use admin client so we can join to usuarios without RLS blocking
+  const adminClient = getSupabaseAdmin()
+  const queryClient = adminClient ?? supabase
+
   const [equiposRes, salasRes, reservasRes, salasListaRes, equiposListaRes, reservasListaRes] = await Promise.allSettled([
-    supabase.from('equipos').select('id, categoria, estado'),
-    supabase.from('salas').select('id, estado'),
-    supabase.from('reservas').select('id, estado, fecha'),
-    supabase.from('salas').select('id, nombre, capacidad, ubicacion, estado').order('nombre'),
-    supabase.from('equipos').select('id, nombre, categoria, marca, tipo_equipo, estado, numero_serie').order('nombre').limit(200),
-    supabase
+    queryClient.from('equipos').select('id, categoria, estado'),
+    queryClient.from('salas').select('id, estado'),
+    queryClient.from('reservas').select('id, estado, fecha'),
+    queryClient.from('salas').select('id, nombre, capacidad, ubicacion, estado').order('nombre'),
+    queryClient.from('equipos').select('id, nombre, categoria, marca, tipo_equipo, estado, numero_serie').order('nombre').limit(200),
+    // Try to join usuarios; fall back gracefully if the FK isn't named "usuarios"
+    queryClient
       .from('reservas')
       .select('id, titulo, fecha, hora_inicio, hora_fin, estado, salas(nombre), usuarios(nombre)')
       .order('fecha', { ascending: false })
       .order('hora_inicio', { ascending: false })
-      .limit(200),
+      .limit(500),
   ])
 
   const equiposData: { id: string; categoria: string; estado: string }[] =
@@ -844,16 +849,24 @@ export async function getReportData(): Promise<{ data?: ReportData; error?: stri
     if (eq.estado === 'disponible') catMap[cat].disponibles++
   }
 
-  // Reservas por mes (últimos 6 meses)
+  // Reservas por mes — últimos 12 meses completos (sin importar si hay datos)
   const mesMap: Record<string, number> = {}
   for (const r of reservasData) {
     const mes = r.fecha?.slice(0, 7)
     if (mes) mesMap[mes] = (mesMap[mes] || 0) + 1
   }
-  const porMes = Object.entries(mesMap)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .slice(-6)
-    .map(([mes, total]) => ({ mes, total }))
+
+  // Generar los próximos 12 meses a partir del mes actual (incluido)
+  const { dateStr: todayForReport } = getBogotaNowServer()
+  const [todayYear, todayMonth] = todayForReport.split('-').map(Number)
+  const porMes: { mes: string; total: number }[] = []
+  for (let i = 0; i < 12; i++) {
+    let m = todayMonth + i
+    let y = todayYear
+    while (m > 12) { m -= 12; y++ }
+    const key = `${y}-${String(m).padStart(2, '0')}`
+    porMes.push({ mes: key, total: mesMap[key] ?? 0 })
+  }
 
   return {
     data: {
@@ -881,6 +894,62 @@ export async function getReportData(): Promise<{ data?: ReportData; error?: stri
         lista: reservasLista,
       },
     },
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HISTORIAL DE RESERVAS DEL USUARIO
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface ReservaHistorial {
+  id: string
+  titulo: string
+  fecha: string
+  hora_inicio: string
+  hora_fin: string
+  estado: 'pendiente' | 'confirmada' | 'cancelada'
+  sala_nombre: string | null
+  sala_capacidad: number | null
+  sala_ubicacion: string | null
+}
+
+/**
+ * Devuelve todas las reservas históricas del usuario autenticado
+ * (incluyendo pasadas y canceladas), ordenadas de más reciente a más antigua.
+ */
+export async function getMisReservasHistorial(): Promise<{ data?: ReservaHistorial[]; error?: string }> {
+  const { user, supabase } = await getAuthUser()
+  if (!user) return { error: 'No autenticado' }
+
+  const { data, error } = await supabase
+    .from('reservas')
+    .select('id, titulo, fecha, hora_inicio, hora_fin, estado, salas(nombre, capacidad, ubicacion)')
+    .eq('usuario_id', user.id)
+    .order('fecha', { ascending: false })
+    .order('hora_inicio', { ascending: false })
+    .limit(500)
+
+  if (error) return { error: error.message }
+
+  type RawRow = {
+    id: string; titulo: string; fecha: string
+    hora_inicio: string; hora_fin: string; estado: string
+    salas: { nombre: string; capacidad: number; ubicacion: string | null } | null
+  }
+
+  const rows = (data ?? []) as unknown as RawRow[]
+  return {
+    data: rows.map(r => ({
+      id: r.id,
+      titulo: r.titulo,
+      fecha: r.fecha,
+      hora_inicio: r.hora_inicio,
+      hora_fin: r.hora_fin,
+      estado: r.estado as ReservaHistorial['estado'],
+      sala_nombre: r.salas?.nombre ?? null,
+      sala_capacidad: r.salas?.capacidad ?? null,
+      sala_ubicacion: r.salas?.ubicacion ?? null,
+    })),
   }
 }
 

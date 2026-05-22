@@ -633,12 +633,12 @@ export async function getAlertasEquiposAdmin(): Promise<{ data?: AlertaEquipoAdm
     ...(activosData ?? []).map(row => {
       const tipo: AlertaEquipoAdmin['tipo'] =
         new Date(row.fecha_fin_esperada) < ahora ? 'vencido' : 'activo_ahora'
-      return toAlerta(row as AlertaRow, tipo)
+      return toAlerta(row as unknown as AlertaRow, tipo)
     }),
     ...(proximosData ?? []).map(row => {
       const horasHasta = (new Date(row.fecha_inicio).getTime() - ahora.getTime()) / (1000 * 60 * 60)
       const tipo: AlertaEquipoAdmin['tipo'] = horasHasta <= 24 ? 'proximo_24h' : 'proximo_48h'
-      return toAlerta(row as AlertaRow, tipo)
+      return toAlerta(row as unknown as AlertaRow, tipo)
     }),
   ]
 
