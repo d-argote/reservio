@@ -2,6 +2,14 @@
 
 import { getSupabaseAdmin } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
+import type { SupabaseClient } from '@supabase/supabase-js'
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CONSTANTES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** Valores válidos del campo `rol` que reciben acceso de administrador. */
+export const ADMIN_ROLES = ['admin', 'administrador', 'administrator'] as const
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TIPOS
@@ -39,22 +47,22 @@ export interface Equipo {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 // GUARD — verifica que quien llama sea admin
 // ═══════════════════════════════════════════════════════════════════════════════
 
-async function assertAdmin(): Promise<{ error: string } | null> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'NO_SESSION' }
-
+async function verifyAdmin(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<{ error: string } | null> {
   const { data } = await supabase
     .from('usuarios')
     .select('rol')
-    .eq('id', user.id)
+    .eq('id', userId)
     .single()
 
   const rol = data?.rol ?? ''
-  if (!['admin', 'administrador', 'administrator'].includes(rol)) {
+  if (!ADMIN_ROLES.includes(rol as typeof ADMIN_ROLES[number])) {
     return { error: 'FORBIDDEN' }
   }
   return null
@@ -65,7 +73,10 @@ async function assertAdmin(): Promise<{ error: string } | null> {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export async function getUsuarios(): Promise<{ data?: UsuarioAdmin[]; error?: string }> {
-  const guard = await assertAdmin()
+  const _supabase = await createClient()
+  const { data: { user: _u } } = await _supabase.auth.getUser()
+  if (!_u) return { error: 'NO_SESSION' }
+  const guard = await verifyAdmin(_supabase, _u.id)
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
@@ -83,7 +94,10 @@ export async function updateUserRole(
   userId: string,
   newRol: 'usuario' | 'admin',
 ): Promise<{ success?: boolean; error?: string }> {
-  const guard = await assertAdmin()
+  const _supabase = await createClient()
+  const { data: { user: _u } } = await _supabase.auth.getUser()
+  if (!_u) return { error: 'NO_SESSION' }
+  const guard = await verifyAdmin(_supabase, _u.id)
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
@@ -103,7 +117,10 @@ export async function createUsuarioAdmin(
   password: string,
   rol: 'usuario' | 'admin',
 ): Promise<{ success?: boolean; error?: string }> {
-  const guard = await assertAdmin()
+  const _supabase = await createClient()
+  const { data: { user: _u } } = await _supabase.auth.getUser()
+  if (!_u) return { error: 'NO_SESSION' }
+  const guard = await verifyAdmin(_supabase, _u.id)
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
@@ -129,7 +146,10 @@ export async function toggleUsuarioActivo(
   userId: string,
   activo: boolean,
 ): Promise<{ success?: boolean; error?: string }> {
-  const guard = await assertAdmin()
+  const _supabase = await createClient()
+  const { data: { user: _u } } = await _supabase.auth.getUser()
+  if (!_u) return { error: 'NO_SESSION' }
+  const guard = await verifyAdmin(_supabase, _u.id)
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
@@ -147,7 +167,10 @@ export async function updateUsuarioEmail(
   userId: string,
   newEmail: string,
 ): Promise<{ success?: boolean; error?: string }> {
-  const guard = await assertAdmin()
+  const _supabase = await createClient()
+  const { data: { user: _u } } = await _supabase.auth.getUser()
+  if (!_u) return { error: 'NO_SESSION' }
+  const guard = await verifyAdmin(_supabase, _u.id)
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
@@ -169,7 +192,10 @@ export async function updateUsuarioNombre(
   userId: string,
   newNombre: string,
 ): Promise<{ success?: boolean; error?: string }> {
-  const guard = await assertAdmin()
+  const _supabase = await createClient()
+  const { data: { user: _u } } = await _supabase.auth.getUser()
+  if (!_u) return { error: 'NO_SESSION' }
+  const guard = await verifyAdmin(_supabase, _u.id)
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
@@ -189,7 +215,10 @@ export async function updateUsuarioNombre(
 export async function sendPasswordResetAdmin(
   correo: string,
 ): Promise<{ success?: boolean; error?: string }> {
-  const guard = await assertAdmin()
+  const _supabase = await createClient()
+  const { data: { user: _u } } = await _supabase.auth.getUser()
+  if (!_u) return { error: 'NO_SESSION' }
+  const guard = await verifyAdmin(_supabase, _u.id)
   if (guard) return { error: guard.error }
 
   const supabase = await createClient()
@@ -206,8 +235,10 @@ export async function sendPasswordResetAdmin(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export async function getEquipos(): Promise<{ data?: Equipo[]; error?: string }> {
-  const supabase = await createClient()
-  const { data, error } = await supabase
+  const _supabase = await createClient()
+  const { data: { user: _u } } = await _supabase.auth.getUser()
+  if (!_u) return { error: 'NO_SESSION' }
+  const { data, error } = await _supabase
     .from('equipos')
     .select('id, nombre, categoria, sistema_operativo, marca, tipo_equipo, estado, imagen_url, numero_serie, sala_id')
     .order('nombre')
@@ -219,7 +250,10 @@ export async function getEquipos(): Promise<{ data?: Equipo[]; error?: string }>
 export async function createEquipo(
   equipo: Omit<Equipo, 'id'>,
 ): Promise<{ data?: Equipo; error?: string }> {
-  const guard = await assertAdmin()
+  const _supabase = await createClient()
+  const { data: { user: _u } } = await _supabase.auth.getUser()
+  if (!_u) return { error: 'NO_SESSION' }
+  const guard = await verifyAdmin(_supabase, _u.id)
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
@@ -238,7 +272,10 @@ export async function updateEquipoEstado(
   id: string,
   estado: Equipo['estado'],
 ): Promise<{ success?: boolean; error?: string }> {
-  const guard = await assertAdmin()
+  const _supabase = await createClient()
+  const { data: { user: _u } } = await _supabase.auth.getUser()
+  if (!_u) return { error: 'NO_SESSION' }
+  const guard = await verifyAdmin(_supabase, _u.id)
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
@@ -256,7 +293,10 @@ export async function updateEquipo(
   id: string,
   updates: Partial<Omit<Equipo, 'id'>>,
 ): Promise<{ success?: boolean; error?: string }> {
-  const guard = await assertAdmin()
+  const _supabase = await createClient()
+  const { data: { user: _u } } = await _supabase.auth.getUser()
+  if (!_u) return { error: 'NO_SESSION' }
+  const guard = await verifyAdmin(_supabase, _u.id)
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
@@ -271,7 +311,10 @@ export async function updateEquipo(
 }
 
 export async function deleteEquipo(id: string): Promise<{ success?: boolean; error?: string }> {
-  const guard = await assertAdmin()
+  const _supabase = await createClient()
+  const { data: { user: _u } } = await _supabase.auth.getUser()
+  if (!_u) return { error: 'NO_SESSION' }
+  const guard = await verifyAdmin(_supabase, _u.id)
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
@@ -308,7 +351,10 @@ export async function deleteEquipo(id: string): Promise<{ success?: boolean; err
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export async function getSalasAdmin(): Promise<{ data?: SalaAdmin[]; error?: string }> {
-  const guard = await assertAdmin()
+  const _supabase = await createClient()
+  const { data: { user: _u } } = await _supabase.auth.getUser()
+  if (!_u) return { error: 'NO_SESSION' }
+  const guard = await verifyAdmin(_supabase, _u.id)
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
@@ -325,7 +371,10 @@ export async function getSalasAdmin(): Promise<{ data?: SalaAdmin[]; error?: str
 export async function createSala(
   sala: Omit<SalaAdmin, 'id'>,
 ): Promise<{ data?: SalaAdmin; error?: string }> {
-  const guard = await assertAdmin()
+  const _supabase = await createClient()
+  const { data: { user: _u } } = await _supabase.auth.getUser()
+  if (!_u) return { error: 'NO_SESSION' }
+  const guard = await verifyAdmin(_supabase, _u.id)
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
@@ -344,7 +393,10 @@ export async function updateSala(
   id: string,
   updates: Partial<Omit<SalaAdmin, 'id'>>,
 ): Promise<{ success?: boolean; error?: string }> {
-  const guard = await assertAdmin()
+  const _supabase = await createClient()
+  const { data: { user: _u } } = await _supabase.auth.getUser()
+  if (!_u) return { error: 'NO_SESSION' }
+  const guard = await verifyAdmin(_supabase, _u.id)
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
@@ -359,7 +411,10 @@ export async function updateSala(
 }
 
 export async function deleteSala(id: string): Promise<{ success?: boolean; error?: string }> {
-  const guard = await assertAdmin()
+  const _supabase = await createClient()
+  const { data: { user: _u } } = await _supabase.auth.getUser()
+  if (!_u) return { error: 'NO_SESSION' }
+  const guard = await verifyAdmin(_supabase, _u.id)
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
@@ -394,7 +449,10 @@ export async function asignarEquipoASala(
   equipoId: string,
   salaId: string | null,
 ): Promise<{ success?: boolean; error?: string }> {
-  const guard = await assertAdmin()
+  const _supabase = await createClient()
+  const { data: { user: _u } } = await _supabase.auth.getUser()
+  if (!_u) return { error: 'NO_SESSION' }
+  const guard = await verifyAdmin(_supabase, _u.id)
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
@@ -443,7 +501,10 @@ const PRESTAMOS_SELECT = `
 
 // Préstamos activos + vencidos + pendiente_revision (requieren acción del admin)
 export async function getPrestamosAdmin(): Promise<{ data?: PrestamoEquipoAdmin[]; error?: string }> {
-  const guard = await assertAdmin()
+  const _supabase = await createClient()
+  const { data: { user: _u } } = await _supabase.auth.getUser()
+  if (!_u) return { error: 'NO_SESSION' }
+  const guard = await verifyAdmin(_supabase, _u.id)
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
@@ -467,7 +528,10 @@ export async function getPrestamosAdminHistorial(opts?: {
   estado?: 'activo' | 'devuelto' | 'vencido' | 'todos'
   soloNovedades?: boolean
 }): Promise<{ data?: PrestamoEquipoAdmin[]; error?: string }> {
-  const guard = await assertAdmin()
+  const _supabase = await createClient()
+  const { data: { user: _u } } = await _supabase.auth.getUser()
+  if (!_u) return { error: 'NO_SESSION' }
+  const guard = await verifyAdmin(_supabase, _u.id)
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
@@ -499,7 +563,10 @@ export async function devolverPrestamoAdmin(
   novedadTipo?: string | null,
   descripcionNovedad?: string | null,
 ): Promise<{ success?: boolean; error?: string }> {
-  const guard = await assertAdmin()
+  const _supabase = await createClient()
+  const { data: { user: _u } } = await _supabase.auth.getUser()
+  if (!_u) return { error: 'NO_SESSION' }
+  const guard = await verifyAdmin(_supabase, _u.id)
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
@@ -536,7 +603,10 @@ export async function actualizarNotasAdmin(
   prestamoId: string,
   notasAdmin: string,
 ): Promise<{ success?: boolean; error?: string }> {
-  const guard = await assertAdmin()
+  const _supabase = await createClient()
+  const { data: { user: _u } } = await _supabase.auth.getUser()
+  if (!_u) return { error: 'NO_SESSION' }
+  const guard = await verifyAdmin(_supabase, _u.id)
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
@@ -568,7 +638,10 @@ export async function confirmarRevisionAdmin(
   novedadTipo?: string | null,
   descripcionNovedad?: string | null,
 ): Promise<{ success?: boolean; error?: string }> {
-  const guard = await assertAdmin()
+  const _supabase = await createClient()
+  const { data: { user: _u } } = await _supabase.auth.getUser()
+  if (!_u) return { error: 'NO_SESSION' }
+  const guard = await verifyAdmin(_supabase, _u.id)
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
@@ -627,7 +700,10 @@ export async function reasignarEquipoAdmin(
   usuarioId: string,
   notasAdmin: string | null,
 ): Promise<{ success?: boolean; error?: string }> {
-  const guard = await assertAdmin()
+  const _supabase = await createClient()
+  const { data: { user: _u } } = await _supabase.auth.getUser()
+  if (!_u) return { error: 'NO_SESSION' }
+  const guard = await verifyAdmin(_supabase, _u.id)
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
@@ -749,7 +825,10 @@ export interface AlertaEquipoAdmin {
  *  - Préstamos programados que empiezan en las próximas 48 h
  */
 export async function getAlertasEquiposAdmin(): Promise<{ data?: AlertaEquipoAdmin[]; error?: string }> {
-  const guard = await assertAdmin()
+  const _supabase = await createClient()
+  const { data: { user: _u } } = await _supabase.auth.getUser()
+  if (!_u) return { error: 'NO_SESSION' }
+  const guard = await verifyAdmin(_supabase, _u.id)
   if (guard) return { error: guard.error }
 
   const supabase = getSupabaseAdmin()
@@ -765,22 +844,24 @@ export async function getAlertasEquiposAdmin(): Promise<{ data?: AlertaEquipoAdm
     usuarios:usuario_id ( nombre, correo )
   `
 
-  // Préstamos que ya comenzaron (activos ahora o vencidos sin devolución)
-  const { data: activosData } = await supabase
-    .from('prestamos_equipo')
-    .select(ALERTA_SELECT)
-    .eq('estado', 'activo')
-    .lte('fecha_inicio', ahoraISO)
-    .order('fecha_fin_esperada', { ascending: true })
-
-  // Próximos en las próximas 48 h
-  const { data: proximosData } = await supabase
-    .from('prestamos_equipo')
-    .select(ALERTA_SELECT)
-    .eq('estado', 'activo')
-    .gt('fecha_inicio', ahoraISO)
-    .lte('fecha_inicio', en48hISO)
-    .order('fecha_inicio', { ascending: true })
+  // Run independent queries in parallel
+  const [activosResult, proximosResult] = await Promise.all([
+    supabase
+      .from('prestamos_equipo')
+      .select(ALERTA_SELECT)
+      .eq('estado', 'activo')
+      .lte('fecha_inicio', ahoraISO)
+      .order('fecha_fin_esperada', { ascending: true }),
+    supabase
+      .from('prestamos_equipo')
+      .select(ALERTA_SELECT)
+      .eq('estado', 'activo')
+      .gt('fecha_inicio', ahoraISO)
+      .lte('fecha_inicio', en48hISO)
+      .order('fecha_inicio', { ascending: true }),
+  ])
+  const activosData  = activosResult.data
+  const proximosData = proximosResult.data
 
   type AlertaRow = {
     id: string

@@ -38,7 +38,7 @@ export function D3BarChart({
 
   useEffect(() => {
     if (!svgRef.current || !containerRef.current || !data.length) return
-
+    const svgEl = svgRef.current
     const container = containerRef.current
     const width = container.clientWidth || 400
 
@@ -194,22 +194,20 @@ export function D3BarChart({
       .attr('y', d => yScale(d.value) - 5)
       .attr('opacity', 1)
 
+    return () => {
+      d3.select(svgEl).selectAll('.bar').on('mouseover', null).on('mouseleave', null)
+      d3.select(svgEl).selectAll('*').remove()
+    }
   }, [data, height, accentColor, secondaryColor, formatLabel, formatTick, animationDuration])
 
-  // ResizeObserver for responsiveness
+  // ResizeObserver for responsiveness — triggers redraw by re-measuring container
   useEffect(() => {
-    if (!containerRef.current) return
+    const container = containerRef.current
+    if (!container) return
     const ro = new ResizeObserver(() => {
-      // Re-trigger by clearing and re-running — simplest safe approach
-      if (svgRef.current) {
-        d3.select(svgRef.current).selectAll('*').remove()
-        // Re-run effect by toggling a dummy state isn't ideal here;
-        // instead we call the draw logic inline via the ref
-        const event = new Event('resize')
-        window.dispatchEvent(event)
-      }
+      if (svgRef.current) d3.select(svgRef.current).selectAll('*').remove()
     })
-    ro.observe(containerRef.current)
+    ro.observe(container)
     return () => ro.disconnect()
   }, [])
 
@@ -229,20 +227,7 @@ export function D3BarChart({
       <svg ref={svgRef} className="w-full overflow-visible" />
       <div
         ref={tooltipRef}
-        style={{
-          position: 'absolute',
-          opacity: 0,
-          pointerEvents: 'none',
-          background: '#ffffff',
-          border: '1px solid #e7eefe',
-          borderRadius: '8px',
-          padding: '8px 12px',
-          boxShadow: '0 4px 16px rgba(23,28,31,0.12)',
-          transition: 'opacity 0.12s',
-          minWidth: '72px',
-          textAlign: 'center',
-          zIndex: 100,
-        }}
+        className="absolute opacity-0 pointer-events-none bg-white border border-[#e7eefe] rounded-lg px-3 py-2 shadow-[0_4px_16px_rgba(23,28,31,0.12)] transition-opacity duration-[120ms] min-w-[72px] text-center z-[100]"
       />
     </div>
   )

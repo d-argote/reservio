@@ -1,0 +1,505 @@
+[1mreact-doctor[22m [2mv0.2.3[22m
+
+[32mÔ£ö[39m Select projects to scan [2mÔÇ║[22m reservio
+[2mScanning C:\Users\Diego Argote\Desktop\reservio...[22m
+
+Ô£ö Detecting framework. Found Next.js.
+Ô£ö Detecting React version. Found React 19.2.4.
+Ô£ö Detecting Tailwind. Found Tailwind ^4.
+Ô£ö Detecting language. Found TypeScript.
+Ô£ö Detecting React Compiler. Not found.
+Ô£ö Found 33 source files.
+
+Ô£ö Running lint checks.
+Ô£ö Analyzing dead code.
+
+  [31mÔ£ù[39m [31mreact-doctor/server-auth-actions                [39m [90m├ù6[39m
+[90m      Server action "signUpUser" ÔÇö add auth check (auth(), getSession(), etc.) at the top[39m
+[90m      ÔåÆ Add `const session = await auth()` at the top and throw/redirect if unauthorized before any data access[39m
+[90m      features/auth/actions.ts:6[39m
+[90m      features/auth/actions.ts:76[39m
+[90m      features/auth/actions.ts:118[39m
+[90m      features/auth/actions.ts:149[39m
+[90m      features/auth/actions.ts:178[39m
+[90m      features/admin/actions.ts:223[39m
+
+  [31mÔ£ù[39m [31mreact-doctor/effect-needs-cleanup               [39m [90m├ù4[39m
+[90m      useEffect subscribes via `on(...)` but never returns a cleanup ÔÇö leaks the registration on every re-run and on unmount. Return a cleanup function that calls the matching remove/unsubscribe call[39m
+[90m      ÔåÆ Return a cleanup function that releases the subscription / timer: `return () => target.removeEventListener(name, handler)` for listeners, `return () => clearInterval(id)` / `clearTimeout(id)` for timers, or `return unsubscribe` if the subscribe call already returned one[39m
+[90m      components/ui/charts/D3BarChart.tsx:39[39m
+[90m      components/ui/charts/D3DonutChart.tsx:41[39m
+[90m      components/ui/charts/D3AreaChart.tsx:38[39m
+[90m      components/ui/charts/D3HorizontalBars.tsx:61[39m
+
+  [33mÔÜá[39m [33mreact-doctor/control-has-associated-label       [39m [90m├ù56[39m
+[90m      A control must be associated with a text label ÔÇö add visible text, `aria-label`, or `aria-labelledby`.[39m
+[90m      ÔåÆ Every interactive control must have an accessible label.[39m
+[90m      app/forgot-password/page.tsx:90[39m
+[90m      app/main-menu/page.tsx:2322[39m
+[90m      app/main-menu/page.tsx:2779[39m
+[90m      app/main-menu/page.tsx:3070[39m
+[90m      app/main-menu/page.tsx:3074[39m
+[90m      app/main-menu/page.tsx:3079[39m
+[90m      app/main-menu/page.tsx:3089[39m
+[90m      app/main-menu/page.tsx:3121[39m
+[90m      app/main-menu/page.tsx:3162[39m
+[90m      app/main-menu/page.tsx:3175[39m
+[90m      app/main-menu/page.tsx:3321[39m
+[90m      app/main-menu/page.tsx:3375[39m
+[90m      app/main-menu/page.tsx:3441[39m
+[90m      app/main-menu/page.tsx:3508[39m
+[90m      app/main-menu/page.tsx:3545[39m
+[90m      app/main-menu/page.tsx:3596[39m
+[90m      app/main-menu/page.tsx:3668[39m
+[90m      app/main-menu/page.tsx:3674[39m
+[90m      app/main-menu/page.tsx:3720[39m
+[90m      app/main-menu/page.tsx:4211[39m
+[90m      app/main-menu/page.tsx:4215[39m
+[90m      app/main-menu/page.tsx:4219[39m
+[90m      app/main-menu/page.tsx:4223[39m
+[90m      app/main-menu/page.tsx:4242[39m
+[90m      app/main-menu/page.tsx:4292[39m
+[90m      app/main-menu/page.tsx:4309[39m
+[90m      app/main-menu/page.tsx:4313[39m
+[90m      app/main-menu/page.tsx:4313[39m
+[90m      app/main-menu/page.tsx:4314[39m
+[90m      app/main-menu/page.tsx:4314[39m
+[90m      app/main-menu/page.tsx:4719[39m
+[90m      app/main-menu/page.tsx:4838[39m
+[90m      app/main-menu/page.tsx:4953[39m
+[90m      app/main-menu/page.tsx:5088[39m
+[90m      app/main-menu/page.tsx:5134[39m
+[90m      app/main-menu/page.tsx:5246[39m
+[90m      app/main-menu/page.tsx:5274[39m
+[90m      app/main-menu/page.tsx:5572[39m
+[90m      app/main-menu/page.tsx:5585[39m
+[90m      app/main-menu/page.tsx:5602[39m
+[90m      app/main-menu/page.tsx:5808[39m
+[90m      app/main-menu/page.tsx:5829[39m
+[90m      app/main-menu/page.tsx:5859[39m
+[90m      app/main-menu/page.tsx:5917[39m
+[90m      app/main-menu/page.tsx:6044[39m
+[90m      app/main-menu/page.tsx:6075[39m
+[90m      app/main-menu/page.tsx:6211[39m
+[90m      app/main-menu/page.tsx:6242[39m
+[90m      app/main-menu/page.tsx:6411[39m
+[90m      app/login/page.tsx:248[39m
+[90m      app/login/page.tsx:266[39m
+[90m      app/register/page.tsx:657[39m
+[90m      app/register/page.tsx:688[39m
+[90m      app/register/page.tsx:719[39m
+[90m      app/reset-password/page.tsx:167[39m
+[90m      app/reset-password/page.tsx:204[39m
+
+  [33mÔÜá[39m [33mreact-doctor/label-has-associated-control       [39m [90m├ù43[39m
+[90m      A form label must be associated with a control ÔÇö use `htmlFor` or nest the input.[39m
+[90m      ÔåÆ Associate every label with a control via `htmlFor` or by nesting the input.[39m
+[90m      app/main-menu/page.tsx:3069[39m
+[90m      app/main-menu/page.tsx:3073[39m
+[90m      app/main-menu/page.tsx:3077[39m
+[90m      app/main-menu/page.tsx:3087[39m
+[90m      app/main-menu/page.tsx:3096[39m
+[90m      app/main-menu/page.tsx:3374[39m
+[90m      app/main-menu/page.tsx:3387[39m
+[90m      app/main-menu/page.tsx:3404[39m
+[90m      app/main-menu/page.tsx:3424[39m
+[90m      app/main-menu/page.tsx:3455[39m
+[90m      app/main-menu/page.tsx:3479[39m
+[90m      app/main-menu/page.tsx:3507[39m
+[90m      app/main-menu/page.tsx:3588[39m
+[90m      app/main-menu/page.tsx:4210[39m
+[90m      app/main-menu/page.tsx:4214[39m
+[90m      app/main-menu/page.tsx:4218[39m
+[90m      app/main-menu/page.tsx:4222[39m
+[90m      app/main-menu/page.tsx:4226[39m
+[90m      app/main-menu/page.tsx:4234[39m
+[90m      app/main-menu/page.tsx:5085[39m
+[90m      app/main-menu/page.tsx:5100[39m
+[90m      app/main-menu/page.tsx:5131[39m
+[90m      app/main-menu/page.tsx:5185[39m
+[90m      app/main-menu/page.tsx:5243[39m
+[90m      app/main-menu/page.tsx:5271[39m
+[90m      app/main-menu/page.tsx:5503[39m
+[90m      app/main-menu/page.tsx:5569[39m
+[90m      app/main-menu/page.tsx:5582[39m
+[90m      app/main-menu/page.tsx:5598[39m
+[90m      app/main-menu/page.tsx:5615[39m
+[90m      app/main-menu/page.tsx:5828[39m
+[90m      app/main-menu/page.tsx:5852[39m
+[90m      app/main-menu/page.tsx:5858[39m
+[90m      app/main-menu/page.tsx:6022[39m
+[90m      app/main-menu/page.tsx:6043[39m
+[90m      app/main-menu/page.tsx:6068[39m
+[90m      app/main-menu/page.tsx:6074[39m
+[90m      app/main-menu/page.tsx:6189[39m
+[90m      app/main-menu/page.tsx:6210[39m
+[90m      app/main-menu/page.tsx:6235[39m
+[90m      app/main-menu/page.tsx:6241[39m
+[90m      app/main-menu/page.tsx:6340[39m
+[90m      app/main-menu/page.tsx:6410[39m
+
+  [33mÔÜá[39m [33mreact-doctor/jsx-max-depth                      [39m [90m├ù40[39m
+[90m      JSX nesting depth 15 exceeds maximum 14.[39m
+[90m      ÔåÆ Extract deeply nested JSX into smaller components to keep render trees readable.[39m
+[90m      app/main-menu/page.tsx:3175[39m
+[90m      app/main-menu/page.tsx:3176[39m
+[90m      app/main-menu/page.tsx:3177[39m
+[90m      app/main-menu/page.tsx:3177[39m
+[90m      app/main-menu/page.tsx:3180[39m
+[90m      app/main-menu/page.tsx:3215[39m
+[90m      app/main-menu/page.tsx:3224[39m
+[90m      app/main-menu/page.tsx:3225[39m
+[90m      app/main-menu/page.tsx:3226[39m
+[90m      app/main-menu/page.tsx:3235[39m
+[90m      app/main-menu/page.tsx:3236[39m
+[90m      app/main-menu/page.tsx:3671[39m
+[90m      app/main-menu/page.tsx:3672[39m
+[90m      app/main-menu/page.tsx:3673[39m
+[90m      app/main-menu/page.tsx:3674[39m
+[90m      app/main-menu/page.tsx:3713[39m
+[90m      app/main-menu/page.tsx:3713[39m
+[90m      app/main-menu/page.tsx:3716[39m
+[90m      app/main-menu/page.tsx:3730[39m
+[90m      app/main-menu/page.tsx:3732[39m
+[90m      app/main-menu/page.tsx:3763[39m
+[90m      app/main-menu/page.tsx:3765[39m
+[90m      app/main-menu/page.tsx:3791[39m
+[90m      app/main-menu/page.tsx:3798[39m
+[90m      app/main-menu/page.tsx:4146[39m
+[90m      app/main-menu/page.tsx:4153[39m
+[90m      app/main-menu/page.tsx:4296[39m
+[90m      app/main-menu/page.tsx:4302[39m
+[90m      app/main-menu/page.tsx:4307[39m
+[90m      app/main-menu/page.tsx:4308[39m
+[90m      app/main-menu/page.tsx:4309[39m
+[90m      app/main-menu/page.tsx:4325[39m
+[90m      app/main-menu/page.tsx:4325[39m
+[90m      app/main-menu/page.tsx:4328[39m
+[90m      app/main-menu/page.tsx:4339[39m
+[90m      app/main-menu/page.tsx:4362[39m
+[90m      app/main-menu/page.tsx:4369[39m
+[90m      app/main-menu/page.tsx:4756[39m
+[90m      app/main-menu/page.tsx:4871[39m
+[90m      app/main-menu/page.tsx:4990[39m
+
+  [33mÔÜá[39m [33mreact-doctor/server-sequential-independent-await[39m [90m├ù34[39m
+[90m      Sequential `await` without a data dependency on the previous result ÔÇö wrap the independent calls in `Promise.all([...])` so they race instead of waterfalling[39m
+[90m      ÔåÆ Wrap independent awaits in `Promise.all([...])` so they race instead of waterfalling ÔÇö second call doesn't depend on the first[39m
+[90m      features/admin/actions.ts:77[39m
+[90m      features/admin/actions.ts:96[39m
+[90m      features/admin/actions.ts:117[39m
+[90m      features/admin/actions.ts:144[39m
+[90m      features/admin/actions.ts:163[39m
+[90m      features/admin/actions.ts:186[39m
+[90m      features/admin/actions.ts:207[39m
+[90m      features/admin/actions.ts:238[39m
+[90m      features/admin/actions.ts:258[39m
+[90m      features/admin/actions.ts:277[39m
+[90m      features/admin/actions.ts:293[39m
+[90m      features/admin/actions.ts:331[39m
+[90m      features/admin/actions.ts:349[39m
+[90m      features/admin/actions.ts:369[39m
+[90m      features/admin/actions.ts:385[39m
+[90m      features/admin/actions.ts:421[39m
+[90m      features/admin/actions.ts:471[39m
+[90m      features/admin/actions.ts:496[39m
+[90m      features/admin/actions.ts:529[39m
+[90m      features/admin/actions.ts:567[39m
+[90m      features/admin/actions.ts:600[39m
+[90m      features/admin/actions.ts:660[39m
+[90m      features/admin/actions.ts:783[39m
+[90m      features/reservas/actions.ts:441[39m
+[90m      features/reservas/actions.ts:605[39m
+[90m      features/reservas/actions.ts:690[39m
+[90m      features/reservas/actions.ts:769[39m
+[90m      features/reservas/actions.ts:807[39m
+[90m      features/reservas/actions.ts:963[39m
+[90m      features/reservas/actions.ts:1043[39m
+[90m      features/reservas/actions.ts:1174[39m
+[90m      features/reservas/actions.ts:1208[39m
+[90m      features/reservas/actions.ts:1248[39m
+[90m      features/reservas/actions.ts:1336[39m
+
+  [33mÔÜá[39m [33mdeslop/unused-file                              [39m [90m├ù22[39m
+[90m      Unused file ÔÇö not reachable from any entry point[39m
+[90m      ÔåÆ Delete the file if it is truly unreachable, or import it from an entry point.[39m
+[90m      components/ui/AnimatedModal.tsx[39m
+[90m      components/ui/AnimatedToast.tsx[39m
+[90m      components/ui/AvailabilityTimeline.tsx[39m
+[90m      components/ui/ReservasCalendar.tsx[39m
+[90m      components/ui/TabContent.tsx[39m
+[90m      components/ui/charts/D3AreaChart.tsx[39m
+[90m      components/ui/charts/D3BarChart.tsx[39m
+[90m      components/ui/charts/D3DonutChart.tsx[39m
+[90m      components/ui/charts/D3HorizontalBars.tsx[39m
+[90m      components/ui/charts/LineChartMonthly.tsx[39m
+[90m      config/features.ts[39m
+[90m      features/admin/actions.ts[39m
+[90m      features/auth/actions.ts[39m
+[90m      features/reservas/actions.ts[39m
+[90m      hooks/useAnime.ts[39m
+[90m      hooks/useRealtimeSync.ts[39m
+[90m      lib/availability-utils.ts[39m
+[90m      lib/equipo-catalogo.ts[39m
+[90m      lib/supabase/admin.ts[39m
+[90m      lib/supabase/client.ts[39m
+[90m      lib/supabase/server.ts[39m
+[90m      lib/supabase/session.ts[39m
+
+  [33mÔÜá[39m [33mreact-doctor/design-no-em-dash-in-jsx-text      [39m [90m├ù19[39m
+[90m      Em dash (ÔÇö) in JSX text reads as model output ÔÇö replace with comma, colon, semicolon, or parentheses[39m
+[90m      ÔåÆ Replace em dashes in JSX prose with commas, colons, semicolons, or parentheses so UI copy reads less like generated text.[39m
+[90m      app/main-menu/page.tsx:1718[39m
+[90m      app/main-menu/page.tsx:2086[39m
+[90m      app/main-menu/page.tsx:2214[39m
+[90m      app/main-menu/page.tsx:2747[39m
+[90m      app/main-menu/page.tsx:3680[39m
+[90m      app/main-menu/page.tsx:3687[39m
+[90m      app/main-menu/page.tsx:3693[39m
+[90m      app/main-menu/page.tsx:3699[39m
+[90m      app/main-menu/page.tsx:3763[39m
+[90m      app/main-menu/page.tsx:3844[39m
+[90m      app/main-menu/page.tsx:3853[39m
+[90m      app/main-menu/page.tsx:3877[39m
+[90m      app/main-menu/page.tsx:3891[39m
+[90m      app/main-menu/page.tsx:3900[39m
+[90m      app/main-menu/page.tsx:3923[39m
+[90m      app/main-menu/page.tsx:4747[39m
+[90m      app/main-menu/page.tsx:5116[39m
+[90m      app/main-menu/page.tsx:5549[39m
+[90m      app/main-menu/page.tsx:6346[39m
+
+  [33mÔÜá[39m [33mreact-doctor/exhaustive-deps                    [39m [90m├ù17[39m
+[90m      React Hook `useEffect` is missing dependency `selector, y, staggerMs, duration` ÔÇö list it in the dependency array, or call the hook unconditionally.[39m
+[90m      ÔåÆ List every value the hook callback captures in its dependency array.[39m
+[90m      components/ui/TabContent.tsx:66[39m
+[90m      components/ui/charts/D3BarChart.tsx:201[39m
+[90m      components/ui/charts/D3BarChart.tsx:201[39m
+[90m      hooks/useAnime.ts:44[39m
+[90m      hooks/useAnime.ts:44[39m
+[90m      hooks/useAnime.ts:92[39m
+[90m      hooks/useAnime.ts:92[39m
+[90m      hooks/useAnime.ts:145[39m
+[90m      hooks/useAnime.ts:186[39m
+[90m      hooks/useAnime.ts:215[39m
+[90m      hooks/useAnime.ts:252[39m
+[90m      hooks/useAnime.ts:252[39m
+[90m      hooks/useAnime.ts:276[39m
+[90m      components/ui/charts/D3AreaChart.tsx:238[39m
+[90m      components/ui/charts/D3AreaChart.tsx:238[39m
+[90m      app/main-menu/page.tsx:784[39m
+[90m      components/ui/charts/D3HorizontalBars.tsx:202[39m
+
+  [33mÔÜá[39m [33mreact-doctor/design-no-bold-heading             [39m [90m├ù14[39m
+[90m      font-bold on <h3> crushes counter shapes at display sizes ÔÇö use font-semibold (600) or font-medium (500)[39m
+[90m      ÔåÆ Use `font-semibold` (600) or `font-medium` (500) on headings ÔÇö 700+ crushes letter counter shapes at display sizes[39m
+[90m      components/ui/ReservasCalendar.tsx:567[39m
+[90m      app/main-menu/page.tsx:2623[39m
+[90m      app/main-menu/page.tsx:2953[39m
+[90m      app/main-menu/page.tsx:3822[39m
+[90m      app/main-menu/page.tsx:3945[39m
+[90m      app/main-menu/page.tsx:4536[39m
+[90m      app/main-menu/page.tsx:5070[39m
+[90m      app/main-menu/page.tsx:5404[39m
+[90m      app/main-menu/page.tsx:5462[39m
+[90m      app/main-menu/page.tsx:5704[39m
+[90m      app/main-menu/page.tsx:5990[39m
+[90m      app/main-menu/page.tsx:6134[39m
+[90m      app/main-menu/page.tsx:6312[39m
+[90m      app/login/page.tsx:201[39m
+
+  [33mÔÜá[39m [33mreact-doctor/click-events-have-key-events       [39m [90m├ù9[39m
+[90m      Visible non-interactive elements with click handlers must have a corresponding keyboard listener (`onKeyUp`, `onKeyDown`, or `onKeyPress`).[39m
+[90m      ÔåÆ Pair `onClick` with `onKeyUp` / `onKeyDown` / `onKeyPress` for keyboard users.[39m
+[90m      components/ui/AnimatedModal.tsx:68[39m
+[90m      app/main-menu/page.tsx:1858[39m
+[90m      app/main-menu/page.tsx:5055[39m
+[90m      app/main-menu/page.tsx:5380[39m
+[90m      app/main-menu/page.tsx:5451[39m
+[90m      app/main-menu/page.tsx:5694[39m
+[90m      app/main-menu/page.tsx:5981[39m
+[90m      app/main-menu/page.tsx:6125[39m
+[90m      app/main-menu/page.tsx:6303[39m
+
+  [33mÔÜá[39m [33mreact-doctor/no-static-element-interactions     [39m [90m├ù9[39m
+[90m      Static HTML elements with event handlers require a role ÔÇö add `role="ÔÇª"` or use a semantic HTML element instead.[39m
+[90m      ÔåÆ Static HTML elements with event handlers require a role, or use a semantic HTML element instead.[39m
+[90m      components/ui/AnimatedModal.tsx:68[39m
+[90m      app/main-menu/page.tsx:1858[39m
+[90m      app/main-menu/page.tsx:5055[39m
+[90m      app/main-menu/page.tsx:5380[39m
+[90m      app/main-menu/page.tsx:5451[39m
+[90m      app/main-menu/page.tsx:5694[39m
+[90m      app/main-menu/page.tsx:5981[39m
+[90m      app/main-menu/page.tsx:6125[39m
+[90m      app/main-menu/page.tsx:6303[39m
+
+  [33mÔÜá[39m [33mreact-doctor/js-combine-iterations              [39m [90m├ù9[39m
+[90m      .filter().map() iterates the array twice ÔÇö combine into a single loop with .reduce() or for...of[39m
+[90m      ÔåÆ Combine `.map().filter()` (or similar chains) into a single pass with `.reduce()` or a `for...of` loop to avoid iterating the array twice[39m
+[90m      app/main-menu/page.tsx:1480[39m
+[90m      app/main-menu/page.tsx:2748[39m
+[90m      app/main-menu/page.tsx:3158[39m
+[90m      app/main-menu/page.tsx:5550[39m
+[90m      app/main-menu/page.tsx:6350[39m
+[90m      app/main-menu/page.tsx:6357[39m
+[90m      app/main-menu/page.tsx:6365[39m
+[90m      app/main-menu/page.tsx:6382[39m
+[90m      app/main-menu/page.tsx:6388[39m
+
+  [33mÔÜá[39m [33mreact-doctor/design-no-redundant-size-axes      [39m [90m├ù8[39m
+[90m      w-10 h-10 ÔåÆ use the shorthand size-10 (Tailwind v3.4+)[39m
+[90m      ÔåÆ Collapse `w-N h-N` to `size-N` (Tailwind v3.4+) when both axes match[39m
+[90m      app/main-menu/page.tsx:1694[39m
+[90m      app/main-menu/page.tsx:3177[39m
+[90m      app/main-menu/page.tsx:3345[39m
+[90m      app/main-menu/page.tsx:3769[39m
+[90m      app/main-menu/page.tsx:4522[39m
+[90m      app/login/page.tsx:320[39m
+[90m      app/register/page.tsx:774[39m
+[90m      app/page.tsx:6[39m
+
+  [33mÔÜá[39m [33mreact-doctor/nextjs-no-img-element              [39m [90m├ù8[39m
+[90m      Use next/image instead of <img> ÔÇö provides automatic optimization, lazy loading, and responsive srcset[39m
+[90m      ÔåÆ `import Image from 'next/image'` ÔÇö provides automatic WebP/AVIF, lazy loading, and responsive srcset[39m
+[90m      app/main-menu/page.tsx:2489[39m
+[90m      app/main-menu/page.tsx:2833[39m
+[90m      app/main-menu/page.tsx:3591[39m
+[90m      app/main-menu/page.tsx:3671[39m
+[90m      app/main-menu/page.tsx:4237[39m
+[90m      app/main-menu/page.tsx:4296[39m
+[90m      app/main-menu/page.tsx:5387[39m
+[90m      app/main-menu/page.tsx:5798[39m
+
+  [33mÔÜá[39m [33mreact-doctor/rerender-state-only-in-handlers    [39m [90m├ù6[39m
+[90m      useState "necesitaEquipo" is updated but never read in the component's return ÔÇö use useRef so updates don't trigger re-renders[39m
+[90m      ÔåÆ Replace useState with useRef when the value is only mutated and never read in render ÔÇö `ref.current = ...` updates without re-rendering the component[39m
+[90m      app/main-menu/page.tsx:507[39m
+[90m      app/main-menu/page.tsx:508[39m
+[90m      app/main-menu/page.tsx:612[39m
+[90m      app/main-menu/page.tsx:637[39m
+[90m      app/reset-password/page.tsx:70[39m
+[90m      components/ui/charts/D3HorizontalBars.tsx:38[39m
+
+  [33mÔÜá[39m [33mreact-doctor/server-after-nonblocking           [39m [90m├ù4[39m
+[90m      console.warn() in server action ÔÇö wrap in `after(() => console.warn(...))` so it doesn't delay the user-visible response[39m
+[90m      ÔåÆ `import { after } from 'next/server'` then wrap: `after(() => analytics.track(...))` ÔÇö response isn't blocked[39m
+[90m      features/auth/actions.ts:55[39m
+[90m      features/auth/actions.ts:61[39m
+[90m      features/auth/actions.ts:122[39m
+[90m      features/reservas/actions.ts:259[39m
+
+  [33mÔÜá[39m [33mreact-doctor/no-giant-component                 [39m [90m├ù4[39m
+[90m      Component "ReservasCalendar" is 506 lines ÔÇö consider breaking it into smaller focused components[39m
+[90m      ÔåÆ Extract logical sections into focused components: `<UserHeader />`, `<UserActions />`, etc.[39m
+[90m      components/ui/ReservasCalendar.tsx:125[39m
+[90m      app/main-menu/page.tsx:416[39m
+[90m      app/login/page.tsx:14[39m
+[90m      app/register/page.tsx:270[39m
+
+  [33mÔÜá[39m [33mreact-doctor/no-array-index-key                 [39m [90m├ù4[39m
+[90m      Array index in `key` doesn't uniquely identify the element ÔÇö re-renders may use stale state.[39m
+[90m      ÔåÆ Use a stable, data-derived `key` instead of the array index.[39m
+[90m      app/main-menu/page.tsx:388[39m
+[90m      app/register/page.tsx:252[39m
+[90m      components/ui/charts/LineChartMonthly.tsx:93[39m
+[90m      components/ui/charts/LineChartMonthly.tsx:157[39m
+
+  [33mÔÜá[39m [33mreact-doctor/no-array-index-as-key              [39m [90m├ù4[39m
+[90m      Array index "i" used as key ÔÇö causes bugs when list is reordered or filtered[39m
+[90m      ÔåÆ Use a stable unique identifier: `key={item.id}` or `key={item.slug}` ÔÇö index keys break on reorder/filter[39m
+[90m      app/main-menu/page.tsx:388[39m
+[90m      app/register/page.tsx:252[39m
+[90m      components/ui/charts/LineChartMonthly.tsx:93[39m
+[90m      components/ui/charts/LineChartMonthly.tsx:157[39m
+
+  [33mÔÜá[39m [33mreact-doctor/prefer-useReducer                  [39m [90m├ù4[39m
+[90m      Component "MainMenuPage" has 151 useState calls ÔÇö consider useReducer for related state[39m
+[90m      ÔåÆ Group related state: `const [state, dispatch] = useReducer(reducer, { field1, field2, ... })`[39m
+[90m      app/main-menu/page.tsx:416[39m
+[90m      app/login/page.tsx:14[39m
+[90m      app/register/page.tsx:270[39m
+[90m      app/reset-password/page.tsx:64[39m
+
+  [33mÔÜá[39m [33mreact-doctor/prefer-tag-over-role               [39m [90m├ù3[39m
+[90m      Prefer the semantic `<button>` element over `role="button"` on a generic tag.[39m
+[90m      ÔåÆ Replace `role` with the semantic HTML element when one exists.[39m
+[90m      components/ui/ReservasCalendar.tsx:304[39m
+[90m      components/ui/ReservasCalendar.tsx:421[39m
+[90m      components/ui/ReservasCalendar.tsx:495[39m
+
+  [33mÔÜá[39m [33mreact-doctor/nextjs-no-font-link                [39m [90m├ù2[39m
+[90m      Loading Google Fonts via <link> ÔÇö use next/font instead for self-hosting, zero layout shift, and no render-blocking requests[39m
+[90m      ÔåÆ `import { Inter } from "next/font/google"` ÔÇö self-hosted, zero layout shift, no render-blocking requests[39m
+[90m      app/layout.tsx:49[39m
+[90m      app/layout.tsx:51[39m
+
+  [33mÔÜá[39m [33mreact-doctor/js-hoist-intl                      [39m [90m├ù2[39m
+[90m      new Intl.DateTimeFormat() inside a function ÔÇö hoist to module scope or wrap in useMemo so it isn't recreated each call[39m
+[90m      ÔåÆ Hoist `new Intl.NumberFormat(...)` to module scope or wrap in `useMemo` ÔÇö Intl constructors allocate dozens of objects per locale lookup[39m
+[90m      app/main-menu/page.tsx:402[39m
+[90m      features/reservas/actions.ts:87[39m
+
+  [33mÔÜá[39m [33mreact-doctor/rendering-hydration-mismatch-time  [39m [90m├ù2[39m
+[90m      new Date() reachable from JSX renders differently on server vs client ÔÇö wrap in useEffect+useState (client-only) or add suppressHydrationWarning to the parent if intentional[39m
+[90m      ÔåÆ Wrap dynamic time/random values in useEffect+useState (client-only) or add suppressHydrationWarning to the parent if intentional[39m
+[90m      app/main-menu/page.tsx:4032[39m
+[90m      app/main-menu/page.tsx:4392[39m
+
+  [33mÔÜá[39m [33mreact-doctor/nextjs-image-missing-sizes         [39m [90m├ù2[39m
+[90m      next/image with fill but no sizes ÔÇö the browser downloads the largest image. Add a sizes attribute for responsive behavior[39m
+[90m      ÔåÆ Add sizes for responsive behavior: `sizes="(max-width: 768px) 100vw, 50vw"` matching your layout breakpoints[39m
+[90m      app/login/page.tsx:139[39m
+[90m      app/register/page.tsx:494[39m
+
+  [33mÔÜá[39m [33mreact-doctor/no-initialize-state                [39m [90m├ù2[39m
+[90m      Avoid initializing state in an effect. Instead, initialize "renderedWidth"'s `useState()` with "el". For SSR hydration, prefer `useSyncExternalStore()`.[39m
+[90m      ÔåÆ Pass the initial value directly to useState() instead of setting it from a mount-only useEffect. For SSR hydration, prefer useSyncExternalStore().[39m
+[90m      components/ui/charts/D3HorizontalBars.tsx:47[39m
+[90m      components/ui/charts/D3HorizontalBars.tsx:48[39m
+
+  [33mÔÜá[39m [33mreact-doctor/js-batch-dom-css[39m
+[90m      Multiple sequential element.style assignments ÔÇö batch with cssText or classList for fewer reflows[39m
+[90m      ÔåÆ Batch DOM/CSS reads and writes ÔÇö interleaving them inside a loop causes layout thrashing. Read first, then write[39m
+[90m      components/ui/TabContent.tsx:45[39m
+
+  [33mÔÜá[39m [33mreact-doctor/rendering-conditional-render[39m
+[90m      Conditional rendering with a numeric value can render '0' ÔÇö use `value > 0`, `Boolean(value)`, or a ternary[39m
+[90m      ÔåÆ Change to `{items.length > 0 && <List />}` or use a ternary: `{items.length ? <List /> : null}`[39m
+[90m      components/ui/charts/D3DonutChart.tsx:170[39m
+
+  [33mÔÜá[39m [33mreact-doctor/nextjs-no-client-side-redirect[39m
+[90m      router.push() in useEffect ÔÇö use redirect() from next/navigation or handle navigation in an event handler[39m
+[90m      ÔåÆ Avoid redirects inside useEffect. Use an event handler, middleware, or server-side redirect (App Router: redirect() from next/navigation; Pages Router: getServerSideProps redirect)[39m
+[90m      app/main-menu/page.tsx:710[39m
+
+  [33mÔÜá[39m [33mreact-doctor/react-compiler-destructure-method[39m
+[90m      Destructure for clarity: `const { push } = useRouter()` then call `push(...)` directly ÔÇö easier for React Compiler to memoize and clearer about which methods this component depends on[39m
+[90m      ÔåÆ Destructure the method up front: `const { push } = useRouter()` then call `push(...)` directly ÔÇö clearer dependency graph and easier for React Compiler to memoize[39m
+[90m      app/main-menu/page.tsx:710[39m
+
+  [33mÔÜá[39m [33mreact-doctor/no-cascading-set-state[39m
+[90m      4 setState calls in a single useEffect ÔÇö consider using useReducer or deriving state[39m
+[90m      ÔåÆ Combine into useReducer: `const [state, dispatch] = useReducer(reducer, initialState)`[39m
+[90m      app/main-menu/page.tsx:758[39m
+
+  [33mÔÜá[39m [33mreact-doctor/design-no-redundant-padding-axes[39m
+[90m      px-3 py-3 ÔåÆ use the shorthand p-3[39m
+[90m      ÔåÆ Collapse `px-N py-N` to `p-N` when both axes match. Keep them split only when one axis varies at a breakpoint (`py-2 md:py-3`)[39m
+[90m      app/main-menu/page.tsx:5508[39m
+
+  [32mÔöîÔöÇÔöÇÔöÇÔöÇÔöÇÔöÉ[39m  [32m77[39m [2m/ 100[22m [32mGreat[39m
+  [32mÔöé Ôùá Ôùá Ôöé[39m  [32mÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûê[39m[2mÔûæÔûæÔûæÔûæÔûæÔûæÔûæÔûæÔûæÔûæÔûæ[22m
+  [32mÔöé  Ôû¢  Ôöé[39m  React Doctor [2m(www.react.doctor)[22m
+  [32mÔööÔöÇÔöÇÔöÇÔöÇÔöÇÔöÿ[39m
+
+  [31m343 issues[39m [2macross 29/33 files  in 6.1s[22m
+[90m  Full diagnostics written to C:\Users\DIEGOA~1\AppData\Local\Temp\react-doctor-f4c28159-8d72-4407-b1ad-866ef2c8374c[39m
+
+  [1mÔåÆ Share your results:[22m [36mhttps://www.react.doctor/share?p=reservio&s=77&e=10&w=333&f=29[39m
+
+  [1mÔåÆ Catch these issues on every PR:[22m [36mhttps://react.review[39m
+  [2mReact Review is a GitHub App built on React Doctor, and it runs on each pull request,[22m
+  [2mposts new issues as inline review comments, and tracks your team's score over time.[22m
+
+

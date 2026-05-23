@@ -1,5 +1,6 @@
 'use server'
 
+import { after } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getSupabaseAdmin } from '@/lib/supabase/admin'
 
@@ -34,10 +35,10 @@ export async function signUpUser(nombre: string, correo: string, password: strin
     })
 
     if (error) {
-      console.error('[signUpUser] Error de Supabase:', error.message, '| Status:', error.status, '| Code:', (error as any).code)
+      console.error('[signUpUser] Error de Supabase:', error.message, '| Status:', error.status, '| Code:', (error as { code?: string }).code)
       // Detectar email ya existente por respuesta de Supabase
       const msg = error.message.toLowerCase()
-      const code = ((error as any).code ?? '').toLowerCase()
+      const code = ((error as { code?: string }).code ?? '').toLowerCase()
       if (
         msg.includes('already registered') ||
         msg.includes('already exists') ||
@@ -52,13 +53,13 @@ export async function signUpUser(nombre: string, correo: string, password: strin
       }
       if (msg.includes('sending') || msg.includes('smtp') || msg.includes('email delivery')) {
         // Usuario creado pero fallo en el correo — éxito parcial
-        console.warn('[signUpUser] Fallo SMTP pero usuario creado:', email)
+        after(() => console.warn('[signUpUser] Fallo SMTP pero usuario creado:', email))
         return { success: true }
       }
       return { error: error.message }
     }
 
-    console.log('[signUpUser] Usuario registrado exitosamente:', email)
+    after(() => console.log('[signUpUser] Usuario registrado exitosamente:', email))
     return { success: true }
 
   } catch (err: unknown) {
@@ -119,18 +120,23 @@ export async function checkEmailExists(email: string): Promise<boolean> {
   try {
     const admin = getSupabaseAdmin()
     if (!admin) {
-      console.warn('[checkEmailExists] Cliente Admin no disponible, omitiendo verificación.')
-      return false
-    }
-
-    const { data, error } = await admin.auth.admin.listUsers()
-    if (error) {
-      console.error('[checkEmailExists] Error al listar usuarios:', error.message)
+      after(() => console.warn('[checkEmailExists] Cliente Admin no disponible, omitiendo verificación.'))
       return false
     }
 
     const emailLower = email.trim().toLowerCase()
-    return (data?.users ?? []).some(u => u.email?.toLowerCase() === emailLower)
+    const { data, error } = await admin
+      .from('usuarios')
+      .select('id')
+      .eq('correo', emailLower)
+      .maybeSingle()
+
+    if (error) {
+      console.error('[checkEmailExists] Error al verificar email:', error.message)
+      return false
+    }
+
+    return !!data
   } catch (err) {
     console.error('[checkEmailExists] Excepción inesperada:', err)
     return false

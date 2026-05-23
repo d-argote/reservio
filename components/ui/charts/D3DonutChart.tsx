@@ -40,8 +40,9 @@ export function D3DonutChart({
 
   useEffect(() => {
     if (!svgRef.current) return
+    const svgEl = svgRef.current
 
-    const svg = d3.select(svgRef.current)
+    const svg = d3.select(svgEl)
     svg.selectAll('*').remove()
     svg.attr('width', size).attr('height', size).attr('viewBox', `0 0 ${size} ${size}`)
 
@@ -155,6 +156,10 @@ export function D3DonutChart({
         })
     }
 
+    return () => {
+      d3.select(svgEl).selectAll('path').on('mouseover', null).on('mouseleave', null)
+      d3.select(svgEl).selectAll('*').remove()
+    }
   }, [data, size, outerR, innerR, animationDuration, total])
 
   return (
@@ -174,12 +179,12 @@ export function D3DonutChart({
       </div>
 
       {/* Legend */}
-      {total > 0 && (
+      {total > 0 ? (
         <div className="flex flex-wrap gap-x-4 gap-y-2 justify-center">
           {data.map(d => (
             <div key={d.label} className="flex items-center gap-1.5 text-xs font-body text-on-surface-variant">
               <span
-                className="w-2.5 h-2.5 rounded-full shrink-0"
+                className="size-2.5 rounded-full shrink-0"
                 style={{ background: d.color }}
               />
               <span>{d.label}</span>
@@ -187,24 +192,12 @@ export function D3DonutChart({
             </div>
           ))}
         </div>
-      )}
+      ) : null}
 
       {/* Tooltip */}
       <div
         ref={tooltipRef}
-        style={{
-          position: 'absolute',
-          opacity: 0,
-          pointerEvents: 'none',
-          background: '#ffffff',
-          border: '1px solid #e7eefe',
-          borderRadius: '8px',
-          padding: '8px 12px',
-          boxShadow: '0 4px 16px rgba(23,28,31,0.12)',
-          transition: 'opacity 0.12s',
-          minWidth: '90px',
-          zIndex: 100,
-        }}
+        className="absolute opacity-0 pointer-events-none bg-white border border-[#e7eefe] rounded-lg px-3 py-2 shadow-[0_4px_16px_rgba(23,28,31,0.12)] transition-opacity duration-[120ms] min-w-[90px] z-[100]"
       />
     </div>
   )

@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 import Link from 'next/link'
 import { updatePassword } from '@/features/auth/actions'
 
@@ -31,9 +32,9 @@ function PasswordRequirements({ password }: { password: string }) {
 
   return (
     <div className="mt-2 space-y-1">
-      {requirements.map((req, index) => (
+      {requirements.map((req) => (
         <div
-          key={index}
+          key={req.label}
           className={`flex items-center gap-2 text-xs transition-colors ${
             req.met ? 'text-green-600' : 'text-on-surface-variant/60'
           }`}
@@ -61,7 +62,7 @@ function FieldError({ message }: { message: string }) {
 // COMPONENTE PRINCIPAL
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function ResetPasswordPage() {
-  const router = useRouter()
+  const { push } = useRouter()
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [passwordError, setPasswordError] = useState<string | undefined>()
@@ -72,6 +73,13 @@ export default function ResetPasswordPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [globalError, setGlobalError] = useState<string | null>(null)
   const [isSuccess, setIsSuccess] = useState(false)
+
+  // Redirect to login after successful password reset
+  useEffect(() => {
+    if (!isSuccess) return
+    const timer = setTimeout(() => push('/login'), 3000)
+    return () => clearTimeout(timer)
+  }, [isSuccess, push])
 
   const handlePasswordChange = (value: string) => {
     setPassword(value)
@@ -111,9 +119,6 @@ export default function ResetPasswordPage() {
     }
 
     setIsSuccess(true)
-    setTimeout(() => {
-      router.push('/login')
-    }, 3000)
   }
 
   return (
@@ -121,11 +126,11 @@ export default function ResetPasswordPage() {
       <div className="w-full max-w-md bg-surface-container-lowest rounded-2xl p-8 sm:p-10 shadow-2xl shadow-on-surface/5">
         <div className="text-center mb-8">
           <div className="flex justify-center mb-6">
-            <div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20">
-              <img src="/logo.png" alt="Reservio Logo" className="w-9 h-9 object-contain drop-shadow-sm" />
+            <div className="size-16 rounded-2xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20">
+              <Image src="/logo.png" alt="Reservio Logo" width={36} height={36} className="object-contain drop-shadow-sm" />
             </div>
           </div>
-          <h2 className="font-headline text-2xl font-bold text-on-surface">
+          <h2 className="font-headline text-2xl font-semibold text-on-surface">
             Crea tu nueva contraseña
           </h2>
           <p className="font-body text-on-surface-variant mt-2 text-sm">
@@ -141,7 +146,7 @@ export default function ResetPasswordPage() {
                 Contraseña actualizada
               </p>
               <p className="font-body text-sm text-green-700 mt-2">
-                Tu contraseña ha sido cambiada exitosamente. Redirigiendo al inicio de sesión...
+                Tu contraseña ha sido cambiada exitosamente. Redirigiendo al inicio de sesión…
               </p>
             </div>
           </div>
@@ -231,7 +236,7 @@ export default function ResetPasswordPage() {
                   isLoading ? 'bg-primary/80 text-on-primary cursor-wait' : 'bg-primary text-on-primary hover:bg-primary-container'
                 }`}
               >
-                {isLoading ? 'Actualizando...' : 'Guardar nueva contraseña'}
+                {isLoading ? 'Actualizando…' : 'Guardar nueva contraseña'}
               </button>
             </div>
           </form>

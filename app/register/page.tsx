@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { signUpUser } from '@/features/auth/actions'
@@ -267,7 +268,7 @@ function PasswordRequirements({ password }: { password: string }) {
 // COMPONENTE PRINCIPAL - RegisterPage
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function RegisterPage() {
-  const router = useRouter()
+  const { push } = useRouter()
 
   // ── Estado del formulario ───────────────────────────────────────────
   const [form, setForm] = useState<FormState>({
@@ -302,11 +303,11 @@ export default function RegisterPage() {
     const fields    = mainRef.current ? Array.from(mainRef.current.querySelectorAll<HTMLElement>('[data-field]')) : []
 
     // Set initial state in JS so elements are visible if animations fail
-    if (aside)    { aside.style.opacity = '0' }
-    if (logoCard) { logoCard.style.opacity = '0'; logoCard.style.transform = 'scale(0.9)' }
-    if (tagline)  { tagline.style.opacity = '0'; tagline.style.transform = 'translateY(20px)' }
-    if (card)     { card.style.opacity = '0'; card.style.transform = 'translateY(24px)' }
-    fields.forEach(f => { f.style.opacity = '0'; f.style.transform = 'translateY(10px)' })
+    if (aside)    Object.assign(aside.style, { opacity: '0' })
+    if (logoCard) Object.assign(logoCard.style, { opacity: '0', transform: 'scale(0.9)' })
+    if (tagline)  Object.assign(tagline.style, { opacity: '0', transform: 'translateY(20px)' })
+    if (card)     Object.assign(card.style, { opacity: '0', transform: 'translateY(24px)' })
+    fields.forEach(f => Object.assign(f.style, { opacity: '0', transform: 'translateY(10px)' }))
 
     if (aside) animate(aside, { opacity: [0, 1], duration: 500, ease: 'out(2)', delay: 0 })
 
@@ -451,7 +452,7 @@ export default function RegisterPage() {
       // ── 3. Éxito confirmado ────────────────────────────────────────
       setIsSuccess(true)
       resetForm()
-      setTimeout(() => router.push('/login'), 3000)
+      setTimeout(() => push('/login'), 3000)
 
     } catch (err) {
       console.error('Error inesperado en registro:', err)
@@ -490,11 +491,13 @@ export default function RegisterPage() {
       <aside ref={asideRef} className="hidden lg:flex lg:w-1/2 flex-col h-screen sticky top-0 relative bg-[#001529] overflow-hidden">
 
         {/* ── Background image — plain img, absolutely fills the panel ── */}
-        <img
+        <Image
           src="/fondo1.avif"
           alt=""
           aria-hidden="true"
-          className="absolute inset-0 w-full h-full object-cover"
+          fill
+          className="object-cover"
+          priority
         />
 
         {/* ── Layered overlays ─────────────────────────────────── */}
@@ -509,9 +512,11 @@ export default function RegisterPage() {
           <div className="flex-1 flex items-center justify-center">
             <div ref={logoCardRef} className="bg-white/[0.18] backdrop-blur-md rounded-2xl px-8 py-6 border border-white/[0.28] shadow-2xl shadow-black/40">
               <SimpleParallax scale={1.08} delay={0.4} orientation="up" overflow={false}>
-                <img
-                  src="/Reservi1.png?v=3"
+                <Image
+                  src="/Reservi1.png"
                   alt="Reservio"
+                  width={370}
+                  height={200}
                   className="w-auto h-auto max-w-[320px] xl:max-w-[370px] object-contain drop-shadow-[0_2px_20px_rgba(255,255,255,0.18)]"
                 />
               </SimpleParallax>
@@ -520,7 +525,7 @@ export default function RegisterPage() {
 
           {/* Tagline anchored to the bottom */}
           <div ref={taglineRef} className="max-w-sm">
-            <h2 className="font-headline text-4xl xl:text-5xl font-black text-white mb-3 leading-[1.15] tracking-tight">
+            <h2 className="font-headline text-4xl xl:text-5xl font-semibold text-white mb-3 leading-[1.15] tracking-tight">
               Tu espacio,<br />tu control.
             </h2>
             <p className="font-body text-base xl:text-lg text-white/65 leading-relaxed">
@@ -538,8 +543,8 @@ export default function RegisterPage() {
 
           {/* Mobile logo */}
           <div className="flex justify-center lg:hidden mb-8" data-field>
-            <div className="w-14 h-14 rounded-2xl bg-primary flex items-center justify-center shadow-lg shadow-primary/25">
-              <img src="/logo.png" alt="Reservio" className="w-8 h-8 object-contain" />
+            <div className="size-14 rounded-2xl bg-primary flex items-center justify-center shadow-lg shadow-primary/25">
+              <Image src="/logo.png" alt="Reservio" width={32} height={32} className="object-contain" />
             </div>
           </div>
 
@@ -548,7 +553,7 @@ export default function RegisterPage() {
 
             {/* Card header */}
             <div className="mb-8" data-field>
-              <h1 className="font-headline text-2xl font-bold text-on-surface tracking-tight">
+              <h1 className="font-headline text-2xl font-semibold text-on-surface tracking-tight">
                 Crea tu cuenta
               </h1>
               <p className="font-body text-on-surface-variant mt-1.5 text-sm">
@@ -562,11 +567,11 @@ export default function RegisterPage() {
                     {emailAlreadyExists && (
                       <div className="mb-6 p-5 rounded-xl bg-amber-50 border-2 border-amber-300 animate-fadeIn">
                         <div className="flex items-start gap-4">
-                          <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                          <div className="size-12 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
                             <span className="material-symbols-outlined text-amber-600 text-2xl">warning</span>
                           </div>
                           <div className="flex-1">
-                            <p className="font-label text-base font-bold text-amber-800">
+                            <p className="font-label text-base font-semibold text-amber-800">
                               Esta cuenta de correo ya está registrada
                             </p>
                             <p className="font-label text-sm text-amber-700 mt-2">
@@ -598,7 +603,7 @@ export default function RegisterPage() {
           {isSuccess && (
                       <div className="mb-6 p-4 rounded-xl bg-green-50 border border-green-200 animate-fadeIn">
                         <div className="flex items-start gap-3">
-                          <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center shrink-0">
+                          <div className="size-10 rounded-full bg-green-100 flex items-center justify-center shrink-0">
                             <span className="material-symbols-outlined text-green-600 text-xl">check_circle</span>
                           </div>
                           <div>
@@ -624,7 +629,7 @@ export default function RegisterPage() {
           {globalError && !isSuccess && (
             <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-200 animate-fadeIn">
               <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                <div className="size-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
                   <span className="material-symbols-outlined text-red-600 text-xl">error</span>
                 </div>
                 <p className="font-label text-sm text-red-700 pt-2">{globalError}</p>
@@ -770,7 +775,7 @@ export default function RegisterPage() {
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                     </svg>
-                    Registrando...
+                    Registrando…
                   </>
                 ) : (
                   <>

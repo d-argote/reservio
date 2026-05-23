@@ -1,7 +1,9 @@
-'use client'
+﻿'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
+import dynamic from 'next/dynamic'
 import { supabase } from '@/lib/supabase/client'
 import { FEATURES } from '@/config/features'
 import { animate, spring } from 'animejs'
@@ -65,12 +67,33 @@ import {
   type FranjaOcupada,
 } from '@/features/reservas/actions'
 import { ReservasCalendar } from '@/components/ui/ReservasCalendar'
-import { D3BarChart } from '@/components/ui/charts/D3BarChart'
-import { D3DonutChart } from '@/components/ui/charts/D3DonutChart'
-import { D3HorizontalBars } from '@/components/ui/charts/D3HorizontalBars'
-import { D3AreaChart } from '@/components/ui/charts/D3AreaChart'
-import { LineChartMonthly } from '@/components/ui/charts/LineChartMonthly'
-import { AvailabilityTimeline, hasOverlap } from '@/components/ui/AvailabilityTimeline'
+import { AvailabilityTimeline } from '@/components/ui/AvailabilityTimeline'
+import { hasOverlap } from '@/lib/availability-utils'
+import { useRealtimeSync } from '@/hooks/useRealtimeSync'
+
+// ── D3 Charts — dynamic imports (lazy loading): D3 pesa ~180 KB min+gz.
+// Se cargan ÚNICAMENTE cuando el usuario navega a la tab de Reportes.
+// Esto reduce el bundle inicial de manera significativa para todos los usuarios.
+const D3BarChart = dynamic(
+  () => import('@/components/ui/charts/D3BarChart').then(m => ({ default: m.D3BarChart })),
+  { ssr: false, loading: () => <div className="h-48 rounded-xl bg-surface-container animate-pulse" /> },
+)
+const D3DonutChart = dynamic(
+  () => import('@/components/ui/charts/D3DonutChart').then(m => ({ default: m.D3DonutChart })),
+  { ssr: false, loading: () => <div className="h-48 rounded-xl bg-surface-container animate-pulse" /> },
+)
+const D3HorizontalBars = dynamic(
+  () => import('@/components/ui/charts/D3HorizontalBars').then(m => ({ default: m.D3HorizontalBars })),
+  { ssr: false, loading: () => <div className="h-48 rounded-xl bg-surface-container animate-pulse" /> },
+)
+const D3AreaChart = dynamic(
+  () => import('@/components/ui/charts/D3AreaChart').then(m => ({ default: m.D3AreaChart })),
+  { ssr: false, loading: () => <div className="h-48 rounded-xl bg-surface-container animate-pulse" /> },
+)
+const LineChartMonthly = dynamic(
+  () => import('@/components/ui/charts/LineChartMonthly').then(m => ({ default: m.LineChartMonthly })),
+  { ssr: false, loading: () => <div className="h-48 rounded-xl bg-surface-container animate-pulse" /> },
+)
 
 // ── Types
 
@@ -172,13 +195,13 @@ function formatDuracion(horas: number): string {
 function generarCodigoActivo(): string {
   const now = new Date()
   const ym = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`
-  const rand = Math.random().toString(36).slice(2, 7).toUpperCase()
+  const rand = crypto.randomUUID().replace(/-/g, '').slice(0, 5).toUpperCase()
   return `EQ-${ym}-${rand}`
 }
 
 async function uploadImagen(bucket: 'equipos' | 'salas', file: File): Promise<string | null> {
   const ext = file.name.split('.').pop() ?? 'jpg'
-  const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+  const path = `${Date.now()}-${crypto.randomUUID().replace(/-/g, '')}.${ext}`
   const { error } = await supabase.storage.from(bucket).upload(path, file, { upsert: true })
   if (error) { console.error('[uploadImagen]', error.message); return null }
   const { data } = supabase.storage.from(bucket).getPublicUrl(path)
@@ -187,7 +210,7 @@ async function uploadImagen(bucket: 'equipos' | 'salas', file: File): Promise<st
 
 async function uploadFotoDevolucion(file: File): Promise<string | null> {
   const ext = file.name.split('.').pop() ?? 'jpg'
-  const path = `devolucion-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+  const path = `devolucion-${Date.now()}-${crypto.randomUUID().replace(/-/g, '')}.${ext}`
   // Intenta bucket 'prestamos', fallback a 'equipos/devoluciones/'
   const { error } = await supabase.storage.from('prestamos').upload(path, file, { upsert: true })
   if (error) {
@@ -273,7 +296,7 @@ function getRoomImage(index: number) {
 function SkeletonSummaryCard() {
   return (
     <div className="bg-surface-container-lowest rounded-xl p-5 border border-outline-variant/20 shadow-sm flex items-start gap-4 animate-pulse">
-      <div className="w-11 h-11 rounded-lg bg-gradient-to-r from-surface-container via-surface-container-low to-surface-container shrink-0" />
+      <div className="size-11 rounded-lg bg-gradient-to-r from-surface-container via-surface-container-low to-surface-container shrink-0" />
       <div className="flex-1 space-y-2 pt-1">
         <div className="h-3 bg-gradient-to-r from-surface-container via-surface-container-low to-surface-container rounded w-2/5" />
         <div className="h-4 bg-gradient-to-r from-surface-container via-surface-container-low to-surface-container rounded w-3/4" />
@@ -287,7 +310,7 @@ function SkeletonReservationCard() {
   return (
     <div className="bg-surface-container-lowest rounded-lg p-5 border border-outline-variant/15 shadow-sm animate-pulse">
       <div className="flex items-start gap-4">
-        <div className="w-12 h-12 rounded-lg bg-gradient-to-r from-surface-container via-surface-container-low to-surface-container shrink-0" />
+        <div className="size-12 rounded-lg bg-gradient-to-r from-surface-container via-surface-container-low to-surface-container shrink-0" />
         <div className="flex-1 space-y-2 pt-1">
           <div className="h-4 bg-gradient-to-r from-surface-container via-surface-container-low to-surface-container rounded w-3/4" />
           <div className="h-3 bg-gradient-to-r from-surface-container via-surface-container-low to-surface-container rounded w-1/2" />
@@ -432,8 +455,12 @@ export default function MainMenuPage() {
   // ── Availability timeline state ───────────────────────────────────
   const [modalFranjas, setModalFranjas] = useState<FranjaOcupada[]>([])
   const [loadingFranjas, setLoadingFranjas] = useState(false)
-  /** Incremented by realtime handler to force the modal timeline to re-fetch */
-  const [realtimeTick, setRealtimeTick] = useState(0)
+  /**
+   * Callback ref — permite a fetchSalasSilent forzar un re-fetch del timeline
+   * del modal sin provocar un re-render completo del componente (useRef en vez
+   * de useState evita que cada evento Realtime redibuje los 6000 líneas).
+   */
+  const refreshModalFranjasRef = useRef<(() => void) | null>(null)
 
   // ── HU-08: Preview modal de sala ─────────────────────────────────
   const [previewSala, setPreviewSala] = useState<Sala | null>(null)
@@ -659,6 +686,23 @@ export default function MainMenuPage() {
     setLoadingSalas(false)
   }, [])
 
+  // Versiones "silenciosas" (sin spinner) para las actualizaciones de Realtime.
+  // Evitan el parpadeo de loading cuando llega un cambio en background.
+  const fetchSalasSilent = useCallback(async () => {
+    const { dateStr } = getBogotaNow()
+    const result = await getSalasConDisponibilidadFecha(dateStr)
+    if (result.data) {
+      setSalas(result.data as Sala[])
+      refreshModalFranjasRef.current?.() // re-fetch del timeline sin re-render global
+    }
+  }, [])
+
+  const fetchEquiposSilent = useCallback(async () => {
+    const [eqResult, retResult] = await Promise.all([getEquipos(), getEquiposRetornos()])
+    if (eqResult.data) setEquipos(eqResult.data)
+    if (retResult.data) setEquiposRetornos(new Map(retResult.data.map(r => [r.equipo_id, r.fecha_fin_esperada])))
+  }, [])
+
   useEffect(() => {
     const init = async () => {
       // 1. Verificar sesión activa
@@ -697,73 +741,18 @@ export default function MainMenuPage() {
     }
 
     init()
-  }, [router, fetchReservas, fetchCalendarReservas])
-
-  // ── Real-time: shared availability across ALL users ───────────────
-  // Subscribes to DB changes so any reservation or loan made by any user
-  // is reflected immediately on all active sessions — no page reload needed.
-  useEffect(() => {
-    let salasTimer: ReturnType<typeof setTimeout> | null = null
-    let equiposTimer: ReturnType<typeof setTimeout> | null = null
-
-    // Silent refresh: updates state without showing loading spinners
-    const triggerSalasRefresh = () => {
-      if (salasTimer) clearTimeout(salasTimer)
-      salasTimer = setTimeout(async () => {
-        const { dateStr } = getBogotaNow()
-        const result = await getSalasConDisponibilidadFecha(dateStr)
-        if (result.data) {
-          setSalas(result.data as Sala[])
-          // Nudge open reservation modal to re-fetch its timeline
-          setRealtimeTick(t => t + 1)
-        }
-      }, 1500)
-    }
-
-    const triggerEquiposRefresh = () => {
-      if (equiposTimer) clearTimeout(equiposTimer)
-      equiposTimer = setTimeout(async () => {
-        const [eqResult, retResult] = await Promise.all([getEquipos(), getEquiposRetornos()])
-        if (eqResult.data) setEquipos(eqResult.data)
-        if (retResult.data) setEquiposRetornos(new Map(retResult.data.map(r => [r.equipo_id, r.fecha_fin_esperada])))
-      }, 1500)
-    }
-
-    // Reservas table: INSERT/UPDATE/DELETE → refresh room availability + modal timeline
-    const reservasChannel = supabase
-      .channel('availability:reservas')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'reservas' }, triggerSalasRefresh)
-      .subscribe()
-
-    // Salas table: UPDATE (e.g. DB trigger recalculates estado, or admin changes maintenance)
-    // This fires AFTER the DB trigger fn_recalcular_sala_estado runs, so the estado is current.
-    const salasChannel = supabase
-      .channel('availability:salas')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'salas' }, triggerSalasRefresh)
-      .subscribe()
-
-    // Prestamos table: INSERT/UPDATE/DELETE → refresh equipment availability
-    const prestamosChannel = supabase
-      .channel('availability:prestamos')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'prestamos_equipo' }, triggerEquiposRefresh)
-      .subscribe()
-
-    // Equipos table: UPDATE (DB trigger recalculates estado, or admin changes maintenance/details)
-    const equiposChannel = supabase
-      .channel('availability:equipos')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'equipos' }, triggerEquiposRefresh)
-      .subscribe()
-
-    return () => {
-      if (salasTimer) clearTimeout(salasTimer)
-      if (equiposTimer) clearTimeout(equiposTimer)
-      supabase.removeChannel(reservasChannel)
-      supabase.removeChannel(salasChannel)
-      supabase.removeChannel(prestamosChannel)
-      supabase.removeChannel(equiposChannel)
-    }
+  // fetchSalas tiene deps estables (useCallback([])) — se incluye para satisfacer exhaustive-deps
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []) // mount-only: all referenced functions/setters are stable
+  }, [router, fetchReservas, fetchCalendarReservas, fetchSalas])
+
+  // ── Real-time: shared availability across ALL users ──────────────
+  // Suscripciones a cambios de DB para reflejar reservas y préstamos de TODOS
+  // los usuarios en tiempo real, sin recargar la página.
+  // La lógica de canales está centralizada en el custom hook useRealtimeSync.
+  useRealtimeSync({
+    onSalasChange: fetchSalasSilent,
+    onEquiposChange: fetchEquiposSilent,
+  })
 
   // ── Fetch availability whenever sala or date changes inside modal ─
   useEffect(() => {
@@ -772,17 +761,27 @@ export default function MainMenuPage() {
       return
     }
     let cancelled = false
-    setLoadingFranjas(true)
-    getDisponibilidadSala(form.sala_id, form.fecha, editingReservaId ?? undefined).then((result: { franjas?: FranjaOcupada[]; error?: string }) => {
-      if (!cancelled) {
-        setModalFranjas(result.franjas ?? [])
-        setLoadingFranjas(false)
-      }
-    })
-    return () => { cancelled = true }
+    const doFetch = () => {
+      if (cancelled) return
+      setLoadingFranjas(true)
+      getDisponibilidadSala(form.sala_id, form.fecha, editingReservaId ?? undefined).then((result: { franjas?: FranjaOcupada[]; error?: string }) => {
+        if (!cancelled) {
+          setModalFranjas(result.franjas ?? [])
+          setLoadingFranjas(false)
+        }
+      })
+    }
+    // Registrar en el ref para que fetchSalasSilent pueda forzar un re-fetch
+    // del timeline sin provocar un re-render completo del componente padre.
+    refreshModalFranjasRef.current = doFetch
+    doFetch()
+    return () => {
+      cancelled = true
+      refreshModalFranjasRef.current = null
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   // Note: editingReservaId intentionally omitted (stable during modal lifetime)
-  }, [modalOpen, form.sala_id, form.fecha, realtimeTick])
+  }, [modalOpen, form.sala_id, form.fecha])
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
@@ -1170,11 +1169,11 @@ export default function MainMenuPage() {
       imagenUrl = await uploadImagen('equipos', equipoImageFile)
     }
     const nuevosEquipos: Equipo[] = []
-    for (let i = 0; i < cantidad; i++) {
+    const equipoPromises = Array.from({ length: cantidad }, (_, i) => {
       const nombreUnidad = cantidad > 1
         ? `${equipoForm.nombre.trim()} #${i + 1}`
         : equipoForm.nombre.trim()
-      const result = await createEquipo({
+      return createEquipo({
         nombre: nombreUnidad,
         categoria: equipoForm.categoria,
         sistema_operativo: equipoForm.sistema_operativo,
@@ -1184,6 +1183,9 @@ export default function MainMenuPage() {
         imagen_url: imagenUrl,
         numero_serie: serialesUsados[i],
       })
+    })
+    const results = await Promise.all(equipoPromises)
+    for (const result of results) {
       if (result.data) nuevosEquipos.push(result.data)
     }
     if (nuevosEquipos.length > 0) {
@@ -1661,6 +1663,30 @@ export default function MainMenuPage() {
     setHistorialReservasLoaded(true)
   }, [historialReservasLoaded])
 
+  // ── Datos derivados con useMemo ──────────────────────────────────
+  // IMPORTANT: todos los hooks deben declararse ANTES de cualquier early return.
+  // Se recalculan SOLO cuando cambian sus dependencias, evitando recómputos
+  // innecesarios en cada render causado por otras partes del estado.
+  const isAdmin = useMemo(
+    () =>
+      profile?.rol === 'admin' ||
+      profile?.rol === 'administrador' ||
+      profile?.rol === 'administrator',
+    [profile?.rol],
+  )
+
+  const proximaReserva = useMemo(() => reservas[0] ?? null, [reservas])
+
+  // Equipos filtrados por búsqueda y categoría — evita recorrer el array en cada render
+  const filteredTech = useMemo(() => equipos.filter(eq => {
+    const matchesSearch = techSearch.trim() === '' ||
+      eq.nombre.toLowerCase().includes(techSearch.toLowerCase()) ||
+      eq.marca.toLowerCase().includes(techSearch.toLowerCase()) ||
+      eq.tipo_equipo.toLowerCase().includes(techSearch.toLowerCase())
+    const matchesFilter = techFilter === '' || eq.categoria === techFilter || eq.tipo_equipo === techFilter
+    return matchesSearch && matchesFilter
+  }), [equipos, techSearch, techFilter])
+
   if (isLoading) {
     return (
       <div className="bg-surface flex h-screen items-center justify-center">
@@ -1672,14 +1698,8 @@ export default function MainMenuPage() {
     )
   }
 
-  const isAdmin =
-    profile?.rol === 'admin' ||
-    profile?.rol === 'administrador' ||
-    profile?.rol === 'administrator'
-
-  // Datos derivados para las tarjetas de resumen
-  const proximaReserva = reservas[0] ?? null
-  const salasCount     = salas.length
+  // Datos derivados sin memoización (recómputo barato)
+  const salasCount = salas.length
 
   const navItems = [
     { id: 'reservations' as ActiveTab, label: 'Reservas', icon: 'event_available' },
@@ -1695,7 +1715,7 @@ export default function MainMenuPage() {
       {comingSoon && (
         <AnimatedToast className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 bg-[#001529] text-white px-5 py-3 rounded-xl shadow-2xl border border-white/10">
           <span className="material-symbols-outlined text-[20px] text-yellow-400" style={{ fontVariationSettings: "'FILL' 1" }}>rocket_launch</span>
-          <span className="font-label text-sm font-medium">Próximamente — disponible en el siguiente Sprint</span>
+          <span className="font-label text-sm font-medium">Próximamente: disponible en el siguiente Sprint</span>
         </AnimatedToast>
       )}
 
@@ -1709,10 +1729,10 @@ export default function MainMenuPage() {
       {/* ── Sidebar (desktop) ─────────────────────────────────── */}
       <nav className="bg-surface text-primary font-body hidden h-screen w-72 flex-col border-r border-outline-variant/20 fixed left-0 top-0 z-50 md:flex">
         {/* Brand */}
-        <div className="px-8 py-8 flex items-center gap-3 border-b border-outline-variant/20 mb-2">
-          <img src="/logo.png" alt="Reservio Logo" className="w-10 h-10 object-contain drop-shadow-sm" />
+        <div className="p-8 flex items-center gap-3 border-b border-outline-variant/20 mb-2">
+          <Image src="/logo.png" alt="Reservio Logo" width={40} height={40} className="object-contain drop-shadow-sm" />
           <div>
-            <h1 className="font-headline text-2xl font-black text-primary mb-0 leading-none">Reservio</h1>
+            <h1 className="font-headline text-2xl font-semibold text-primary mb-0 leading-none">Reservio</h1>
             <p className="font-body text-secondary text-[11px] font-semibold tracking-wider uppercase mt-1">Workspace</p>
           </div>
         </div>
@@ -1720,7 +1740,7 @@ export default function MainMenuPage() {
         {/* Nav items */}
         <div className="flex flex-col gap-y-1 flex-grow overflow-y-auto pb-4 px-2">
           {navItems.map((item) => (
-            <button
+            <button type="button"
               key={item.id}
               onClick={() => { setActiveTab(item.id); if (item.id === 'tech') { loadEquipos(); loadMisPrestamos() } if (item.id === 'rooms') { fetchSalas() } }}
               className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200
@@ -1751,7 +1771,7 @@ export default function MainMenuPage() {
               <p className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant/80 px-4 mb-1">
                 Administración
               </p>
-              <button
+              <button type="button"
                 onClick={() => { handleAdminTab(); setAdminSubTab('users') }}
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200 ${
                   activeTab === 'admin' && adminSubTab === 'users'
@@ -1762,7 +1782,7 @@ export default function MainMenuPage() {
                 <span className="material-symbols-outlined text-[20px]" style={activeTab === 'admin' && adminSubTab === 'users' ? { fontVariationSettings: "'FILL' 1" } : undefined}>manage_accounts</span>
                 <span>Usuarios</span>
               </button>
-              <button
+              <button type="button"
                 onClick={() => { handleAdminTab(); setAdminSubTab('equipment'); loadPrestamosAdmin(); loadAlertasEquipos() }}
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200 ${
                   activeTab === 'admin' && adminSubTab === 'equipment'
@@ -1773,7 +1793,7 @@ export default function MainMenuPage() {
                 <span className="material-symbols-outlined text-[20px]" style={activeTab === 'admin' && adminSubTab === 'equipment' ? { fontVariationSettings: "'FILL' 1" } : undefined}>devices</span>
                 <span>Equipos</span>
               </button>
-              <button
+              <button type="button"
                 onClick={() => { handleAdminTab(); setAdminSubTab('rooms'); loadSalasAdmin() }}
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200 ${
                   activeTab === 'admin' && adminSubTab === 'rooms'
@@ -1784,7 +1804,7 @@ export default function MainMenuPage() {
                 <span className="material-symbols-outlined text-[20px]" style={activeTab === 'admin' && adminSubTab === 'rooms' ? { fontVariationSettings: "'FILL' 1" } : undefined}>meeting_room</span>
                 <span>Salas</span>
               </button>
-              <button
+              <button type="button"
                 onClick={() => { handleAdminTab(); setAdminSubTab('reports'); loadReports() }}
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200 ${
                   activeTab === 'admin' && adminSubTab === 'reports'
@@ -1801,7 +1821,7 @@ export default function MainMenuPage() {
 
         {/* Sign out */}
         <div className="p-6 mt-auto">
-          <button
+          <button type="button"
             onClick={handleSignOut}
             className="w-full flex items-center justify-center gap-2 border border-outline-variant/30 text-on-surface-variant py-3 rounded-lg hover:border-error/40 hover:text-error hover:bg-error/5 transition-colors text-sm font-medium font-label"
           >
@@ -1814,14 +1834,14 @@ export default function MainMenuPage() {
       {/* ── Top app bar (mobile) ───────────────────────────────── */}
       <header className="md:hidden bg-surface/95 backdrop-blur-sm fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-6 h-16 border-b border-outline-variant/20">
         <div className="flex items-center gap-2">
-          <img src="/logo.png" alt="Logo" className="w-7 h-7 object-contain" />
-          <span className="font-headline text-xl font-black text-primary tracking-wide">Reservio</span>
+          <Image src="/logo.png" alt="Logo" width={28} height={28} className="object-contain" />
+          <span className="font-headline text-xl font-semibold text-primary tracking-wide">Reservio</span>
         </div>
         <div className="flex items-center gap-2">
-          <button className="p-2 rounded-full hover:bg-surface-container transition-colors">
+          <button type="button" className="p-2 rounded-full hover:bg-surface-container transition-colors">
             <span className="material-symbols-outlined text-on-surface-variant">notifications</span>
           </button>
-          <button
+          <button type="button"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             className="p-2 rounded-full hover:bg-surface-container transition-colors"
           >
@@ -1840,16 +1860,16 @@ export default function MainMenuPage() {
             onClick={() => setMobileMenuOpen(false)}
           />
           <div className="absolute left-0 top-0 bottom-0 w-72 bg-surface flex flex-col shadow-2xl">
-            <div className="px-8 py-8 pt-16 flex items-center gap-3">
-              <img src="/logo.png" alt="Reservio Logo" className="w-10 h-10 object-contain drop-shadow-sm" />
+            <div className="p-8 pt-16 flex items-center gap-3">
+              <Image src="/logo.png" alt="Reservio Logo" width={40} height={40} className="object-contain drop-shadow-sm" />
               <div>
-                <h1 className="font-headline text-2xl font-black text-primary mb-0 leading-none">Reservio</h1>
+                <h1 className="font-headline text-2xl font-semibold text-primary mb-0 leading-none">Reservio</h1>
                 <p className="font-body text-secondary text-[11px] font-semibold tracking-wider uppercase mt-1">Workspace</p>
               </div>
             </div>
             <div className="flex flex-col gap-y-1 flex-grow overflow-y-auto pb-4 px-2">
               {navItems.map((item) => (
-                <button
+                <button type="button"
                   key={item.id}
                   onClick={() => { setActiveTab(item.id); if (item.id === 'tech') { loadEquipos(); loadMisPrestamos() } if (item.id === 'rooms') { fetchSalas() } setMobileMenuOpen(false) }}
                   className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200
@@ -1873,7 +1893,7 @@ export default function MainMenuPage() {
                   <p className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant px-4 mb-1">
                     Administración
                   </p>
-                  <button
+                  <button type="button"
                     onClick={() => { handleAdminTab(); setAdminSubTab('users'); setMobileMenuOpen(false) }}
                     className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200 ${
                       activeTab === 'admin' && adminSubTab === 'users'
@@ -1884,7 +1904,7 @@ export default function MainMenuPage() {
                     <span className="material-symbols-outlined text-[20px]">manage_accounts</span>
                     <span>Usuarios</span>
                   </button>
-                  <button
+                  <button type="button"
                     onClick={() => { handleAdminTab(); setAdminSubTab('equipment'); loadPrestamosAdmin(); loadAlertasEquipos(); setMobileMenuOpen(false) }}
                     className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200 ${
                       activeTab === 'admin' && adminSubTab === 'equipment'
@@ -1895,7 +1915,7 @@ export default function MainMenuPage() {
                     <span className="material-symbols-outlined text-[20px]">devices</span>
                     <span>Equipos</span>
                   </button>
-                  <button
+                  <button type="button"
                     onClick={() => { handleAdminTab(); setAdminSubTab('rooms'); loadSalasAdmin(); setMobileMenuOpen(false) }}
                     className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200 ${
                       activeTab === 'admin' && adminSubTab === 'rooms'
@@ -1906,7 +1926,7 @@ export default function MainMenuPage() {
                     <span className="material-symbols-outlined text-[20px]">meeting_room</span>
                     <span>Salas</span>
                   </button>
-                  <button
+                  <button type="button"
                     onClick={() => { handleAdminTab(); setAdminSubTab('reports'); loadReports(); setMobileMenuOpen(false) }}
                     className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200 ${
                       activeTab === 'admin' && adminSubTab === 'reports'
@@ -1921,7 +1941,7 @@ export default function MainMenuPage() {
               )}
             </div>
             <div className="p-6">
-              <button
+              <button type="button"
                 onClick={handleSignOut}
                 className="w-full flex items-center justify-center gap-2 border border-outline-variant/30 text-on-surface-variant py-3 rounded-lg hover:border-error/40 hover:text-error hover:bg-error/5 transition-colors text-sm font-medium font-label"
               >
@@ -1965,7 +1985,7 @@ export default function MainMenuPage() {
               <div className="flex items-center gap-2">
                 {/* Upcoming / History / Calendar toggle */}
                 <div className="flex items-center gap-0.5 bg-surface-container rounded-xl p-1 border border-outline-variant/20">
-                  <button
+                  <button type="button"
                     onClick={() => setReservaView2('upcoming')}
                     title="Próximas reservas"
                     className={`flex items-center gap-1.5 px-3 h-8 rounded-lg transition-all font-label text-xs font-medium ${
@@ -1977,7 +1997,7 @@ export default function MainMenuPage() {
                     <span className="material-symbols-outlined text-[16px]">upcoming</span>
                     Próximas
                   </button>
-                  <button
+                  <button type="button"
                     onClick={() => { setReservaView2('history'); loadHistorialReservas() }}
                     title="Historial de reservas"
                     className={`flex items-center gap-1.5 px-3 h-8 rounded-lg transition-all font-label text-xs font-medium ${
@@ -1992,10 +2012,10 @@ export default function MainMenuPage() {
                 </div>
                 {reservaView2 === 'upcoming' && (
                   <div className="flex items-center gap-0.5 bg-surface-container rounded-xl p-1 border border-outline-variant/20">
-                    <button
+                    <button type="button"
                       onClick={() => setReservaView('list')}
                       title="Vista lista"
-                      className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                      className={`size-8 rounded-lg flex items-center justify-center transition-all ${
                         reservaView === 'list'
                           ? 'bg-primary text-on-primary shadow-sm'
                           : 'text-on-surface-variant hover:bg-surface-container-high'
@@ -2003,10 +2023,10 @@ export default function MainMenuPage() {
                     >
                       <span className="material-symbols-outlined text-[18px]">view_list</span>
                     </button>
-                    <button
+                    <button type="button"
                       onClick={() => setReservaView('calendar')}
                       title="Vista calendario"
-                      className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                      className={`size-8 rounded-lg flex items-center justify-center transition-all ${
                         reservaView === 'calendar'
                           ? 'bg-primary text-on-primary shadow-sm'
                           : 'text-on-surface-variant hover:bg-surface-container-high'
@@ -2016,7 +2036,7 @@ export default function MainMenuPage() {
                     </button>
                   </div>
                 )}
-                <button
+                <button type="button"
                   onClick={handleNuevaReserva}
                   className="btn-press inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label font-medium text-sm shadow-sm hover:shadow-md hover:brightness-105 transition-all duration-200"
                 >
@@ -2026,7 +2046,7 @@ export default function MainMenuPage() {
               </div>
             )}
             {activeTab === 'rooms' && (
-              <button
+              <button type="button"
                 onClick={() => { if (!FEATURES.reservations) { showComingSoon(); return }; openModal() }}
                 className="btn-press inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label font-medium text-sm shadow-sm hover:shadow-md hover:brightness-105 transition-all duration-200"
               >
@@ -2051,7 +2071,7 @@ export default function MainMenuPage() {
               <SkeletonSummaryCard />
             ) : (
               <div className="bg-surface-container-lowest rounded-xl p-5 border border-outline-variant/25 card-lift flex items-start gap-4" data-anim>
-                <div className="bg-primary/10 text-primary w-10 h-10 rounded-lg flex items-center justify-center shrink-0">
+                <div className="bg-primary/10 text-primary size-10 rounded-lg flex items-center justify-center shrink-0">
                   <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
                     event_available
                   </span>
@@ -2063,7 +2083,7 @@ export default function MainMenuPage() {
                   {proximaReserva ? (
                     <>
                       <p className="font-body font-semibold text-on-surface text-sm leading-snug">
-                        {proximaReserva.salas?.nombre} — {formatFecha(proximaReserva.fecha)}, {formatHora(proximaReserva.hora_inicio)}
+                        {proximaReserva.salas?.nombre}, {formatFecha(proximaReserva.fecha)}, {formatHora(proximaReserva.hora_inicio)}
                       </p>
                       <p className="font-body text-xs text-secondary mt-0.5">{proximaReserva.titulo}</p>
                     </>
@@ -2079,7 +2099,7 @@ export default function MainMenuPage() {
               <SkeletonSummaryCard />
             ) : (
               <div className="bg-surface-container-lowest rounded-xl p-5 border border-outline-variant/25 card-lift flex items-start gap-4" data-anim>
-                <div className="bg-primary/10 text-primary w-10 h-10 rounded-lg flex items-center justify-center shrink-0">
+                <div className="bg-primary/10 text-primary size-10 rounded-lg flex items-center justify-center shrink-0">
                   <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
                     meeting_room
                   </span>
@@ -2101,7 +2121,7 @@ export default function MainMenuPage() {
 
             {/* Card: rol */}
             <div className="bg-surface-container-lowest rounded-xl p-5 border border-outline-variant/25 card-lift flex items-start gap-4" data-anim>
-              <div className="bg-primary/10 text-primary w-10 h-10 rounded-lg flex items-center justify-center shrink-0">
+              <div className="bg-primary/10 text-primary size-10 rounded-lg flex items-center justify-center shrink-0">
                 <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
                   {isAdmin ? 'shield_person' : 'account_circle'}
                 </span>
@@ -2142,9 +2162,13 @@ export default function MainMenuPage() {
             <div className="lg:col-span-2 space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="font-headline text-xl font-semibold text-on-surface">Mis próximas reservas</h3>
-                <a href="#" className="font-label text-sm font-medium text-secondary hover:text-primary transition-colors">
+                <button
+                  type="button"
+                  onClick={() => {}}
+                  className="font-label text-sm font-medium text-secondary hover:text-primary transition-colors"
+                >
                   Ver todas
-                </a>
+                </button>
               </div>
 
               <div className="bg-surface-container-low rounded-xl p-6 space-y-4">
@@ -2155,14 +2179,14 @@ export default function MainMenuPage() {
                   </>
                 ) : reservas.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-10 text-center gap-3">
-                    <div className="w-14 h-14 rounded-full bg-surface-container flex items-center justify-center">
+                    <div className="size-14 rounded-full bg-surface-container flex items-center justify-center">
                       <span className="material-symbols-outlined text-on-surface-variant text-3xl">event_busy</span>
                     </div>
                     <div>
                       <p className="font-body font-semibold text-on-surface text-sm">Sin reservas próximas</p>
                       <p className="font-body text-xs text-secondary mt-1">Crea una nueva reserva para comenzar</p>
                     </div>
-                    <button
+                    <button type="button"
                       onClick={handleNuevaReserva}
                       className="font-label text-sm font-medium text-primary hover:underline"
                     >
@@ -2178,21 +2202,21 @@ export default function MainMenuPage() {
                         className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-4 hover:border-outline-variant/40 hover:shadow-sm transition-all duration-150 flex flex-col sm:flex-row sm:items-center justify-between gap-4 group"
                       >
                         <div className="flex items-start gap-4">
-                          <div className={`${style.bg} ${style.text} w-12 h-12 rounded-lg flex items-center justify-center shrink-0`}>
+                          <div className={`${style.bg} ${style.text} size-12 rounded-lg flex items-center justify-center shrink-0`}>
                             <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
                               {style.icon}
                             </span>
                           </div>
                           <div>
-                            <h4 className="font-headline font-bold text-on-surface text-base">{reserva.titulo}</h4>
+                            <h4 className="font-headline font-semibold text-on-surface text-base">{reserva.titulo}</h4>
                             <p className="font-mono text-xs text-on-surface-variant flex items-center gap-1 mt-1">
                               <span className="material-symbols-outlined text-[16px]">schedule</span>
-                              {formatFecha(reserva.fecha)}, {formatHora(reserva.hora_inicio)} — {formatHora(reserva.hora_fin)}
+                              {formatFecha(reserva.fecha)}, {formatHora(reserva.hora_inicio)}&ndash;{formatHora(reserva.hora_fin)}
                             </p>
                           </div>
                         </div>
                         <div className="flex flex-col sm:items-end gap-2">
-                          <span className="bg-surface-container px-3 py-1 rounded-full text-xs font-label font-bold uppercase tracking-wider text-on-surface-variant">
+                          <span className="bg-surface-container px-3 py-1 rounded-full text-xs font-label font-semibold uppercase tracking-wider text-on-surface-variant">
                             {reserva.salas?.nombre ?? 'Sala desconocida'}
                           </span>
                           <span className={`px-2.5 py-0.5 rounded-full text-xs font-label font-bold ${
@@ -2203,14 +2227,14 @@ export default function MainMenuPage() {
                             {reserva.estado}
                           </span>
                           <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button
+                            <button type="button"
                               onClick={() => handleEditReserva(reserva)}
                               className="font-label text-xs text-primary font-medium hover:underline"
                             >
                               Editar
                             </button>
                             <span className="text-outline-variant/50">·</span>
-                            <button
+                            <button type="button"
                               onClick={() => handleCancelReserva(reserva.id)}
                               disabled={cancelingReservaId === reserva.id}
                               className="font-label text-xs text-error font-medium hover:underline disabled:opacity-50"
@@ -2218,7 +2242,7 @@ export default function MainMenuPage() {
                               {cancelingReservaId === reserva.id ? '…' : 'Cancelar'}
                             </button>
                             <span className="text-outline-variant/50">·</span>
-                            <button
+                            <button type="button"
                               onClick={() => handleDeleteReserva(reserva.id)}
                               disabled={deletingReservaId === reserva.id}
                               className="font-label text-xs text-on-surface-variant font-medium hover:underline disabled:opacity-50"
@@ -2238,7 +2262,7 @@ export default function MainMenuPage() {
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="font-headline text-xl font-semibold text-on-surface">Salas disponibles</h3>
-                <span className="bg-tertiary-container text-on-tertiary-container text-[10px] font-label font-bold px-2 py-1 rounded uppercase tracking-wider">
+                <span className="bg-tertiary-container text-on-tertiary-container text-[10px] font-label font-semibold px-2 py-1 rounded uppercase tracking-wider">
                   AHORA
                 </span>
               </div>
@@ -2258,16 +2282,16 @@ export default function MainMenuPage() {
                   <>
                     {salas.slice(0, 3).map((sala, idx) => (
                       <div key={sala.id} className="bg-surface-container-lowest rounded-xl overflow-hidden border border-outline-variant/15 shadow-sm hover:shadow-md transition-all group cursor-pointer flex items-center gap-4 pr-4">
-                        <img src={sala.imagen_url || getRoomImage(idx)} alt={sala.nombre} className="w-20 h-24 object-cover" />
+                        <Image src={sala.imagen_url || getRoomImage(idx)} alt={sala.nombre} width={80} height={96} className="object-cover" unoptimized />
                         <div className="flex-1 py-3">
                           <div className="flex justify-between items-start mb-1">
-                            <h4 className="font-headline font-bold text-on-surface text-sm">{sala.nombre}</h4>
-                            <div className={`w-2.5 h-2.5 rounded-full ${sala.estado === 'disponible' ? 'bg-[#10b981] shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-red-500'}`} />
+                            <h4 className="font-headline font-semibold text-on-surface text-sm">{sala.nombre}</h4>
+                            <div className={`size-2.5 rounded-full ${sala.estado === 'disponible' ? 'bg-[#10b981] shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-red-500'}`} />
                           </div>
                           <p className="font-body text-xs text-secondary mb-2 flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">group</span> {sala.capacidad} pers.</p>
-                          <button
+                          <button type="button"
                             onClick={() => handleReservarRapido(sala)}
-                            className="font-label text-xs font-bold text-primary hover:underline"
+                            className="font-label text-xs font-semibold text-primary hover:underline"
                           >
                             Reservar Rápido
                           </button>
@@ -2275,7 +2299,7 @@ export default function MainMenuPage() {
                       </div>
                     ))}
                     <div className="pt-1 text-center">
-                      <button className="font-label text-sm font-medium text-primary hover:text-primary-container transition-colors flex items-center justify-center gap-1 w-full">
+                      <button type="button" className="font-label text-sm font-medium text-primary hover:text-primary-container transition-colors flex items-center justify-center gap-1 w-full">
                         Ver mapa de planta
                         <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
                       </button>
@@ -2295,7 +2319,7 @@ export default function MainMenuPage() {
               <div className="flex flex-col sm:flex-row gap-3">
                 <div className="relative flex-1">
                   <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px] pointer-events-none">search</span>
-                  <input
+                  <input aria-label="Buscar reservas"
                     type="text"
                     placeholder="Buscar por título o sala…"
                     value={historialSearch}
@@ -2305,7 +2329,7 @@ export default function MainMenuPage() {
                 </div>
                 <div className="flex gap-1 bg-surface-container rounded-xl p-1 border border-outline-variant/20 shrink-0">
                   {(['todos', 'confirmada', 'pendiente', 'cancelada'] as const).map(est => (
-                    <button
+                    <button type="button"
                       key={est}
                       onClick={() => { setHistorialEstadoFilter(est); setHistorialPage(1) }}
                       className={`px-3 py-1.5 rounded-lg font-label text-xs font-medium capitalize transition-all ${
@@ -2340,7 +2364,7 @@ export default function MainMenuPage() {
 
                 if (filtered.length === 0) return (
                   <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
-                    <div className="w-14 h-14 rounded-full bg-surface-container flex items-center justify-center">
+                    <div className="size-14 rounded-full bg-surface-container flex items-center justify-center">
                       <span className="material-symbols-outlined text-on-surface-variant text-3xl">history</span>
                     </div>
                     <p className="font-body font-semibold text-on-surface text-sm">
@@ -2355,14 +2379,15 @@ export default function MainMenuPage() {
                 return (
                   <div className="space-y-3">
                     {page.map(r => {
-                      const isPast = r.fecha < new Date().toISOString().slice(0,10)
+                      const { dateStr: todayStr } = getBogotaNow()
+                      const isPast = r.fecha < todayStr
                       return (
                         <div
                           key={r.id}
                           className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-outline-variant/40 hover:shadow-sm transition-all"
                         >
                           <div className="flex items-start gap-4">
-                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+                            <div className={`size-10 rounded-lg flex items-center justify-center shrink-0 ${
                               r.estado === 'cancelada' ? 'bg-red-100 text-red-500' :
                               isPast ? 'bg-surface-container text-on-surface-variant' :
                               'bg-primary/10 text-primary'
@@ -2372,7 +2397,7 @@ export default function MainMenuPage() {
                               </span>
                             </div>
                             <div className="min-w-0">
-                              <h4 className="font-headline font-bold text-on-surface text-sm leading-snug truncate">{r.titulo}</h4>
+                              <h4 className="font-headline font-semibold text-on-surface text-sm leading-snug truncate">{r.titulo}</h4>
                               {r.sala_nombre && (
                                 <p className="font-body text-xs text-on-surface-variant mt-0.5">
                                   <span className="material-symbols-outlined text-[13px] align-middle mr-0.5">meeting_room</span>
@@ -2408,12 +2433,12 @@ export default function MainMenuPage() {
                           {total} reservas · página {historialPage} de {pages}
                         </span>
                         <div className="flex gap-2">
-                          <button
+                          <button type="button"
                             onClick={() => setHistorialPage(p => Math.max(1, p - 1))}
                             disabled={historialPage === 1}
                             className="px-3 py-1.5 rounded-lg border border-outline-variant/40 font-label text-xs text-on-surface hover:bg-surface-container disabled:opacity-40 transition-all"
                           >Anterior</button>
-                          <button
+                          <button type="button"
                             onClick={() => setHistorialPage(p => Math.min(pages, p + 1))}
                             disabled={historialPage === pages}
                             className="px-3 py-1.5 rounded-lg border border-outline-variant/40 font-label text-xs text-on-surface hover:bg-surface-container disabled:opacity-40 transition-all"
@@ -2469,7 +2494,7 @@ export default function MainMenuPage() {
                       <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-80" />
                       <div className="absolute bottom-4 left-4 right-4 flex justify-between items-end">
                         <span className={`inline-flex items-center gap-1.5 text-xs font-label font-bold px-2.5 py-1 rounded-md uppercase tracking-wider backdrop-blur-md ${badgeConfig.bg} ${badgeConfig.text} border ${badgeConfig.border}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${badgeConfig.dot}`} />
+                          <span className={`size-1.5 rounded-full ${badgeConfig.dot}`} />
                           {badgeConfig.label}
                         </span>
                       </div>
@@ -2477,7 +2502,7 @@ export default function MainMenuPage() {
                     
                     <div className="p-4 flex-1 flex flex-col">
                       <div>
-                        <h4 className="font-headline font-bold text-on-surface text-lg">{sala.nombre}</h4>
+                        <h4 className="font-headline font-semibold text-on-surface text-lg">{sala.nombre}</h4>
                         {sala.descripcion && (
                           <p className="font-body text-sm text-on-surface-variant mt-1.5 leading-relaxed line-clamp-2">{sala.descripcion}</p>
                         )}
@@ -2553,7 +2578,7 @@ export default function MainMenuPage() {
                             {/* Status text below bar */}
                             {disp === 'parcial' && sala.proxima_libre && (
                               <p className="text-[11px] font-label text-on-surface-variant mt-1">
-                                Próxima libre: <span className="font-bold text-green-600 dark:text-green-400">{sala.proxima_libre}</span>
+                                Próxima libre: <span className="font-semibold text-green-600 dark:text-green-400">{sala.proxima_libre}</span>
                               </p>
                             )}
                             {disp === 'ocupada_total' && (
@@ -2567,10 +2592,10 @@ export default function MainMenuPage() {
                       })()}
                       
                       <div className="mt-4 pt-4 border-t border-outline-variant/15 mt-auto">
-                        <button
+                        <button type="button"
                           onClick={() => handleReservarRapido(sala)}
                           disabled={disp === 'mantenimiento'}
-                          className="w-full border border-primary/40 text-primary font-label text-sm font-bold py-3 rounded-xl hover:bg-primary hover:text-on-primary transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                          className="w-full border border-primary/40 text-primary font-label text-sm font-semibold py-3 rounded-xl hover:bg-primary hover:text-on-primary transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                         >
                           <>
                             <span className="material-symbols-outlined text-[18px]">calendar_add_on</span>
@@ -2588,14 +2613,6 @@ export default function MainMenuPage() {
 
           {/* ══ TAB: TECH (EQUIPOS) ═════════════════════════════════════════ */}
           {activeTab === 'tech' && (() => {
-            const filteredTech = equipos.filter(eq => {
-              const matchesSearch = techSearch.trim() === '' ||
-                eq.nombre.toLowerCase().includes(techSearch.toLowerCase()) ||
-                eq.marca.toLowerCase().includes(techSearch.toLowerCase()) ||
-                eq.tipo_equipo.toLowerCase().includes(techSearch.toLowerCase())
-              const matchesFilter = techFilter === '' || eq.categoria === techFilter || eq.tipo_equipo === techFilter
-              return matchesSearch && matchesFilter
-            })
             return (
               <div className="space-y-6">
                 {/* ── Mis Préstamos Activos ──────────────────────────────────── */}
@@ -2603,21 +2620,21 @@ export default function MainMenuPage() {
                   <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 shadow-sm overflow-hidden">
                     <div className="flex items-center gap-2 px-5 py-3.5 border-b border-outline-variant/15 bg-surface-container">
                       <span className="material-symbols-outlined text-primary text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>inventory_2</span>
-                      <h3 className="font-label text-sm font-bold text-on-surface">Mis Préstamos</h3>
+                      <h3 className="font-label text-sm font-semibold text-on-surface">Mis Préstamos</h3>
                       {misPrestamos.length > 0 && (
-                        <span className="ml-auto inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary text-on-primary text-[10px] font-bold">{misPrestamos.length}</span>
+                        <span className="ml-auto inline-flex items-center justify-center size-5 rounded-full bg-primary text-on-primary text-[10px] font-semibold">{misPrestamos.length}</span>
                       )}
                     </div>
                     {loadingPrestamos ? (
                       <div className="flex items-center justify-center gap-2 py-6 text-sm font-body text-on-surface-variant">
-                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                        <span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                         Cargando préstamos…
                       </div>
                     ) : (
                       <div className="divide-y divide-outline-variant/10">
                         {misPrestamos.map(p => {
                           const finDate = new Date(p.fecha_fin_esperada)
-                          const isOverdue = finDate < new Date() && p.estado === 'activo'
+                          const isOverdue = finDate < new Date(getBogotaNow().dateStr) && p.estado === 'activo'
                           const isPendienteRevision = p.estado === 'pendiente_revision'
                           const condicion = p.condicion_entrega ?? 'bueno'
                           return (
@@ -2626,9 +2643,9 @@ export default function MainMenuPage() {
                                 {/* Equipo imagen */}
                                 <div className="shrink-0">
                                   {p.equipos?.imagen_url ? (
-                                    <img src={p.equipos.imagen_url} alt={p.equipos.nombre} className="w-11 h-11 rounded-lg object-cover border border-outline-variant/15" />
+                                    <Image src={p.equipos.imagen_url} alt={p.equipos.nombre} width={44} height={44} className="rounded-lg object-cover border border-outline-variant/15" unoptimized />
                                   ) : (
-                                    <div className="w-11 h-11 rounded-lg bg-surface-container flex items-center justify-center">
+                                    <div className="size-11 rounded-lg bg-surface-container flex items-center justify-center">
                                       <span className="material-symbols-outlined text-on-surface-variant text-[22px]">devices</span>
                                     </div>
                                   )}
@@ -2637,7 +2654,7 @@ export default function MainMenuPage() {
                                 {/* Info */}
                                 <div className="flex-1 min-w-0">
                                   <div className="flex flex-wrap items-center gap-2 mb-1">
-                                    <p className="font-body text-sm font-semibold text-on-surface truncate">{p.equipos?.nombre ?? '—'}</p>
+                                    <p className="font-body text-sm font-semibold text-on-surface truncate">{p.equipos?.nombre ?? 'N/A'}</p>
                                     {/* Acta badge */}
                                     {p.num_acta && (
                                       <span className="font-mono text-[10px] bg-surface-container text-on-surface-variant px-1.5 py-0.5 rounded border border-outline-variant/20">{p.num_acta}</span>
@@ -2688,7 +2705,7 @@ export default function MainMenuPage() {
                                 <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 shrink-0">
                                   {!isPendienteRevision && (
                                     <>
-                                      <button
+                                      <button type="button"
                                         onClick={() => {
                                           if (editandoPrestamoId === p.id) {
                                             setEditandoPrestamoId(null); setEditPrestamoError(null)
@@ -2701,7 +2718,7 @@ export default function MainMenuPage() {
                                         <span className="material-symbols-outlined text-[14px]">edit</span>
                                         Editar
                                       </button>
-                                      <button
+                                      <button type="button"
                                         onClick={() => handleAbrirDevolucion(p)}
                                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-on-primary text-xs font-label font-semibold hover:opacity-90 border border-primary/30 transition-all shadow-sm"
                                       >
@@ -2727,7 +2744,7 @@ export default function MainMenuPage() {
                                     disabled={savingEditPrestamo}
                                     className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition appearance-none"
                                   >
-                                    <option value="">— Selecciona una reserva —</option>
+                                    <option value="">Selecciona una reserva</option>
                                     {reservas.filter(r => r.estado !== 'cancelada').map(r => (
                                       <option key={r.id} value={r.id}>{r.titulo} · {r.salas?.nombre ?? 'Sin sala'} · {r.fecha} {r.hora_inicio.slice(0,5)}–{r.hora_fin.slice(0,5)}</option>
                                     ))}
@@ -2738,10 +2755,10 @@ export default function MainMenuPage() {
                                     </p>
                                   )}
                                   <div className="flex gap-2">
-                                    <button onClick={handleEditarPrestamo} disabled={!editPrestamoReservaId || savingEditPrestamo} className="flex-1 py-2 rounded-lg bg-primary text-on-primary text-xs font-label font-semibold hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                                    <button type="button" onClick={handleEditarPrestamo} disabled={!editPrestamoReservaId || savingEditPrestamo} className="flex-1 py-2 rounded-lg bg-primary text-on-primary text-xs font-label font-semibold hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed">
                                       {savingEditPrestamo ? 'Guardando…' : 'Guardar cambio'}
                                     </button>
-                                    <button onClick={() => { setEditandoPrestamoId(null); setEditPrestamoError(null) }} className="px-4 py-2 rounded-lg border border-outline-variant/30 text-xs font-label text-on-surface-variant hover:bg-surface-container transition">
+                                    <button type="button" onClick={() => { setEditandoPrestamoId(null); setEditPrestamoError(null) }} className="px-4 py-2 rounded-lg border border-outline-variant/30 text-xs font-label text-on-surface-variant hover:bg-surface-container transition">
                                       Cancelar
                                     </button>
                                   </div>
@@ -2759,7 +2776,7 @@ export default function MainMenuPage() {
                 <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-4 shadow-sm flex flex-col sm:flex-row gap-3">
                   <div className="relative flex-1">
                     <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">search</span>
-                    <input
+                    <input aria-label="Buscar equipos"
                       type="text"
                       value={techSearch}
                       onChange={e => setTechSearch(e.target.value)}
@@ -2776,7 +2793,7 @@ export default function MainMenuPage() {
                       { value: 'mobiliario', label: 'Mobiliario' },
                       { value: 'climatizacion', label: 'Climatización' },
                     ].map(f => (
-                      <button
+                      <button type="button"
                         key={f.value}
                         onClick={() => setTechFilter(f.value)}
                         className={`px-3 py-1.5 rounded-lg text-xs font-label font-semibold border transition-colors ${
@@ -2802,7 +2819,7 @@ export default function MainMenuPage() {
                       {techSearch || techFilter ? 'Sin resultados para tu búsqueda' : 'No hay equipos disponibles'}
                     </p>
                     {(techSearch || techFilter) && (
-                      <button onClick={() => { setTechSearch(''); setTechFilter('') }} className="font-label text-sm text-primary hover:underline">
+                      <button type="button" onClick={() => { setTechSearch(''); setTechFilter('') }} className="font-label text-sm text-primary hover:underline">
                         Limpiar filtros
                       </button>
                     )}
@@ -2836,7 +2853,7 @@ export default function MainMenuPage() {
                                   estaReservadoFuturo          ? 'bg-sky-500/20 text-sky-100 border border-sky-400/30'       :
                                   'bg-orange-500/20 text-orange-50 border border-orange-500/30'
                                 }`}>
-                                  <span className={`w-1.5 h-1.5 rounded-full ${
+                                  <span className={`size-1.5 rounded-full ${
                                     item.estado === 'disponible' ? 'bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.8)]' :
                                     estaEnUsoAhora               ? 'bg-blue-400' :
                                     estaReservadoFuturo          ? 'bg-sky-300' :
@@ -2854,7 +2871,7 @@ export default function MainMenuPage() {
 
                         <div className="p-4 flex-1 flex flex-col">
                           <div>
-                            <h4 className="font-headline font-bold text-on-surface text-lg">{item.nombre}</h4>
+                            <h4 className="font-headline font-semibold text-on-surface text-lg">{item.nombre}</h4>
                             <p className="font-label text-xs uppercase tracking-wider text-primary mt-1">{TIPO_EQUIPO_LABELS[item.tipo_equipo] ?? item.tipo_equipo} · {item.marca}</p>
                           </div>
 
@@ -2896,10 +2913,10 @@ export default function MainMenuPage() {
                           })()}
 
                           <div className="mt-6 pt-4 border-t border-outline-variant/15 mt-auto">
-                            <button
+                            <button type="button"
                               onClick={() => handleSolicitarEquipo(item)}
                               disabled={item.estado !== 'disponible'}
-                              className="w-full bg-surface-container-high text-on-surface font-label text-sm font-bold py-3 rounded-xl hover:bg-secondary hover:text-on-secondary hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-40 disabled:hover:translate-y-0 disabled:shadow-none disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                              className="w-full bg-surface-container-high text-on-surface font-label text-sm font-semibold py-3 rounded-xl hover:bg-secondary hover:text-on-secondary hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-40 disabled:hover:translate-y-0 disabled:shadow-none disabled:cursor-not-allowed flex items-center justify-center gap-2"
                             >
                               {item.estado === 'disponible' ? (
                                 <>
@@ -2909,7 +2926,7 @@ export default function MainMenuPage() {
                               ) : item.estado === 'reservado' ? (
                                 <>
                                   <span className="material-symbols-outlined text-[18px]">block</span>
-                                  {equiposRetornos.has(item.id) ? 'En uso — no disponible' : 'Reservado — no disponible'}
+                                  {equiposRetornos.has(item.id) ? 'En uso, no disponible' : 'Reservado, no disponible'}
                                 </>
                               ) : 'En Mantenimiento'}
                             </button>
@@ -2929,11 +2946,11 @@ export default function MainMenuPage() {
             <div className="max-w-lg space-y-6">
               {/* Avatar + nombre */}
               <div className="bg-surface-container-lowest rounded-xl p-6 border border-outline-variant/20 shadow-sm flex items-center gap-5">
-                <div className="w-16 h-16 rounded-full bg-primary-container text-on-primary flex items-center justify-center shrink-0">
+                <div className="size-16 rounded-full bg-primary-container text-on-primary flex items-center justify-center shrink-0">
                   <span className="material-symbols-outlined text-3xl" style={{ fontVariationSettings: "'FILL' 1" }}>account_circle</span>
                 </div>
                 <div>
-                  <h3 className="font-headline text-xl font-bold text-on-surface">{profile?.nombre}</h3>
+                  <h3 className="font-headline text-xl font-semibold text-on-surface">{profile?.nombre}</h3>
                   <span className={`inline-block mt-1 text-xs font-label font-bold px-2 py-0.5 rounded border uppercase tracking-wider ${
                     isAdmin ? 'bg-primary/10 text-primary border-primary/20' : 'bg-surface-container text-on-surface-variant border-outline-variant/30'
                   }`}>
@@ -2959,7 +2976,7 @@ export default function MainMenuPage() {
               </div>
 
               {/* Cerrar sesión desde perfil */}
-              <button
+              <button type="button"
                 onClick={handleSignOut}
                 className="w-full flex items-center justify-center gap-2 bg-error-container text-on-error-container py-3 rounded-lg hover:opacity-90 transition-opacity text-sm font-label font-medium"
               >
@@ -2975,7 +2992,7 @@ export default function MainMenuPage() {
 
               {/* Sub-tabs */}
               <div className="flex gap-2 border-b border-outline-variant/20 pb-0">
-                <button
+                <button type="button"
                   onClick={() => { setAdminSubTab('users'); loadUsuarios() }}
                   className={`px-5 py-2.5 text-sm font-label font-semibold rounded-t-lg border-b-2 transition-colors ${
                     adminSubTab === 'users'
@@ -2988,7 +3005,7 @@ export default function MainMenuPage() {
                     Usuarios
                   </span>
                 </button>
-                <button
+                <button type="button"
                   onClick={() => { setAdminSubTab('equipment'); loadEquipos(); loadAlertasEquipos() }}
                   className={`px-5 py-2.5 text-sm font-label font-semibold rounded-t-lg border-b-2 transition-colors ${
                     adminSubTab === 'equipment'
@@ -3001,7 +3018,7 @@ export default function MainMenuPage() {
                     Equipos
                   </span>
                 </button>
-                <button
+                <button type="button"
                   onClick={() => { setAdminSubTab('rooms'); loadSalasAdmin() }}
                   className={`px-5 py-2.5 text-sm font-label font-semibold rounded-t-lg border-b-2 transition-colors ${
                     adminSubTab === 'rooms'
@@ -3014,7 +3031,7 @@ export default function MainMenuPage() {
                     Salas
                   </span>
                 </button>
-                <button
+                <button type="button"
                   onClick={() => { setAdminSubTab('reports'); loadReports() }}
                   className={`px-5 py-2.5 text-sm font-label font-semibold rounded-t-lg border-b-2 transition-colors ${
                     adminSubTab === 'reports'
@@ -3034,7 +3051,7 @@ export default function MainMenuPage() {
                 <div className="space-y-4">
                   {/* Botón registrar usuario */}
                   <div className="flex justify-end">
-                    <button
+                    <button type="button"
                       onClick={() => { setShowUserForm(v => !v); setUserFormError(null); if (showUserForm) { setShowPassword(false); setShowConfirmPassword(false) } }}
                       className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label text-sm font-semibold hover:opacity-90 transition-opacity"
                     >
@@ -3046,20 +3063,20 @@ export default function MainMenuPage() {
                   {/* Formulario registrar usuario */}
                   {showUserForm && (
                     <form onSubmit={handleCreateUser} className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-5 space-y-4">
-                      <h4 className="font-headline font-bold text-on-surface mb-2">Nuevo Usuario</h4>
+                      <h4 className="font-headline font-semibold text-on-surface mb-2">Nuevo Usuario</h4>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Nombre *</label>
-                          <input type="text" value={userForm.nombre} onChange={e => setUserForm(f => ({ ...f, nombre: e.target.value }))} placeholder="Nombre completo" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" required />
+                          <label htmlFor="field-mm-1" className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Nombre *</label>
+                          <input aria-label="Nombre del usuario" id="field-mm-1" type="text" value={userForm.nombre} onChange={e => setUserForm(f => ({ ...f, nombre: e.target.value }))} placeholder="Nombre completo" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" required />
                         </div>
                         <div>
-                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Correo *</label>
-                          <input type="text" value={userForm.correo} onChange={e => setUserForm(f => ({ ...f, correo: e.target.value }))} placeholder="correo@ejemplo.com" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                          <label htmlFor="field-mm-2" className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Correo *</label>
+                          <input aria-label="Correo electrónico" id="field-mm-2" type="text" value={userForm.correo} onChange={e => setUserForm(f => ({ ...f, correo: e.target.value }))} placeholder="correo@ejemplo.com" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" />
                         </div>
                         <div>
-                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Contraseña *</label>
+                          <label htmlFor="field-mm-3" className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Contraseña *</label>
                           <div className="relative flex items-center">
-                            <input type={showPassword ? "text" : "password"} value={userForm.password} onChange={e => setUserForm(f => ({ ...f, password: e.target.value }))} placeholder="Mín. 8 caracteres" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 pr-10 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" required />
+                            <input aria-label="Contraseña" id="field-mm-3" type={showPassword ? "text" : "password"} value={userForm.password} onChange={e => setUserForm(f => ({ ...f, password: e.target.value }))} placeholder="Mín. 8 caracteres" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 pr-10 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" required />
                             <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 text-on-surface-variant hover:text-on-surface transition-colors">
                               <span className="material-symbols-outlined text-[20px]">{showPassword ? 'visibility_off' : 'visibility'}</span>
                             </button>
@@ -3067,17 +3084,17 @@ export default function MainMenuPage() {
                           {userForm.password && <AdminPasswordRequirements password={userForm.password} />}
                         </div>
                         <div>
-                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Confirmar Contraseña *</label>
+                          <label htmlFor="field-mm-4" className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Confirmar Contraseña *</label>
                           <div className="relative flex items-center">
-                            <input type={showConfirmPassword ? "text" : "password"} value={userForm.confirmPassword} onChange={e => setUserForm(f => ({ ...f, confirmPassword: e.target.value }))} placeholder="Repite la contraseña" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 pr-10 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" required />
+                            <input aria-label="Confirmar contraseña" id="field-mm-4" type={showConfirmPassword ? "text" : "password"} value={userForm.confirmPassword} onChange={e => setUserForm(f => ({ ...f, confirmPassword: e.target.value }))} placeholder="Repite la contraseña" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 pr-10 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" required />
                             <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 text-on-surface-variant hover:text-on-surface transition-colors">
                               <span className="material-symbols-outlined text-[20px]">{showConfirmPassword ? 'visibility_off' : 'visibility'}</span>
                             </button>
                           </div>
                         </div>
                         <div>
-                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Rol</label>
-                          <select value={userForm.rol} onChange={e => setUserForm(f => ({ ...f, rol: e.target.value as 'usuario' | 'admin' }))} className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40">
+                          <label htmlFor="field-mm-5" className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Rol</label>
+                          <select id="field-mm-5" value={userForm.rol} onChange={e => setUserForm(f => ({ ...f, rol: e.target.value as 'usuario' | 'admin' }))} className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40">
                             <option value="usuario">Usuario</option>
                             <option value="admin">Admin</option>
                           </select>
@@ -3091,7 +3108,7 @@ export default function MainMenuPage() {
                       )}
                       <div className="flex justify-end">
                         <button type="submit" disabled={addingUser} className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2 rounded-lg font-label text-sm font-semibold disabled:opacity-60">
-                          {addingUser ? <><span className="h-4 w-4 animate-spin rounded-full border-2 border-on-primary border-t-transparent" /> Creando…</> : <><span className="material-symbols-outlined text-[18px]">save</span> Crear Usuario</>}
+                          {addingUser ? <><span className="size-4 animate-spin rounded-full border-2 border-on-primary border-t-transparent" /> Creando…</> : <><span className="material-symbols-outlined text-[18px]">save</span> Crear Usuario</>}
                         </button>
                       </div>
                     </form>
@@ -3101,12 +3118,12 @@ export default function MainMenuPage() {
                   <div className="space-y-4">
                     {/* Filtro Ver solo activos */}
                     <div className="flex items-center gap-2 px-4 py-3 bg-surface-container-low rounded-lg border border-outline-variant/20">
-                      <input
+                      <input aria-label="Ver solo activos"
                         type="checkbox"
                         id="showOnlyActivos"
                         checked={showOnlyActivos}
                         onChange={e => setShowOnlyActivos(e.target.checked)}
-                        className="w-4 h-4 rounded cursor-pointer accent-primary"
+                        className="size-4 rounded cursor-pointer accent-primary"
                       />
                       <label htmlFor="showOnlyActivos" className="font-body text-sm text-on-surface cursor-pointer">
                         Ver solo activos
@@ -3117,7 +3134,7 @@ export default function MainMenuPage() {
                     <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 shadow-sm overflow-hidden">
                     {loadingUsuarios ? (
                       <div className="flex items-center justify-center py-16 gap-3">
-                        <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                        <span className="size-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                         <span className="font-body text-sm text-on-surface-variant">Cargando usuarios…</span>
                       </div>
                     ) : usuarios.length === 0 ? (
@@ -3142,7 +3159,7 @@ export default function MainMenuPage() {
                               <tr key={u.id} className={`transition-colors ${u.activo === false ? 'bg-red-50/60' : 'even:bg-surface-container-lowest/50 hover:bg-surface-container/50'}`}>
                                 <td className={`px-6 py-4 font-body font-medium ${u.activo === false ? 'text-red-500 line-through decoration-red-400' : 'text-on-surface'}`}>
                                   {editingUserId === u.id ? (
-                                    <input
+                                    <input aria-label="Editar nombre de usuario"
                                       type="text"
                                       value={editNombreValue}
                                       onChange={e => { setEditNombreValue(e.target.value); setEditUserError(null) }}
@@ -3155,11 +3172,11 @@ export default function MainMenuPage() {
                                   {editingUserId === u.id ? (
                                     <div className="flex flex-col gap-1">
                                       <div className="flex items-center gap-2">
-                                        <input type="email" value={editEmailValue} onChange={e => { setEditEmailValue(e.target.value); setEditUserError(null) }} className="bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none focus:ring-1 focus:ring-primary w-44" autoFocus placeholder="correo@ejemplo.com" />
-                                        <button onClick={() => handleSaveEmail(u.id)} disabled={savingEmail} className="p-1 rounded hover:bg-green-100 text-green-600 disabled:opacity-50">
+                                        <input aria-label="Editar correo electrónico" type="email" value={editEmailValue} onChange={e => { setEditEmailValue(e.target.value); setEditUserError(null) }} className="bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none focus:ring-1 focus:ring-primary w-44" placeholder="correo@ejemplo.com" />
+                                        <button type="button" onClick={() => handleSaveEmail(u.id)} disabled={savingEmail} className="p-1 rounded hover:bg-green-100 text-green-600 disabled:opacity-50">
                                           {savingEmail ? <span className="h-3 w-3 animate-spin rounded-full border border-green-600 border-t-transparent inline-block" /> : <span className="material-symbols-outlined text-[16px]">check</span>}
                                         </button>
-                                        <button onClick={() => { setEditingUserId(null); setEditUserError(null) }} className="p-1 rounded hover:bg-red-50 text-red-500">
+                                        <button type="button" onClick={() => { setEditingUserId(null); setEditUserError(null) }} className="p-1 rounded hover:bg-red-50 text-red-500">
                                           <span className="material-symbols-outlined text-[16px]">close</span>
                                         </button>
                                       </div>
@@ -3182,40 +3199,40 @@ export default function MainMenuPage() {
                                 </td>
                                 <td className="px-6 py-4">
                                   {u.activo === false ? (
-                                    <span className="inline-flex items-center gap-1 text-xs font-label font-bold px-2 py-0.5 rounded bg-red-100 text-red-600">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-red-500" />Eliminado
+                                    <span className="inline-flex items-center gap-1 text-xs font-label font-semibold px-2 py-0.5 rounded bg-red-100 text-red-600">
+                                      <span className="size-1.5 rounded-full bg-red-500" />Eliminado
                                     </span>
                                   ) : (
-                                    <span className="inline-flex items-center gap-1 text-xs font-label font-bold px-2 py-0.5 rounded bg-green-100 text-green-700">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-green-500" />Activo
+                                    <span className="inline-flex items-center gap-1 text-xs font-label font-semibold px-2 py-0.5 rounded bg-green-100 text-green-700">
+                                      <span className="size-1.5 rounded-full bg-green-500" />Activo
                                     </span>
                                   )}
                                 </td>
                                 <td className="px-6 py-4">
                                   <div className="flex items-center gap-1">
                                     {editingUserId !== u.id && (
-                                      <button onClick={() => { setEditingUserId(u.id); setEditEmailValue(u.correo); setEditNombreValue(u.nombre) }} title="Editar usuario" className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors">
+                                      <button type="button" onClick={() => { setEditingUserId(u.id); setEditEmailValue(u.correo); setEditNombreValue(u.nombre) }} title="Editar usuario" className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors">
                                         <span className="material-symbols-outlined text-[16px]">edit</span>
                                       </button>
                                     )}
-                                    <button
+                                    <button type="button"
                                       onClick={() => handleResetPassword(u.correo, u.id)}
                                       disabled={resetingPwd === u.id || u.activo === false}
                                       title="Enviar reset de contraseña"
                                       className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors disabled:opacity-40"
                                     >
                                       {pwdResetSuccess === u.id ? <span className="material-symbols-outlined text-[16px] text-green-600">check_circle</span>
-                                        : resetingPwd === u.id ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent inline-block" />
+                                        : resetingPwd === u.id ? <span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent inline-block" />
                                         : <span className="material-symbols-outlined text-[16px]">lock_reset</span>}
                                     </button>
-                                    <button
+                                    <button type="button"
                                       onClick={() => handleToggleActivo(u.id, u.activo === false)}
                                       disabled={togglingActivo === u.id}
                                       title={u.activo === false ? 'Reactivar usuario' : 'Desactivar usuario'}
                                       className={`p-1.5 rounded-lg transition-colors disabled:opacity-40 ${u.activo === false ? 'text-green-600 hover:bg-green-50' : 'text-red-500 hover:bg-red-50'}`}
                                     >
                                       {togglingActivo === u.id
-                                        ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent inline-block" />
+                                        ? <span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent inline-block" />
                                         : <span className="material-symbols-outlined text-[16px]">{u.activo === false ? 'person_check' : 'person_off'}</span>}
                                     </button>
                                   </div>
@@ -3256,7 +3273,7 @@ export default function MainMenuPage() {
                           <span className="material-symbols-outlined text-primary bg-primary/10 p-1.5 rounded-lg text-[18px]">devices</span>
                         </div>
                         <div className="mt-3">
-                          <span className="font-headline text-3xl font-bold text-on-surface">{totalEquipos}</span>
+                          <span className="font-headline text-3xl font-semibold text-on-surface">{totalEquipos}</span>
                         </div>
                       </div>
                       <div className="bg-surface-container-lowest rounded-xl p-4 border border-outline-variant/20 shadow-sm flex flex-col justify-between">
@@ -3265,7 +3282,7 @@ export default function MainMenuPage() {
                           <span className="material-symbols-outlined text-green-600 bg-green-50 p-1.5 rounded-lg text-[18px]">check_circle</span>
                         </div>
                         <div className="mt-3">
-                          <span className="font-headline text-3xl font-bold text-on-surface">{disponiblesCount}</span>
+                          <span className="font-headline text-3xl font-semibold text-on-surface">{disponiblesCount}</span>
                           <p className="font-label text-[11px] text-on-surface-variant mt-0.5">
                             {totalEquipos > 0 ? Math.round((disponiblesCount / totalEquipos) * 100) : 0}% del inventario
                           </p>
@@ -3277,7 +3294,7 @@ export default function MainMenuPage() {
                           <span className="material-symbols-outlined text-primary bg-primary/10 p-1.5 rounded-lg text-[18px]">event_available</span>
                         </div>
                         <div className="mt-3">
-                          <span className="font-headline text-3xl font-bold text-on-surface">{reservadosCount}</span>
+                          <span className="font-headline text-3xl font-semibold text-on-surface">{reservadosCount}</span>
                         </div>
                       </div>
                       <div className="bg-surface-container-lowest rounded-xl p-4 border border-outline-variant/20 shadow-sm flex flex-col justify-between">
@@ -3286,7 +3303,7 @@ export default function MainMenuPage() {
                           <span className="material-symbols-outlined text-orange-500 bg-orange-50 p-1.5 rounded-lg text-[18px]">build</span>
                         </div>
                         <div className="mt-3">
-                          <span className="font-headline text-3xl font-bold text-on-surface">{mantenimientoCount}</span>
+                          <span className="font-headline text-3xl font-semibold text-on-surface">{mantenimientoCount}</span>
                           {mantenimientoCount > 0 && (
                             <p className="font-label text-[11px] text-orange-500 flex items-center gap-0.5 mt-0.5">
                               <span className="material-symbols-outlined text-[12px]">warning</span>
@@ -3301,7 +3318,7 @@ export default function MainMenuPage() {
                     <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
                       <div className="relative w-full sm:max-w-xs">
                         <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">search</span>
-                        <input
+                        <input aria-label="Buscar usuario"
                           type="text"
                           value={equipoSearch}
                           onChange={e => setEquipoSearch(e.target.value)}
@@ -3309,7 +3326,7 @@ export default function MainMenuPage() {
                           className="w-full pl-9 pr-3 py-2 bg-surface-container-low border border-outline-variant/30 rounded-lg text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
                         />
                       </div>
-                      <button
+                      <button type="button"
                         onClick={() => { setShowEquipoForm(v => !v); setEquipoFormStage('form') }}
                         className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label text-sm font-medium hover:bg-primary-container transition-colors shrink-0"
                       >
@@ -3326,7 +3343,7 @@ export default function MainMenuPage() {
                         {equipoFormStage === 'processing' && (
                           <div className="flex flex-col items-center justify-center py-16 gap-4">
                             <div className="h-12 w-12 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-                            <p className="font-headline font-bold text-on-surface text-lg">Registrando equipo…</p>
+                            <p className="font-headline font-semibold text-on-surface text-lg">Registrando equipo…</p>
                             <p className="font-body text-sm text-on-surface-variant">Procesando los datos del nuevo activo.</p>
                           </div>
                         )}
@@ -3334,10 +3351,10 @@ export default function MainMenuPage() {
                         {/* Stage: success */}
                         {equipoFormStage === 'success' && (
                           <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-                            <div className="bg-primary/10 text-primary rounded-full w-16 h-16 flex items-center justify-center">
+                            <div className="bg-primary/10 text-primary rounded-full size-16 flex items-center justify-center">
                               <span className="material-symbols-outlined text-4xl" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
                             </div>
-                            <div>  <p className="font-headline font-bold text-on-surface text-xl">¡Equipo{equipoCantidad > 1 ? `s` : ''} Registrado{equipoCantidad > 1 ? `s` : ''}!</p>
+                            <div>  <p className="font-headline font-semibold text-on-surface text-xl">¡Equipo{equipoCantidad > 1 ? `s` : ''} Registrado{equipoCantidad > 1 ? `s` : ''}!</p>
                               <p className="font-body text-sm text-on-surface-variant mt-1">{equipoCantidad > 1 ? `${equipoCantidad} unidades han sido añadidas` : 'El nuevo equipo ha sido añadido'} al inventario con códigos de activo únicos.</p>
                             </div>
                           </div>
@@ -3346,7 +3363,7 @@ export default function MainMenuPage() {
                         {/* Stage: form */}
                         {equipoFormStage === 'form' && (
                           <form onSubmit={handleAddEquipo} className="p-5">
-                            <h4 className="font-headline font-bold text-on-surface mb-4 flex items-center gap-2">
+                            <h4 className="font-headline font-semibold text-on-surface mb-4 flex items-center gap-2">
                               <span className="material-symbols-outlined text-primary text-[20px]">add_box</span>
                               Registrar Nuevo Equipo
                             </h4>
@@ -3354,8 +3371,8 @@ export default function MainMenuPage() {
 
                               {/* Nombre */}
                               <div className="sm:col-span-2 lg:col-span-3">
-                                <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Nombre / Modelo *</label>
-                                <input
+                                <label htmlFor="field-mm-6" className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Nombre / Modelo *</label>
+                                <input aria-label="Nombre del equipo" id="field-mm-6"
                                   type="text"
                                   value={equipoForm.nombre}
                                   onChange={(e) => setEquipoField('nombre', e.target.value)}
@@ -3367,8 +3384,8 @@ export default function MainMenuPage() {
 
                               {/* Categoría */}
                               <div>
-                                <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Categoría *</label>
-                                <select
+                                <label htmlFor="field-mm-7" className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Categoría *</label>
+                                <select id="field-mm-7"
                                   value={equipoForm.categoria}
                                   onChange={(e) => setEquipoField('categoria', e.target.value)}
                                   className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
@@ -3421,7 +3438,7 @@ export default function MainMenuPage() {
                                     ))}
                                   </select>
                                 ) : (
-                                  <input
+                                  <input aria-label="Categoría del equipo"
                                     type="text"
                                     value={equipoForm.marca}
                                     onChange={(e) => setEquipoField('marca', e.target.value)}
@@ -3466,7 +3483,7 @@ export default function MainMenuPage() {
                                     equipoForm.estado === 'reservado'  ? 'bg-primary/10 text-primary' :
                                     'bg-orange-100 text-orange-700'
                                   }`}>
-                                    <span className={`w-1.5 h-1.5 rounded-full ${
+                                    <span className={`size-1.5 rounded-full ${
                                       equipoForm.estado === 'disponible' ? 'bg-green-500' :
                                       equipoForm.estado === 'reservado'  ? 'bg-primary' :
                                       'bg-orange-500'
@@ -3487,8 +3504,8 @@ export default function MainMenuPage() {
 
                               {/* Cantidad de unidades */}
                               <div className="sm:col-span-2 lg:col-span-3">
-                                <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Cantidad de unidades</label>
-                                <input
+                                <label htmlFor="field-mm-8" className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Cantidad de unidades</label>
+                                <input aria-label="Descripción del equipo" id="field-mm-8"
                                   type="number"
                                   min={1}
                                   max={20}
@@ -3511,7 +3528,7 @@ export default function MainMenuPage() {
                                 <div className="flex items-center gap-2 mb-2">
                                   <span className="material-symbols-outlined text-primary text-[16px]">tag</span>
                                   <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant">
-                                    {equipoCantidad === 1 ? 'Número de serie / IMEI *' : `Números de serie / IMEI * — ${equipoCantidad} unidades`}
+                                    {equipoCantidad === 1 ? 'Número de serie / IMEI *' : `Números de serie / IMEI * (${equipoCantidad} unidades)`}
                                   </label>
                                 </div>
                                 <div className="space-y-2">
@@ -3522,10 +3539,10 @@ export default function MainMenuPage() {
                                     return (
                                       <div key={i} className="flex items-center gap-2">
                                         {equipoCantidad > 1 && (
-                                          <span className="shrink-0 w-6 h-6 rounded-full bg-surface-container flex items-center justify-center text-[10px] font-label font-bold text-on-surface-variant">{i + 1}</span>
+                                          <span className="shrink-0 size-6 rounded-full bg-surface-container flex items-center justify-center text-[10px] font-label font-semibold text-on-surface-variant">{i + 1}</span>
                                         )}
                                         <div className="relative flex-1">
-                                          <input
+                                          <input aria-label="Número de serie"
                                             type="text"
                                             value={val}
                                             onChange={ev => {
@@ -3568,15 +3585,15 @@ export default function MainMenuPage() {
 
                               {/* Imagen */}
                               <div className="sm:col-span-2">
-                                <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Imagen</label>
+                                <label htmlFor="field-mm-9" className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Imagen</label>
                                 <div className="flex items-center gap-3">
                                   {equipoImageFile && (
-                                    <img src={URL.createObjectURL(equipoImageFile)} alt="preview" className="w-12 h-12 rounded-lg object-cover border border-outline-variant/20 shrink-0" />
+                                    <img src={URL.createObjectURL(equipoImageFile)} alt="preview" className="size-12 rounded-lg object-cover border border-outline-variant/20 shrink-0" />
                                   )}
-                                  <label className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-outline-variant/50 cursor-pointer hover:border-primary/60 transition-colors text-sm font-body text-on-surface-variant w-full">
+                                  <label htmlFor="field-mm-10" className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-outline-variant/50 cursor-pointer hover:border-primary/60 transition-colors text-sm font-body text-on-surface-variant w-full">
                                     <span className="material-symbols-outlined text-[18px]">upload</span>
                                     <span className="truncate">{equipoImageFile ? equipoImageFile.name : 'Seleccionar imagen…'}</span>
-                                    <input type="file" accept="image/*" className="hidden" onChange={e => setEquipoImageFile(e.target.files?.[0] ?? null)} />
+                                    <input aria-label="Imagen del equipo" id="field-mm-10" type="file" accept="image/*" className="hidden" onChange={e => setEquipoImageFile(e.target.files?.[0] ?? null)} />
                                   </label>
                                   {equipoImageFile && (
                                     <button type="button" onClick={() => setEquipoImageFile(null)} className="p-1 rounded text-red-400 hover:bg-red-50 shrink-0">
@@ -3613,7 +3630,7 @@ export default function MainMenuPage() {
                     <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 shadow-sm overflow-hidden">
                       {loadingEquipos ? (
                         <div className="flex items-center justify-center py-16 gap-3">
-                          <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                          <span className="size-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                           <span className="font-body text-sm text-on-surface-variant">Cargando equipos…</span>
                         </div>
                       ) : filteredEquipos.length === 0 ? (
@@ -3648,38 +3665,38 @@ export default function MainMenuPage() {
                                     <>
                                       <td className="px-5 py-3">
                                         <div className="flex flex-col gap-1">
-                                          <input type="text" value={editEquipoForm.nombre} onChange={e => setEditEquipoField('nombre', e.target.value)} className="w-full bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none min-w-[120px]" />
-                                          <label className="flex items-center gap-1 cursor-pointer text-xs text-on-surface-variant hover:text-primary transition-colors">
+                                          <input aria-label="Nombre del equipo" type="text" value={editEquipoForm.nombre} onChange={e => setEditEquipoField('nombre', e.target.value)} className="w-full bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none min-w-[120px]" />
+                                          <label htmlFor="field-mm-11" className="flex items-center gap-1 cursor-pointer text-xs text-on-surface-variant hover:text-primary transition-colors">
                                             {editEquipoImageFile
-                                              ? <img src={URL.createObjectURL(editEquipoImageFile)} alt="" className="w-5 h-5 rounded object-cover shrink-0" />
+                                              ? <img src={URL.createObjectURL(editEquipoImageFile)} alt="" className="size-5 rounded object-cover shrink-0" />
                                               : <span className="material-symbols-outlined text-[14px]">image</span>}
                                             <span className="truncate max-w-[100px]">{editEquipoImageFile ? editEquipoImageFile.name : 'Cambiar imagen…'}</span>
-                                            <input type="file" accept="image/*" className="hidden" onChange={e => setEditEquipoImageFile(e.target.files?.[0] ?? null)} />
+                                            <input aria-label="Imagen del equipo" id="field-mm-11" type="file" accept="image/*" className="hidden" onChange={e => setEditEquipoImageFile(e.target.files?.[0] ?? null)} />
                                           </label>
                                         </div>
                                       </td>
                                       <td className="px-5 py-3 hidden md:table-cell">
                                         <select value={editEquipoForm.categoria} onChange={e => setEditEquipoField('categoria', e.target.value)} className="bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none">
-                                          <option value="">—</option>
+                                          <option value="">Seleccionar</option>
                                           <option value="ordenador">Ordenador</option>
                                           <option value="movil">Móvil</option>
                                         </select>
                                       </td>
                                       <td className="px-5 py-3 hidden lg:table-cell">
                                         <select value={editEquipoForm.marca} onChange={e => setEditEquipoField('marca', e.target.value)} disabled={!editEquipoForm.sistema_operativo} className="bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none disabled:opacity-40">
-                                          <option value="">—</option>
+                                          <option value="">Seleccionar</option>
                                           {getMarcas(editEquipoForm.categoria, editEquipoForm.sistema_operativo).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                                         </select>
                                       </td>
                                       <td className="px-5 py-3 hidden lg:table-cell">
                                         <select value={editEquipoForm.sistema_operativo ?? ''} onChange={e => setEditEquipoField('sistema_operativo', e.target.value)} disabled={!editEquipoForm.categoria} className="bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none disabled:opacity-40">
-                                          <option value="">—</option>
+                                          <option value="">Seleccionar</option>
                                           {getSistemas(editEquipoForm.categoria).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                                         </select>
                                       </td>
                                       <td className="px-5 py-3">
                                         <select value={editEquipoForm.tipo_equipo} onChange={e => setEditEquipoField('tipo_equipo', e.target.value)} disabled={!editEquipoForm.marca} className="bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none disabled:opacity-40">
-                                          <option value="">—</option>
+                                          <option value="">Seleccionar</option>
                                           {getTipos(editEquipoForm.categoria, editEquipoForm.sistema_operativo, editEquipoForm.marca).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                                         </select>
                                       </td>
@@ -3692,10 +3709,10 @@ export default function MainMenuPage() {
                                       </td>
                                       <td className="px-5 py-3">
                                         <div className="flex items-center gap-1">
-                                          <button onClick={() => handleSaveEquipo(eq.id)} disabled={savingEquipo} className="p-1.5 rounded-lg text-green-600 hover:bg-green-50 transition-colors disabled:opacity-50">
-                                            {savingEquipo ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-green-600 border-t-transparent inline-block" /> : <span className="material-symbols-outlined text-[16px]">check</span>}
+                                          <button type="button" onClick={() => handleSaveEquipo(eq.id)} disabled={savingEquipo} className="p-1.5 rounded-lg text-green-600 hover:bg-green-50 transition-colors disabled:opacity-50">
+                                            {savingEquipo ? <span className="size-4 animate-spin rounded-full border-2 border-green-600 border-t-transparent inline-block" /> : <span className="material-symbols-outlined text-[16px]">check</span>}
                                           </button>
-                                          <button onClick={() => { setEditingEquipoId(null); setEditEquipoImageFile(null) }} className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors">
+                                          <button type="button" onClick={() => { setEditingEquipoId(null); setEditEquipoImageFile(null) }} className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors">
                                             <span className="material-symbols-outlined text-[16px]">close</span>
                                           </button>
                                         </div>
@@ -3707,7 +3724,7 @@ export default function MainMenuPage() {
                                       <td className="px-5 py-4 font-body font-medium text-on-surface">
                                         <div className="flex items-center gap-3">
                                           {eq.imagen_url && (
-                                            <img src={eq.imagen_url} alt={eq.nombre} className="w-8 h-8 rounded-lg object-cover shrink-0 border border-outline-variant/20" />
+                                            <Image src={eq.imagen_url} alt={eq.nombre} width={32} height={32} className="rounded-lg object-cover shrink-0 border border-outline-variant/20" unoptimized />
                                           )}
                                           <div>
                                             <span className="line-clamp-1">{eq.nombre}</span>
@@ -3727,7 +3744,7 @@ export default function MainMenuPage() {
                                           eq.estado === 'reservado'    ? 'bg-primary/10 text-primary' :
                                           'bg-orange-100 text-orange-700'
                                         }`}>
-                                          <span className={`w-1.5 h-1.5 rounded-full ${
+                                          <span className={`size-1.5 rounded-full ${
                                             eq.estado === 'disponible' ? 'bg-green-500' :
                                             eq.estado === 'reservado'  ? 'bg-primary' :
                                             'bg-orange-500'
@@ -3743,7 +3760,7 @@ export default function MainMenuPage() {
                                             disabled={asignandoSala === eq.id}
                                             className="bg-surface-container-low border border-outline-variant/30 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none focus:ring-1 focus:ring-primary/40 disabled:opacity-50 max-w-[160px]"
                                           >
-                                            <option value="">— Sin sala —</option>
+                                            <option value="">Sin sala asignada</option>
                                             {salas.map(s => (
                                               <option key={s.id} value={s.id}>{s.nombre}</option>
                                             ))}
@@ -3755,7 +3772,7 @@ export default function MainMenuPage() {
                                       </td>
                                       <td className="px-5 py-4">
                                         <div className="flex items-center gap-1">
-                                          <button
+                                          <button type="button"
                                             onClick={() => {
                                               setEditingEquipoId(eq.id)
                                               setEditEquipoForm({
@@ -3773,7 +3790,7 @@ export default function MainMenuPage() {
                                           >
                                             <span className="material-symbols-outlined text-[16px]">edit</span>
                                           </button>
-                                          <button
+                                          <button type="button"
                                             onClick={() => handleDeleteEquipo(eq.id)}
                                             title="Eliminar equipo"
                                             className="p-1.5 rounded-lg text-on-surface-variant hover:bg-red-50 hover:text-red-600 transition-colors"
@@ -3802,20 +3819,20 @@ export default function MainMenuPage() {
                         <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 shadow-sm overflow-hidden">
                           <div className="flex items-center gap-2 px-5 py-3 border-b border-outline-variant/15 bg-surface-container">
                             <span className="material-symbols-outlined text-amber-500 text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>notification_important</span>
-                            <h3 className="font-label text-sm font-bold text-on-surface">Alertas de Inventario</h3>
+                            <h3 className="font-label text-sm font-semibold text-on-surface">Alertas de Inventario</h3>
                             {vencidos.length > 0 && (
-                              <span className="ml-1 inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-[10px] font-bold">{vencidos.length} vencido{vencidos.length !== 1 ? 's' : ''}</span>
+                              <span className="ml-1 inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-[10px] font-semibold">{vencidos.length} vencido{vencidos.length !== 1 ? 's' : ''}</span>
                             )}
                             {(proximos24.length + proximos48.length) > 0 && (
-                              <span className="ml-1 inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-bold">{proximos24.length + proximos48.length} próximo{(proximos24.length + proximos48.length) !== 1 ? 's' : ''}</span>
+                              <span className="ml-1 inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-semibold">{proximos24.length + proximos48.length} próximo{(proximos24.length + proximos48.length) !== 1 ? 's' : ''}</span>
                             )}
-                            <button onClick={loadAlertasEquipos} className="ml-auto p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container-low transition-colors" title="Actualizar alertas">
+                            <button type="button" onClick={loadAlertasEquipos} className="ml-auto p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container-low transition-colors" title="Actualizar alertas">
                               <span className={`material-symbols-outlined text-[16px] ${loadingAlertas ? 'animate-spin' : ''}`}>refresh</span>
                             </button>
                           </div>
                           {loadingAlertas ? (
                             <div className="flex items-center justify-center gap-2 py-6 text-sm font-body text-on-surface-variant">
-                              <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                              <span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                               Cargando alertas…
                             </div>
                           ) : (
@@ -3825,15 +3842,15 @@ export default function MainMenuPage() {
                                 <div>
                                   <p className="font-label text-[11px] uppercase tracking-widest text-red-600 mb-2 flex items-center gap-1">
                                     <span className="material-symbols-outlined text-[13px]" style={{ fontVariationSettings: "'FILL' 1" }}>event_busy</span>
-                                    No devueltos — vencidos ({vencidos.length})
+                                    No devueltos: vencidos ({vencidos.length})
                                   </p>
                                   <div className="space-y-1.5">
                                     {vencidos.map(a => (
                                       <div key={a.prestamo_id} className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
                                         <span className="material-symbols-outlined text-red-500 text-[16px]" style={{ fontVariationSettings: "'FILL' 1" }}>devices</span>
                                         <div className="flex-1 min-w-0">
-                                          <span className="font-label text-xs font-bold text-on-surface">{a.equipo_nombre}</span>
-                                          <span className="font-body text-xs text-on-surface-variant ml-2">— {a.usuario_nombre}</span>
+                                          <span className="font-label text-xs font-semibold text-on-surface">{a.equipo_nombre}</span>
+                                          <span className="font-body text-xs text-on-surface-variant ml-2">· {a.usuario_nombre}</span>
                                           {a.num_acta && <span className="font-mono text-[10px] text-on-surface-variant/70 ml-2">{a.num_acta}</span>}
                                         </div>
                                         <span className="font-body text-[11px] text-red-500 whitespace-nowrap">
@@ -3856,8 +3873,8 @@ export default function MainMenuPage() {
                                       <div key={a.prestamo_id} className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
                                         <span className="material-symbols-outlined text-blue-500 text-[16px]" style={{ fontVariationSettings: "'FILL' 1" }}>devices</span>
                                         <div className="flex-1 min-w-0">
-                                          <span className="font-label text-xs font-bold text-on-surface">{a.equipo_nombre}</span>
-                                          <span className="font-body text-xs text-on-surface-variant ml-2">— {a.usuario_nombre}</span>
+                                          <span className="font-label text-xs font-semibold text-on-surface">{a.equipo_nombre}</span>
+                                          <span className="font-body text-xs text-on-surface-variant ml-2">· {a.usuario_nombre}</span>
                                         </div>
                                         <span className="font-body text-[11px] text-blue-600 whitespace-nowrap">
                                           Devuelve {new Date(a.fecha_fin_esperada).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' })} {new Date(a.fecha_fin_esperada).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })}
@@ -3872,15 +3889,15 @@ export default function MainMenuPage() {
                                 <div>
                                   <p className="font-label text-[11px] uppercase tracking-widest text-amber-600 mb-2 flex items-center gap-1">
                                     <span className="material-symbols-outlined text-[13px]" style={{ fontVariationSettings: "'FILL' 1" }}>event_upcoming</span>
-                                    Próximos en las siguientes 24 h — preparar ({proximos24.length})
+                                    Próximos en las siguientes 24 h: preparar ({proximos24.length})
                                   </p>
                                   <div className="space-y-1.5">
                                     {proximos24.map(a => (
                                       <div key={a.prestamo_id} className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
                                         <span className="material-symbols-outlined text-amber-500 text-[16px]" style={{ fontVariationSettings: "'FILL' 1" }}>devices</span>
                                         <div className="flex-1 min-w-0">
-                                          <span className="font-label text-xs font-bold text-on-surface">{a.equipo_nombre}</span>
-                                          <span className="font-body text-xs text-on-surface-variant ml-2">— {a.usuario_nombre}</span>
+                                          <span className="font-label text-xs font-semibold text-on-surface">{a.equipo_nombre}</span>
+                                          <span className="font-body text-xs text-on-surface-variant ml-2">· {a.usuario_nombre}</span>
                                         </div>
                                         <span className="font-body text-[11px] text-amber-600 whitespace-nowrap">
                                           Inicia {new Date(a.fecha_inicio).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' })} {new Date(a.fecha_inicio).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })}
@@ -3902,8 +3919,8 @@ export default function MainMenuPage() {
                                       <div key={a.prestamo_id} className="flex items-center gap-2 bg-sky-50 border border-sky-100 rounded-lg px-3 py-2">
                                         <span className="material-symbols-outlined text-sky-500 text-[16px]" style={{ fontVariationSettings: "'FILL' 1" }}>devices</span>
                                         <div className="flex-1 min-w-0">
-                                          <span className="font-label text-xs font-bold text-on-surface">{a.equipo_nombre}</span>
-                                          <span className="font-body text-xs text-on-surface-variant ml-2">— {a.usuario_nombre}</span>
+                                          <span className="font-label text-xs font-semibold text-on-surface">{a.equipo_nombre}</span>
+                                          <span className="font-body text-xs text-on-surface-variant ml-2">· {a.usuario_nombre}</span>
                                         </div>
                                         <span className="font-body text-[11px] text-sky-600 whitespace-nowrap">
                                           Inicia {new Date(a.fecha_inicio).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' })} {new Date(a.fecha_inicio).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' })}
@@ -3925,8 +3942,8 @@ export default function MainMenuPage() {
                       <div className="border-b border-outline-variant/15 bg-surface-container">
                         <div className="flex items-center gap-2 px-5 py-3">
                           <span className="material-symbols-outlined text-primary text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>assignment</span>
-                          <h3 className="font-label text-sm font-bold text-on-surface">Gestión de Préstamos</h3>
-                          <button
+                          <h3 className="font-label text-sm font-semibold text-on-surface">Gestión de Préstamos</h3>
+                          <button type="button"
                             onClick={() => { loadPrestamosAdmin(); loadPrestamosHistorial(prestamosAdminTab); loadAlertasEquipos() }}
                             className="ml-auto p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container-low transition-colors"
                             title="Actualizar"
@@ -3942,7 +3959,7 @@ export default function MainMenuPage() {
                             { id: 'novedades', label: 'Con Novedad', icon: 'warning' },
                             { id: 'historial', label: 'Historial', icon: 'history' },
                           ] as const).map(tab => (
-                            <button
+                            <button type="button"
                               key={tab.id}
                               onClick={() => {
                                 setPrestamosAdminTab(tab.id)
@@ -3957,10 +3974,10 @@ export default function MainMenuPage() {
                               <span className="material-symbols-outlined text-[14px]" style={prestamosAdminTab === tab.id ? { fontVariationSettings: "'FILL' 1" } : undefined}>{tab.icon}</span>
                               {tab.label}
                               {tab.id === 'pendiente_revision' && prestamosAdmin.filter(p => p.estado === 'pendiente_revision').length > 0 && (
-                                <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-orange-500 text-white text-[9px] font-bold">{prestamosAdmin.filter(p => p.estado === 'pendiente_revision').length}</span>
+                                <span className="inline-flex items-center justify-center size-4 rounded-full bg-orange-500 text-white text-[9px] font-semibold">{prestamosAdmin.filter(p => p.estado === 'pendiente_revision').length}</span>
                               )}
                               {tab.id === 'novedades' && prestamosHistorial.filter(p => p.novedad).length > 0 && (
-                                <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-500 text-white text-[9px] font-bold">{prestamosHistorial.filter(p => p.novedad).length}</span>
+                                <span className="inline-flex items-center justify-center size-4 rounded-full bg-amber-500 text-white text-[9px] font-semibold">{prestamosHistorial.filter(p => p.novedad).length}</span>
                               )}
                             </button>
                           ))}
@@ -3980,7 +3997,7 @@ export default function MainMenuPage() {
 
                         if (isLoading) return (
                           <div className="flex items-center justify-center gap-2 py-10 text-sm font-body text-on-surface-variant">
-                            <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                            <span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                             Cargando…
                           </div>
                         )
@@ -4022,21 +4039,21 @@ export default function MainMenuPage() {
                                       <td className="px-4 py-3">
                                         <div className="flex items-center gap-2">
                                           {p.equipos?.imagen_url ? (
-                                            <img src={p.equipos.imagen_url} alt="" className="w-8 h-8 rounded-lg object-cover shrink-0 border border-outline-variant/15" />
+                                            <Image src={p.equipos.imagen_url} alt="" width={32} height={32} className="rounded-lg object-cover shrink-0 border border-outline-variant/15" unoptimized />
                                           ) : (
-                                            <div className="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center shrink-0">
+                                            <div className="size-8 rounded-lg bg-surface-container flex items-center justify-center shrink-0">
                                               <span className="material-symbols-outlined text-on-surface-variant text-[16px]">devices</span>
                                             </div>
                                           )}
                                           <div className="min-w-0">
-                                            <p className="font-body text-sm font-semibold text-on-surface truncate max-w-[140px]">{p.equipos?.nombre ?? '—'}</p>
+                                            <p className="font-body text-sm font-semibold text-on-surface truncate max-w-[140px]">{p.equipos?.nombre ?? 'N/A'}</p>
                                             {p.num_acta && <p className="font-mono text-[10px] text-on-surface-variant">{p.num_acta}</p>}
                                           </div>
                                         </div>
                                       </td>
                                       {/* Usuario */}
                                       <td className="px-4 py-3 hidden md:table-cell">
-                                        <p className="font-body text-sm text-on-surface">{p.usuarios?.nombre ?? '—'}</p>
+                                        <p className="font-body text-sm text-on-surface">{p.usuarios?.nombre ?? 'N/A'}</p>
                                         <a href={`mailto:${p.usuarios?.correo}`} className="font-body text-xs text-primary hover:underline">{p.usuarios?.correo}</a>
                                       </td>
                                       {/* Condición */}
@@ -4105,7 +4122,7 @@ export default function MainMenuPage() {
                                         <div className="flex flex-col gap-1.5">
                                           {/* Activo/Vencido sin programar → registrar devolución manual */}
                                           {(p.estado === 'activo' || p.estado === 'vencido') && !isProgramado && (
-                                            <button
+                                            <button type="button"
                                               onClick={() => handleAbrirDevolucionAdmin(p)}
                                               className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary text-on-primary text-xs font-label font-semibold hover:opacity-90 transition"
                                             >
@@ -4122,14 +4139,14 @@ export default function MainMenuPage() {
                                           {/* Pendiente revisión → acciones de revisión */}
                                           {p.estado === 'pendiente_revision' && (
                                             <>
-                                              <button
+                                              <button type="button"
                                                 onClick={() => handleAbrirRevision(p)}
                                                 className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-orange-600 text-white text-xs font-label font-semibold hover:bg-orange-700 transition"
                                               >
                                                 <span className="material-symbols-outlined text-[13px]">fact_check</span>
                                                 Confirmar revisión
                                               </button>
-                                              <button
+                                              <button type="button"
                                                 onClick={() => handleAbrirReasignar(p)}
                                                 className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-surface-container text-on-surface text-xs font-label font-semibold hover:bg-surface-container-low border border-outline-variant/30 transition"
                                               >
@@ -4175,7 +4192,7 @@ export default function MainMenuPage() {
                 <div className="space-y-4">
                   {/* Botón agregar sala */}
                   <div className="flex justify-end">
-                    <button
+                    <button type="button"
                       onClick={() => setShowSalaForm(v => !v)}
                       className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label text-sm font-semibold hover:opacity-90 transition-opacity"
                     >
@@ -4187,42 +4204,42 @@ export default function MainMenuPage() {
                   {/* Formulario agregar sala */}
                   {showSalaForm && (
                     <form onSubmit={handleAddSala} className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-5 space-y-4">
-                      <h4 className="font-headline font-bold text-on-surface mb-2">Nueva Sala</h4>
+                      <h4 className="font-headline font-semibold text-on-surface mb-2">Nueva Sala</h4>
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                         <div>
-                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Nombre *</label>
-                          <input type="text" value={salaForm.nombre} onChange={e => setSalaForm(f => ({ ...f, nombre: e.target.value }))} placeholder="Ej: Sala Innovación A" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" required />
+                          <label htmlFor="field-mm-12" className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Nombre *</label>
+                          <input aria-label="Nombre de la sala" id="field-mm-12" type="text" value={salaForm.nombre} onChange={e => setSalaForm(f => ({ ...f, nombre: e.target.value }))} placeholder="Ej: Sala Innovación A" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" required />
                         </div>
                         <div>
-                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Capacidad *</label>
-                          <input type="number" min="1" value={salaForm.capacidad} onChange={e => setSalaForm(f => ({ ...f, capacidad: e.target.value }))} placeholder="Ej: 10" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" required />
+                          <label htmlFor="field-mm-13" className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Capacidad *</label>
+                          <input aria-label="Capacidad de la sala" id="field-mm-13" type="number" min="1" value={salaForm.capacidad} onChange={e => setSalaForm(f => ({ ...f, capacidad: e.target.value }))} placeholder="Ej: 10" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" required />
                         </div>
                         <div>
-                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Ubicación</label>
-                          <input type="text" value={salaForm.ubicacion} onChange={e => setSalaForm(f => ({ ...f, ubicacion: e.target.value }))} placeholder="Ej: Piso 2, Ala Norte" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                          <label htmlFor="field-mm-14" className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Ubicación</label>
+                          <input aria-label="Ubicación de la sala" id="field-mm-14" type="text" value={salaForm.ubicacion} onChange={e => setSalaForm(f => ({ ...f, ubicacion: e.target.value }))} placeholder="Ej: Piso 2, Ala Norte" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" />
                         </div>
                         <div className="sm:col-span-2">
-                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Descripción</label>
-                          <input type="text" value={salaForm.descripcion} onChange={e => setSalaForm(f => ({ ...f, descripcion: e.target.value }))} placeholder="Descripción breve de la sala" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                          <label htmlFor="field-mm-15" className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Descripción</label>
+                          <input aria-label="Descripción de la sala" id="field-mm-15" type="text" value={salaForm.descripcion} onChange={e => setSalaForm(f => ({ ...f, descripcion: e.target.value }))} placeholder="Descripción breve de la sala" className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40" />
                         </div>
                         <div>
-                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Estado</label>
-                          <select value={salaForm.estado} onChange={e => setSalaForm(f => ({ ...f, estado: e.target.value as SalaAdmin['estado'] }))} className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40">
+                          <label htmlFor="field-mm-16" className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Estado</label>
+                          <select id="field-mm-16" value={salaForm.estado} onChange={e => setSalaForm(f => ({ ...f, estado: e.target.value as SalaAdmin['estado'] }))} className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40">
                             <option value="disponible">Disponible</option>
                             <option value="ocupada">Ocupada</option>
                             <option value="mantenimiento">Mantenimiento</option>
                           </select>
                         </div>
                         <div className="sm:col-span-2 lg:col-span-3">
-                          <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Imagen</label>
+                          <label htmlFor="field-mm-17" className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Imagen</label>
                           <div className="flex items-center gap-3">
                             {salaImageFile && (
-                              <img src={URL.createObjectURL(salaImageFile)} alt="preview" className="w-12 h-12 rounded-lg object-cover border border-outline-variant/20 shrink-0" />
+                              <img src={URL.createObjectURL(salaImageFile)} alt="preview" className="size-12 rounded-lg object-cover border border-outline-variant/20 shrink-0" />
                             )}
-                            <label className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-outline-variant/50 cursor-pointer hover:border-primary/60 transition-colors text-sm font-body text-on-surface-variant w-full">
+                            <label htmlFor="field-mm-18" className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-outline-variant/50 cursor-pointer hover:border-primary/60 transition-colors text-sm font-body text-on-surface-variant w-full">
                               <span className="material-symbols-outlined text-[18px]">upload</span>
                               <span className="truncate">{salaImageFile ? salaImageFile.name : 'Seleccionar imagen…'}</span>
-                              <input type="file" accept="image/*" className="hidden" onChange={e => setSalaImageFile(e.target.files?.[0] ?? null)} />
+                              <input aria-label="Imagen de la sala" id="field-mm-18" type="file" accept="image/*" className="hidden" onChange={e => setSalaImageFile(e.target.files?.[0] ?? null)} />
                             </label>
                             {salaImageFile && (
                               <button type="button" onClick={() => setSalaImageFile(null)} className="p-1 rounded text-red-400 hover:bg-red-50 shrink-0">
@@ -4234,7 +4251,7 @@ export default function MainMenuPage() {
                       </div>
                       <div className="flex justify-end">
                         <button type="submit" disabled={addingSala} className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2 rounded-lg font-label text-sm font-semibold disabled:opacity-60">
-                          {addingSala ? <><span className="h-4 w-4 animate-spin rounded-full border-2 border-on-primary border-t-transparent" /> Guardando…</> : <><span className="material-symbols-outlined text-[18px]">save</span> Guardar Sala</>}
+                          {addingSala ? <><span className="size-4 animate-spin rounded-full border-2 border-on-primary border-t-transparent" /> Guardando…</> : <><span className="material-symbols-outlined text-[18px]">save</span> Guardar Sala</>}
                         </button>
                       </div>
                     </form>
@@ -4244,7 +4261,7 @@ export default function MainMenuPage() {
                   <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 shadow-sm overflow-hidden">
                     {loadingSalasAdmin ? (
                       <div className="flex items-center justify-center py-16 gap-3">
-                        <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                        <span className="size-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                         <span className="font-body text-sm text-on-surface-variant">Cargando salas…</span>
                       </div>
                     ) : salasAdmin.length === 0 ? (
@@ -4272,7 +4289,7 @@ export default function MainMenuPage() {
                                   <>
                                     <td className="px-6 py-3">
                                       <div className="flex flex-col gap-1">
-                                        <input type="text" value={editSalaForm.nombre} onChange={e => setEditSalaForm(f => ({ ...f, nombre: e.target.value }))} className="w-full bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none" />
+                                        <input aria-label="Nombre de la sala" type="text" value={editSalaForm.nombre} onChange={e => setEditSalaForm(f => ({ ...f, nombre: e.target.value }))} className="w-full bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none" />
                                         {/* Preview: nuevo archivo seleccionado, o imagen actual de BD */}
                                         {(editSalaImageFile || editSalaForm.imagen_url) && (
                                           <div className="relative w-full h-20 rounded-lg overflow-hidden bg-surface-container">
@@ -4282,19 +4299,19 @@ export default function MainMenuPage() {
                                               className="w-full h-full object-cover"
                                             />
                                             {!editSalaImageFile && (
-                                              <span className="absolute bottom-1 left-1 text-[9px] font-label font-bold uppercase tracking-wider bg-black/50 text-white px-1.5 py-0.5 rounded">Actual</span>
+                                              <span className="absolute bottom-1 left-1 text-[9px] font-label font-semibold uppercase tracking-wider bg-black/50 text-white px-1.5 py-0.5 rounded">Actual</span>
                                             )}
                                           </div>
                                         )}
-                                        <label className="flex items-center gap-1 cursor-pointer text-xs text-on-surface-variant hover:text-primary transition-colors">
+                                        <label htmlFor="field-mm-19" className="flex items-center gap-1 cursor-pointer text-xs text-on-surface-variant hover:text-primary transition-colors">
                                           <span className="material-symbols-outlined text-[14px]">{editSalaImageFile ? 'check_circle' : 'upload'}</span>
                                           <span className="truncate max-w-[120px]">{editSalaImageFile ? editSalaImageFile.name : editSalaForm.imagen_url ? 'Cambiar imagen…' : 'Subir imagen…'}</span>
-                                          <input type="file" accept="image/*" className="hidden" onChange={e => setEditSalaImageFile(e.target.files?.[0] ?? null)} />
+                                          <input aria-label="Imagen de la sala" id="field-mm-19" type="file" accept="image/*" className="hidden" onChange={e => setEditSalaImageFile(e.target.files?.[0] ?? null)} />
                                         </label>
                                       </div>
                                     </td>
-                                    <td className="px-6 py-3"><input type="number" min="1" value={editSalaForm.capacidad} onChange={e => setEditSalaForm(f => ({ ...f, capacidad: e.target.value }))} className="w-16 bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none" /></td>
-                                    <td className="px-6 py-3"><input type="text" value={editSalaForm.ubicacion} onChange={e => setEditSalaForm(f => ({ ...f, ubicacion: e.target.value }))} className="w-full bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none" /></td>
+                                    <td className="px-6 py-3"><input aria-label="Capacidad de la sala" type="number" min="1" value={editSalaForm.capacidad} onChange={e => setEditSalaForm(f => ({ ...f, capacidad: e.target.value }))} className="w-16 bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none" /></td>
+                                    <td className="px-6 py-3"><input aria-label="Ubicación de la sala" type="text" value={editSalaForm.ubicacion} onChange={e => setEditSalaForm(f => ({ ...f, ubicacion: e.target.value }))} className="w-full bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none" /></td>
                                     <td className="px-6 py-3">
                                       <select value={editSalaForm.estado} onChange={e => setEditSalaForm(f => ({ ...f, estado: e.target.value as SalaAdmin['estado'] }))} className="bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none">
                                         <option value="disponible">Disponible</option>
@@ -4304,10 +4321,10 @@ export default function MainMenuPage() {
                                     </td>
                                     <td className="px-6 py-3">
                                       <div className="flex items-center gap-1">
-                                        <button onClick={() => handleSaveSala(s.id)} disabled={savingSala} className="p-1.5 rounded-lg text-green-600 hover:bg-green-50 transition-colors disabled:opacity-50">
-                                          {savingSala ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-green-600 border-t-transparent inline-block" /> : <span className="material-symbols-outlined text-[16px]">check</span>}
+                                        <button type="button" onClick={() => handleSaveSala(s.id)} disabled={savingSala} className="p-1.5 rounded-lg text-green-600 hover:bg-green-50 transition-colors disabled:opacity-50">
+                                          {savingSala ? <span className="size-4 animate-spin rounded-full border-2 border-green-600 border-t-transparent inline-block" /> : <span className="material-symbols-outlined text-[16px]">check</span>}
                                         </button>
-                                        <button onClick={() => { setEditingSalaId(null); setEditSalaImageFile(null) }} className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors">
+                                        <button type="button" onClick={() => { setEditingSalaId(null); setEditSalaImageFile(null) }} className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors">
                                           <span className="material-symbols-outlined text-[16px]">close</span>
                                         </button>
                                       </div>
@@ -4318,33 +4335,33 @@ export default function MainMenuPage() {
                                     <td className="px-6 py-4">
                                       <div className="flex items-center gap-3">
                                         {s.imagen_url
-                                          ? <img src={s.imagen_url} alt={s.nombre} className="w-10 h-10 rounded-lg object-cover shrink-0 border border-outline-variant/30" />
-                                          : <div className="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center shrink-0"><span className="material-symbols-outlined text-[18px] text-on-surface-variant">meeting_room</span></div>
+                                          ? <Image src={s.imagen_url} alt={s.nombre} width={40} height={40} className="rounded-lg object-cover shrink-0 border border-outline-variant/30" unoptimized />
+                                          : <div className="size-10 rounded-lg bg-surface-container flex items-center justify-center shrink-0"><span className="material-symbols-outlined text-[18px] text-on-surface-variant">meeting_room</span></div>
                                         }
                                         <span className="font-body font-medium text-on-surface">{s.nombre}</span>
                                       </div>
                                     </td>
                                     <td className="px-6 py-4 font-body text-on-surface-variant">{s.capacidad}</td>
-                                    <td className="px-6 py-4 font-body text-on-surface-variant">{s.ubicacion ?? '—'}</td>
+                                    <td className="px-6 py-4 font-body text-on-surface-variant">{s.ubicacion ?? 'N/A'}</td>
                                     <td className="px-6 py-4">
                                       <span className={`inline-flex items-center gap-1 text-xs font-label font-bold px-2 py-0.5 rounded ${
                                         s.estado === 'disponible' ? 'bg-green-100 text-green-700' :
                                         s.estado === 'ocupada' ? 'bg-red-100 text-red-600' : 'bg-yellow-100 text-yellow-700'
                                       }`}>
-                                        <span className={`w-1.5 h-1.5 rounded-full ${s.estado === 'disponible' ? 'bg-green-500' : s.estado === 'ocupada' ? 'bg-red-500' : 'bg-yellow-500'}`} />
+                                        <span className={`size-1.5 rounded-full ${s.estado === 'disponible' ? 'bg-green-500' : s.estado === 'ocupada' ? 'bg-red-500' : 'bg-yellow-500'}`} />
                                         {s.estado === 'disponible' ? 'Disponible' : s.estado === 'ocupada' ? 'Ocupada' : 'Mantenimiento'}
                                       </span>
                                     </td>
                                     <td className="px-6 py-4">
                                       <div className="flex items-center gap-1">
-                                        <button
+                                        <button type="button"
                                           onClick={() => { setEditingSalaId(s.id); setEditSalaForm({ nombre: s.nombre, descripcion: s.descripcion ?? '', capacidad: String(s.capacidad), ubicacion: s.ubicacion ?? '', imagen_url: s.imagen_url ?? '', estado: s.estado }) }}
                                           title="Editar sala"
                                           className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors"
                                         >
                                           <span className="material-symbols-outlined text-[16px]">edit</span>
                                         </button>
-                                        <button
+                                        <button type="button"
                                           onClick={() => handleDeleteSala(s.id)}
                                           title="Eliminar sala"
                                           className="p-1.5 rounded-lg text-on-surface-variant hover:bg-red-50 hover:text-red-600 transition-colors"
@@ -4423,7 +4440,7 @@ export default function MainMenuPage() {
                       </div>
                     </div>
                     <div class="section">
-                      <div class="section-title">📅 Reservas — Estado</div>
+                      <div class="section-title">📅 Reservas: Estado</div>
                       <div class="kpi-row">
                         <div class="kpi-card"><div class="num" style="color:#166534">${reportData.reservas.confirmadas}</div><div class="lbl">Confirmadas</div></div>
                         <div class="kpi-card"><div class="num" style="color:#92400e">${reportData.reservas.pendientes}</div><div class="lbl">Pendientes</div></div>
@@ -4449,7 +4466,7 @@ export default function MainMenuPage() {
                       <div class="section-title">📋 Últimas Reservas</div>
                       <table><thead><tr><th>Título</th><th>Fecha</th><th>Sala</th><th>Usuario</th><th>Hora Inicio</th><th>Estado</th></tr></thead>
                       <tbody>${reportData.reservas.lista.slice(0, 30).map(r => `
-                        <tr><td>${r.titulo}</td><td>${r.fecha}</td><td>${r.sala_nombre ?? '—'}</td><td>${r.usuario_nombre ?? '—'}</td>
+                        <tr><td>${r.titulo}</td><td>${r.fecha}</td><td>${r.sala_nombre ?? 'N/A'}</td><td>${r.usuario_nombre ?? 'N/A'}</td>
                         <td>${r.hora_inicio.slice(0,5)}</td>
                         <td><span class="badge ${r.estado==='confirmada'?'badge-green':r.estado==='pendiente'?'badge-amber':'badge-red'}">${fmtEstado(r.estado)}</span></td></tr>
                       `).join('')}</tbody></table>
@@ -4458,7 +4475,7 @@ export default function MainMenuPage() {
                       <div class="section-title">🏢 Salas</div>
                       <table><thead><tr><th>Nombre</th><th>Capacidad</th><th>Ubicación</th><th>Estado</th></tr></thead>
                       <tbody>${reportData.salas.lista.map(s => `
-                        <tr><td>${s.nombre}</td><td>${s.capacidad} personas</td><td>${s.ubicacion ?? '—'}</td>
+                        <tr><td>${s.nombre}</td><td>${s.capacidad} personas</td><td>${s.ubicacion ?? 'N/A'}</td>
                         <td><span class="badge ${s.estado==='disponible'?'badge-green':s.estado==='ocupada'?'badge-red':'badge-amber'}">${fmtEstado(s.estado)}</span></td></tr>
                       `).join('')}</tbody></table>
                     </div>
@@ -4478,8 +4495,8 @@ export default function MainMenuPage() {
                       <div class="section-title">💻 Inventario de Equipos</div>
                       <table><thead><tr><th>Nombre</th><th>Categoría</th><th>Marca</th><th>Tipo</th><th>N/S</th><th>Estado</th></tr></thead>
                       <tbody>${reportData.equipos.lista.slice(0, 50).map(e => `
-                        <tr><td>${e.nombre}</td><td>${e.categoria}</td><td>${e.marca||'—'}</td><td>${e.tipo_equipo||'—'}</td>
-                        <td style="font-family:monospace;font-size:10px">${e.numero_serie||'—'}</td>
+                        <tr><td>${e.nombre}</td><td>${e.categoria}</td><td>${e.marca||'N/A'}</td><td>${e.tipo_equipo||'N/A'}</td>
+                        <td style="font-family:monospace;font-size:10px">${e.numero_serie||'N/A'}</td>
                         <td><span class="badge ${e.estado==='disponible'?'badge-green':e.estado==='reservado'?'badge-blue':'badge-amber'}">${fmtEstado(e.estado)}</span></td></tr>
                       `).join('')}</tbody></table>
                     </div>` : ''}
@@ -4509,17 +4526,17 @@ export default function MainMenuPage() {
                     <div className="flex flex-col items-center py-24 gap-4 text-center">
                       <span className="material-symbols-outlined text-5xl text-on-surface-variant/40">analytics</span>
                       <p className="font-body text-sm text-on-surface-variant">No hay datos disponibles</p>
-                      <button onClick={loadReports} className="font-label text-sm text-primary hover:underline">Cargar datos</button>
+                      <button type="button" onClick={loadReports} className="font-label text-sm text-primary hover:underline">Cargar datos</button>
                     </div>
                   ) : (
                     <>
                       {/* ── Report header ─────────────────────────────────── */}
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <div>
-                          <h3 className="font-headline text-xl font-bold text-on-surface">Reportes &amp; Análisis</h3>
+                          <h3 className="font-headline text-xl font-semibold text-on-surface">Reportes &amp; Análisis</h3>
                           <p className="font-body text-sm text-on-surface-variant mt-0.5">Estadísticas de salas, reservas y equipos del sistema.</p>
                         </div>
-                        <button
+                        <button type="button"
                           onClick={handleExportPDF}
                           className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2.5 rounded-lg font-label text-sm font-semibold hover:opacity-90 transition-opacity whitespace-nowrap shrink-0"
                         >
@@ -4536,7 +4553,7 @@ export default function MainMenuPage() {
                           { id: 'salas',     label: 'Salas',     icon: 'meeting_room' },
                           { id: 'equipos',   label: 'Equipos',   icon: 'devices' },
                         ] as const).map(tab => (
-                          <button
+                          <button type="button"
                             key={tab.id}
                             onClick={() => setReportSubTab(tab.id)}
                             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-label font-semibold whitespace-nowrap rounded-t-lg border-b-2 transition-colors ${
@@ -4562,12 +4579,12 @@ export default function MainMenuPage() {
                               { label: 'Equipos en Mantenimiento', value: reportData.equipos.mantenimiento, icon: 'build', delta: reportData.equipos.mantenimiento > 0 ? 'Requiere atención' : 'Todo en orden', color: reportData.equipos.mantenimiento > 0 ? 'text-orange-500 bg-orange-50' : 'text-green-600 bg-green-50' },
                             ].map(kpi => (
                               <div key={kpi.label} className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-5 shadow-sm flex flex-col gap-2 relative overflow-hidden group">
-                                <div className="absolute top-0 right-0 w-20 h-20 bg-primary/3 rounded-bl-full -mr-3 -mt-3 transition-transform group-hover:scale-110" />
+                                <div className="absolute top-0 right-0 size-20 bg-primary/3 rounded-bl-full -mr-3 -mt-3 transition-transform group-hover:scale-110" />
                                 <div className="flex justify-between items-start">
                                   <span className="font-label text-xs uppercase tracking-widest text-on-surface-variant">{kpi.label}</span>
                                   <span className={`material-symbols-outlined p-1.5 rounded-lg text-[18px] ${kpi.color}`} style={{ fontVariationSettings: "'FILL' 1" }}>{kpi.icon}</span>
                                 </div>
-                                <span className="font-headline text-3xl font-bold text-on-surface">{kpi.value}</span>
+                                <span className="font-headline text-3xl font-semibold text-on-surface">{kpi.value}</span>
                                 {kpi.delta && <span className="font-body text-xs text-on-surface-variant">{kpi.delta}</span>}
                               </div>
                             ))}
@@ -4625,7 +4642,7 @@ export default function MainMenuPage() {
                               <h4 className="font-label text-sm font-semibold text-on-surface mb-4">Equipos por Categoría</h4>
                               <D3HorizontalBars
                                 data={reportData.equipos.porCategoria
-                                  .sort((a, b) => b.total - a.total)
+                                  .toSorted((a, b) => b.total - a.total)
                                   .map(c => ({
                                     label: c.categoria,
                                     displayLabel: (CATEGORIA_LABELS as Record<string, string>)[c.categoria] ?? c.categoria,
@@ -4647,7 +4664,7 @@ export default function MainMenuPage() {
                                 { label: 'Mantenimiento', value: reportData.salas.mantenimiento, color: 'bg-orange-50 text-orange-700' },
                               ].map(s => (
                                 <div key={s.label} className={`rounded-lg p-3 text-center ${s.color}`}>
-                                  <div className="font-headline text-2xl font-bold">{s.value}</div>
+                                  <div className="font-headline text-2xl font-semibold">{s.value}</div>
                                   <div className="font-label text-xs mt-0.5 opacity-80">{s.label}</div>
                                 </div>
                               ))}
@@ -4680,7 +4697,7 @@ export default function MainMenuPage() {
                                     <span className="font-label text-xs uppercase tracking-widest text-on-surface-variant">{s.label}</span>
                                     <span className={`material-symbols-outlined p-1.5 rounded-lg text-[18px] ${s.color}`} style={{ fontVariationSettings: "'FILL' 1" }}>{s.icon}</span>
                                   </div>
-                                  <span className="font-headline text-3xl font-bold text-on-surface">{s.value}</span>
+                                  <span className="font-headline text-3xl font-semibold text-on-surface">{s.value}</span>
                                 </div>
                               ))}
                             </div>
@@ -4699,7 +4716,7 @@ export default function MainMenuPage() {
                                 <h4 className="font-label text-sm font-semibold text-on-surface">Historial de Reservas</h4>
                                 <div className="relative w-full sm:w-64">
                                   <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[16px]">search</span>
-                                  <input
+                                  <input aria-label="Buscar reserva por nombre"
                                     type="text"
                                     value={reportSearchReservas}
                                     onChange={e => { setReportSearchReservas(e.target.value); setReportPageReservas(1) }}
@@ -4727,8 +4744,8 @@ export default function MainMenuPage() {
                                       <tr key={r.id} className="border-b border-outline-variant/10 hover:bg-surface-container/50 transition-colors">
                                         <td className="py-3 px-4 font-body text-sm text-on-surface font-medium max-w-[160px] truncate">{r.titulo}</td>
                                         <td className="py-3 px-4 font-body text-sm text-on-surface-variant">{r.fecha}</td>
-                                        <td className="py-3 px-4 font-body text-sm text-on-surface">{r.sala_nombre ?? <span className="text-on-surface-variant/50">—</span>}</td>
-                                        <td className="py-3 px-4 font-body text-sm text-on-surface-variant">{r.usuario_nombre ?? '—'}</td>
+                                        <td className="py-3 px-4 font-body text-sm text-on-surface">{r.sala_nombre ?? <span className="text-on-surface-variant/50">N/A</span>}</td>
+                                        <td className="py-3 px-4 font-body text-sm text-on-surface-variant">{r.usuario_nombre ?? 'N/A'}</td>
                                         <td className="py-3 px-4 font-body text-xs text-on-surface-variant">{r.hora_inicio.slice(0,5)} – {r.hora_fin.slice(0,5)}</td>
                                         <td className="py-3 px-4">
                                           <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-label text-xs font-semibold ${
@@ -4736,7 +4753,7 @@ export default function MainMenuPage() {
                                             : r.estado === 'pendiente' ? 'bg-amber-100 text-amber-700'
                                             : 'bg-red-100 text-red-700'
                                           }`}>
-                                            <span className={`w-1.5 h-1.5 rounded-full ${r.estado === 'confirmada' ? 'bg-green-500' : r.estado === 'pendiente' ? 'bg-amber-500' : 'bg-red-500'}`} />
+                                            <span className={`size-1.5 rounded-full ${r.estado === 'confirmada' ? 'bg-green-500' : r.estado === 'pendiente' ? 'bg-amber-500' : 'bg-red-500'}`} />
                                             {r.estado === 'confirmada' ? 'Confirmada' : r.estado === 'pendiente' ? 'Pendiente' : 'Cancelada'}
                                           </span>
                                         </td>
@@ -4749,14 +4766,14 @@ export default function MainMenuPage() {
                               <div className="p-4 flex justify-between items-center bg-surface-bright border-t border-outline-variant/10">
                                 <span className="font-body text-xs text-on-surface-variant">Mostrando {paged.length > 0 ? (page-1)*REPORT_PAGE_SIZE+1 : 0}–{Math.min(page*REPORT_PAGE_SIZE, filtered.length)} de {filtered.length}</span>
                                 <div className="flex gap-1">
-                                  <button disabled={page <= 1} onClick={() => setReportPageReservas(p => p-1)} className="p-1.5 rounded border border-outline-variant/30 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container disabled:opacity-40 transition-colors">
+                                  <button type="button" disabled={page <= 1} onClick={() => setReportPageReservas(p => p-1)} className="p-1.5 rounded border border-outline-variant/30 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container disabled:opacity-40 transition-colors">
                                     <span className="material-symbols-outlined text-[16px]">chevron_left</span>
                                   </button>
                                   {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
                                     const pg = totalPages <= 5 ? i+1 : page <= 3 ? i+1 : page >= totalPages-2 ? totalPages-4+i : page-2+i
-                                    return <button key={pg} onClick={() => setReportPageReservas(pg)} className={`px-2.5 py-1 rounded border font-label text-xs transition-colors ${pg === page ? 'bg-primary border-primary text-on-primary' : 'border-outline-variant/30 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container'}`}>{pg}</button>
+                                    return <button type="button" key={pg} onClick={() => setReportPageReservas(pg)} className={`px-2.5 py-1 rounded border font-label text-xs transition-colors ${pg === page ? 'bg-primary border-primary text-on-primary' : 'border-outline-variant/30 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container'}`}>{pg}</button>
                                   })}
-                                  <button disabled={page >= totalPages} onClick={() => setReportPageReservas(p => p+1)} className="p-1.5 rounded border border-outline-variant/30 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container disabled:opacity-40 transition-colors">
+                                  <button type="button" disabled={page >= totalPages} onClick={() => setReportPageReservas(p => p+1)} className="p-1.5 rounded border border-outline-variant/30 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container disabled:opacity-40 transition-colors">
                                     <span className="material-symbols-outlined text-[16px]">chevron_right</span>
                                   </button>
                                 </div>
@@ -4790,7 +4807,7 @@ export default function MainMenuPage() {
                                     <span className="font-label text-xs uppercase tracking-widest text-on-surface-variant">{s.label}</span>
                                     <span className={`material-symbols-outlined p-1.5 rounded-lg text-[18px] ${s.color}`} style={{ fontVariationSettings: "'FILL' 1" }}>{s.icon}</span>
                                   </div>
-                                  <span className="font-headline text-3xl font-bold text-on-surface">{s.value}</span>
+                                  <span className="font-headline text-3xl font-semibold text-on-surface">{s.value}</span>
                                 </div>
                               ))}
                             </div>
@@ -4818,7 +4835,7 @@ export default function MainMenuPage() {
                                 <h4 className="font-label text-sm font-semibold text-on-surface">Detalle de Salas</h4>
                                 <div className="relative w-full sm:w-64">
                                   <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[16px]">search</span>
-                                  <input
+                                  <input aria-label="Filtrar por estado"
                                     type="text"
                                     value={reportSearchSalas}
                                     onChange={e => { setReportSearchSalas(e.target.value); setReportPageSalas(1) }}
@@ -4844,14 +4861,14 @@ export default function MainMenuPage() {
                                       <tr key={s.id} className="border-b border-outline-variant/10 hover:bg-surface-container/50 transition-colors">
                                         <td className="py-3 px-4 font-body text-sm text-on-surface font-medium">{s.nombre}</td>
                                         <td className="py-3 px-4 font-body text-sm text-on-surface-variant">{s.capacidad} personas</td>
-                                        <td className="py-3 px-4 font-body text-sm text-on-surface-variant">{s.ubicacion ?? '—'}</td>
+                                        <td className="py-3 px-4 font-body text-sm text-on-surface-variant">{s.ubicacion ?? 'N/A'}</td>
                                         <td className="py-3 px-4">
                                           <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-label text-xs font-semibold ${
                                             s.estado === 'disponible' ? 'bg-green-100 text-green-700'
                                             : s.estado === 'ocupada' ? 'bg-red-100 text-red-700'
                                             : 'bg-orange-100 text-orange-700'
                                           }`}>
-                                            <span className={`w-1.5 h-1.5 rounded-full ${s.estado === 'disponible' ? 'bg-green-500' : s.estado === 'ocupada' ? 'bg-red-500' : 'bg-orange-500'}`} />
+                                            <span className={`size-1.5 rounded-full ${s.estado === 'disponible' ? 'bg-green-500' : s.estado === 'ocupada' ? 'bg-red-500' : 'bg-orange-500'}`} />
                                             {s.estado.charAt(0).toUpperCase() + s.estado.slice(1)}
                                           </span>
                                         </td>
@@ -4863,14 +4880,14 @@ export default function MainMenuPage() {
                               <div className="p-4 flex justify-between items-center bg-surface-bright border-t border-outline-variant/10">
                                 <span className="font-body text-xs text-on-surface-variant">Mostrando {paged.length > 0 ? (page-1)*REPORT_PAGE_SIZE+1 : 0}–{Math.min(page*REPORT_PAGE_SIZE, filtered.length)} de {filtered.length}</span>
                                 <div className="flex gap-1">
-                                  <button disabled={page <= 1} onClick={() => setReportPageSalas(p => p-1)} className="p-1.5 rounded border border-outline-variant/30 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container disabled:opacity-40 transition-colors">
+                                  <button type="button" disabled={page <= 1} onClick={() => setReportPageSalas(p => p-1)} className="p-1.5 rounded border border-outline-variant/30 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container disabled:opacity-40 transition-colors">
                                     <span className="material-symbols-outlined text-[16px]">chevron_left</span>
                                   </button>
                                   {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
                                     const pg = totalPages <= 5 ? i+1 : page <= 3 ? i+1 : page >= totalPages-2 ? totalPages-4+i : page-2+i
-                                    return <button key={pg} onClick={() => setReportPageSalas(pg)} className={`px-2.5 py-1 rounded border font-label text-xs transition-colors ${pg === page ? 'bg-primary border-primary text-on-primary' : 'border-outline-variant/30 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container'}`}>{pg}</button>
+                                    return <button type="button" key={pg} onClick={() => setReportPageSalas(pg)} className={`px-2.5 py-1 rounded border font-label text-xs transition-colors ${pg === page ? 'bg-primary border-primary text-on-primary' : 'border-outline-variant/30 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container'}`}>{pg}</button>
                                   })}
-                                  <button disabled={page >= totalPages} onClick={() => setReportPageSalas(p => p+1)} className="p-1.5 rounded border border-outline-variant/30 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container disabled:opacity-40 transition-colors">
+                                  <button type="button" disabled={page >= totalPages} onClick={() => setReportPageSalas(p => p+1)} className="p-1.5 rounded border border-outline-variant/30 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container disabled:opacity-40 transition-colors">
                                     <span className="material-symbols-outlined text-[16px]">chevron_right</span>
                                   </button>
                                 </div>
@@ -4904,7 +4921,7 @@ export default function MainMenuPage() {
                                     <span className="font-label text-xs uppercase tracking-widest text-on-surface-variant">{s.label}</span>
                                     <span className={`material-symbols-outlined p-1.5 rounded-lg text-[18px] ${s.color}`} style={{ fontVariationSettings: "'FILL' 1" }}>{s.icon}</span>
                                   </div>
-                                  <span className="font-headline text-3xl font-bold text-on-surface">{s.value}</span>
+                                  <span className="font-headline text-3xl font-semibold text-on-surface">{s.value}</span>
                                   {s.label === 'Disponibles' && reportData.equipos.total > 0 && (
                                     <p className="font-label text-[11px] text-on-surface-variant mt-0.5">{Math.round((reportData.equipos.disponibles/reportData.equipos.total)*100)}% del inventario</p>
                                   )}
@@ -4917,7 +4934,7 @@ export default function MainMenuPage() {
                               <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/20 p-5 shadow-sm">
                                 <h4 className="font-label text-sm font-semibold text-on-surface mb-4">Disponibilidad por Categoría</h4>
                                 <D3HorizontalBars
-                                  data={reportData.equipos.porCategoria.sort((a, b) => b.total - a.total).map(c => ({
+                                  data={reportData.equipos.porCategoria.toSorted((a, b) => b.total - a.total).map(c => ({
                                     label: c.categoria,
                                     displayLabel: (CATEGORIA_LABELS as Record<string, string>)[c.categoria] ?? c.categoria,
                                     available: c.disponibles,
@@ -4933,7 +4950,7 @@ export default function MainMenuPage() {
                                 <h4 className="font-label text-sm font-semibold text-on-surface">Inventario de Equipos</h4>
                                 <div className="relative w-full sm:w-64">
                                   <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[16px]">search</span>
-                                  <input
+                                  <input aria-label="Filtrar por categoría"
                                     type="text"
                                     value={reportSearchEquipos}
                                     onChange={e => { setReportSearchEquipos(e.target.value); setReportPageEquipos(1) }}
@@ -4961,16 +4978,16 @@ export default function MainMenuPage() {
                                       <tr key={eq.id} className="border-b border-outline-variant/10 hover:bg-surface-container/50 transition-colors">
                                         <td className="py-3 px-4 font-body text-sm text-on-surface font-medium max-w-[160px] truncate">{eq.nombre}</td>
                                         <td className="py-3 px-4 font-body text-sm text-on-surface-variant capitalize">{CATEGORIA_LABELS[eq.categoria] ?? eq.categoria}</td>
-                                        <td className="py-3 px-4 font-body text-sm text-on-surface-variant">{eq.marca || '—'}</td>
-                                        <td className="py-3 px-4 font-body text-sm text-on-surface-variant">{eq.tipo_equipo || '—'}</td>
-                                        <td className="py-3 px-4 font-mono text-xs text-on-surface-variant">{eq.numero_serie ?? '—'}</td>
+                                        <td className="py-3 px-4 font-body text-sm text-on-surface-variant">{eq.marca || 'N/A'}</td>
+                                        <td className="py-3 px-4 font-body text-sm text-on-surface-variant">{eq.tipo_equipo || 'N/A'}</td>
+                                        <td className="py-3 px-4 font-mono text-xs text-on-surface-variant">{eq.numero_serie ?? 'N/A'}</td>
                                         <td className="py-3 px-4">
                                           <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-label text-xs font-semibold ${
                                             eq.estado === 'disponible' ? 'bg-green-100 text-green-700'
                                             : eq.estado === 'reservado' ? 'bg-blue-100 text-blue-700'
                                             : 'bg-orange-100 text-orange-700'
                                           }`}>
-                                            <span className={`w-1.5 h-1.5 rounded-full ${eq.estado === 'disponible' ? 'bg-green-500' : eq.estado === 'reservado' ? 'bg-blue-500' : 'bg-orange-500'}`} />
+                                            <span className={`size-1.5 rounded-full ${eq.estado === 'disponible' ? 'bg-green-500' : eq.estado === 'reservado' ? 'bg-blue-500' : 'bg-orange-500'}`} />
                                             {eq.estado.charAt(0).toUpperCase() + eq.estado.slice(1)}
                                           </span>
                                         </td>
@@ -4982,14 +4999,14 @@ export default function MainMenuPage() {
                               <div className="p-4 flex justify-between items-center bg-surface-bright border-t border-outline-variant/10">
                                 <span className="font-body text-xs text-on-surface-variant">Mostrando {paged.length > 0 ? (page-1)*REPORT_PAGE_SIZE+1 : 0}–{Math.min(page*REPORT_PAGE_SIZE, filtered.length)} de {filtered.length}</span>
                                 <div className="flex gap-1">
-                                  <button disabled={page <= 1} onClick={() => setReportPageEquipos(p => p-1)} className="p-1.5 rounded border border-outline-variant/30 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container disabled:opacity-40 transition-colors">
+                                  <button type="button" disabled={page <= 1} onClick={() => setReportPageEquipos(p => p-1)} className="p-1.5 rounded border border-outline-variant/30 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container disabled:opacity-40 transition-colors">
                                     <span className="material-symbols-outlined text-[16px]">chevron_left</span>
                                   </button>
                                   {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
                                     const pg = totalPages <= 5 ? i+1 : page <= 3 ? i+1 : page >= totalPages-2 ? totalPages-4+i : page-2+i
-                                    return <button key={pg} onClick={() => setReportPageEquipos(pg)} className={`px-2.5 py-1 rounded border font-label text-xs transition-colors ${pg === page ? 'bg-primary border-primary text-on-primary' : 'border-outline-variant/30 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container'}`}>{pg}</button>
+                                    return <button type="button" key={pg} onClick={() => setReportPageEquipos(pg)} className={`px-2.5 py-1 rounded border font-label text-xs transition-colors ${pg === page ? 'bg-primary border-primary text-on-primary' : 'border-outline-variant/30 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container'}`}>{pg}</button>
                                   })}
-                                  <button disabled={page >= totalPages} onClick={() => setReportPageEquipos(p => p+1)} className="p-1.5 rounded border border-outline-variant/30 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container disabled:opacity-40 transition-colors">
+                                  <button type="button" disabled={page >= totalPages} onClick={() => setReportPageEquipos(p => p+1)} className="p-1.5 rounded border border-outline-variant/30 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container disabled:opacity-40 transition-colors">
                                     <span className="material-symbols-outlined text-[16px]">chevron_right</span>
                                   </button>
                                 </div>
@@ -5014,7 +5031,7 @@ export default function MainMenuPage() {
       {/* ── Bottom nav (mobile) ────────────────────────────────── */}
       <nav className="md:hidden fixed bottom-0 left-0 w-full bg-surface-container-lowest border-t border-outline-variant/15 shadow-[0_-4px_16px_rgba(23,28,31,0.06)] z-40 flex justify-around items-center h-16 px-2">
         {navItems.map((item) => (
-          <button
+          <button type="button"
             key={item.id}
             onClick={() => { setActiveTab(item.id); if (item.id === 'tech') { loadEquipos(); loadMisPrestamos() } if (item.id === 'rooms') { fetchSalas() } }}
             className={`flex flex-col items-center justify-center w-full h-full gap-0.5 transition-colors
@@ -5045,14 +5062,14 @@ export default function MainMenuPage() {
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-5 border-b border-outline-variant/15">
               <div className="flex items-center gap-3">
-                <div className="bg-primary-container text-on-primary w-9 h-9 rounded-lg flex items-center justify-center">
+                <div className="bg-primary-container text-on-primary size-9 rounded-lg flex items-center justify-center">
                   <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>
                     event_available
                   </span>
                 </div>
-                <h2 className="font-headline text-lg font-bold text-on-surface">{editingReservaId ? 'Editar Reserva' : 'Nueva Reserva'}</h2>
+                <h2 className="font-headline text-lg font-semibold text-on-surface">{editingReservaId ? 'Editar Reserva' : 'Nueva Reserva'}</h2>
               </div>
-              <button
+              <button type="button"
                 onClick={() => { if (!submitting) { setModalOpen(false); setEditingReservaId(null) } }}
                 className="p-1.5 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant"
                 aria-label="Cerrar"
@@ -5068,7 +5085,7 @@ export default function MainMenuPage() {
                 <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">
                   Título *
                 </label>
-                <input
+                <input aria-label="Título de la reserva"
                   type="text"
                   value={form.titulo}
                   onChange={(e) => setForm({ ...form, titulo: e.target.value })}
@@ -5096,7 +5113,7 @@ export default function MainMenuPage() {
                       value={s.id}
                       disabled={s.estado === 'mantenimiento'}
                     >
-                      {s.nombre} — cap. {s.capacidad}
+                      {s.nombre} (cap. {s.capacidad})
                       {s.estado === 'mantenimiento'
                         ? ' (mantenimiento)'
                         : s.disponibilidad === 'ocupada_total'
@@ -5114,7 +5131,7 @@ export default function MainMenuPage() {
                 <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">
                   Fecha *
                 </label>
-                <input
+                <input aria-label="Sala para la reserva"
                   type="date"
                   value={form.fecha}
                   min={getBogotaNow().dateStr}
@@ -5226,7 +5243,7 @@ export default function MainMenuPage() {
                   <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">
                     Hora inicio *
                   </label>
-                  <input
+                  <input aria-label="Fecha de la reserva"
                     type="time"
                     value={form.hora_inicio}
                     min={(() => {
@@ -5254,7 +5271,7 @@ export default function MainMenuPage() {
                   <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">
                     Hora fin *
                   </label>
-                  <input
+                  <input aria-label="Notas de la reserva"
                     type="time"
                     value={form.hora_fin}
                     onChange={(e) => {
@@ -5318,7 +5335,7 @@ export default function MainMenuPage() {
                 <div className="flex items-start gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
                   <span className="material-symbols-outlined text-[22px] text-green-500 shrink-0 mt-0.5" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
                   <div>
-                    <p className="font-label text-sm font-bold text-green-800">¡Reserva {editingReservaId ? 'actualizada' : 'creada'} con éxito!</p>
+                    <p className="font-label text-sm font-semibold text-green-800">¡Reserva {editingReservaId ? 'actualizada' : 'creada'} con éxito!</p>
                     <p className="font-body text-xs text-green-700 mt-0.5">Tu reserva ha sido confirmada correctamente.</p>
                   </div>
                 </div>
@@ -5341,7 +5358,7 @@ export default function MainMenuPage() {
                 >
                   {submitting ? (
                     <>
-                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-on-primary border-t-transparent" />
+                      <span className="size-4 animate-spin rounded-full border-2 border-on-primary border-t-transparent" />
                       Guardando…
                     </>
                   ) : (
@@ -5373,7 +5390,7 @@ export default function MainMenuPage() {
                 className="w-full h-full object-cover"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-              <button
+              <button type="button"
                 onClick={() => setPreviewSala(null)}
                 className="absolute top-3 right-3 p-1.5 rounded-full bg-black/30 text-white hover:bg-black/50 transition-colors"
               >
@@ -5384,7 +5401,7 @@ export default function MainMenuPage() {
             {/* Contenido */}
             <div className="px-6 py-5 space-y-4">
               <div>
-                <h3 className="font-headline text-xl font-bold text-on-surface">{previewSala.nombre}</h3>
+                <h3 className="font-headline text-xl font-semibold text-on-surface">{previewSala.nombre}</h3>
                 <div className="flex flex-wrap gap-3 mt-2 text-sm font-label text-secondary">
                   <span className="flex items-center gap-1 bg-surface-container px-2 py-1 rounded-md">
                     <span className="material-symbols-outlined text-[14px]">group</span>
@@ -5401,13 +5418,13 @@ export default function MainMenuPage() {
 
               {/* Acciones */}
               <div className="flex flex-col gap-3">
-                <button
+                <button type="button"
                   onClick={() => {
                     setPreviewSala(null)
                     openModal(previewSala?.id)
                   }}
                   disabled={previewSala?.estado === 'mantenimiento'}
-                  className="w-full py-3 rounded-xl bg-primary text-on-primary font-label text-sm font-bold hover:brightness-105 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="w-full py-3 rounded-xl bg-primary text-on-primary font-label text-sm font-semibold hover:brightness-105 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   <span className="material-symbols-outlined text-[18px]">calendar_add_on</span>
                   {previewSala?.estado === 'mantenimiento'
@@ -5416,7 +5433,7 @@ export default function MainMenuPage() {
                       ? 'Ver horarios / Reservar'
                       : 'Reservar esta sala'}
                 </button>
-                <button
+                <button type="button"
                   onClick={() => setPreviewSala(null)}
                   className="w-full py-3 rounded-xl bg-surface-container text-on-surface font-label text-sm font-medium hover:bg-surface-container-high transition-colors"
                 >
@@ -5439,12 +5456,12 @@ export default function MainMenuPage() {
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant/15">
               <div className="flex items-center gap-3">
-                <div className="bg-primary-container text-on-primary w-9 h-9 rounded-lg flex items-center justify-center shrink-0">
+                <div className="bg-primary-container text-on-primary size-9 rounded-lg flex items-center justify-center shrink-0">
                   <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>add_shopping_cart</span>
                 </div>
-                <h2 className="font-headline text-lg font-bold text-on-surface">Solicitar Equipo</h2>
+                <h2 className="font-headline text-lg font-semibold text-on-surface">Solicitar Equipo</h2>
               </div>
-              <button
+              <button type="button"
                 onClick={() => { if (!loanSubmitting) { setLoanModalOpen(false); setLoanEquipo(null) } }}
                 className="p-1.5 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant"
                 aria-label="Cerrar"
@@ -5457,21 +5474,21 @@ export default function MainMenuPage() {
             <div className="px-6 pt-4">
               <div className="flex items-center gap-3 bg-surface-container rounded-xl p-3 border border-outline-variant/15">
                 {loanEquipo.imagen_url ? (
-                  <img src={loanEquipo.imagen_url} alt={loanEquipo.nombre} className="w-14 h-14 rounded-lg object-cover shrink-0 border border-outline-variant/15" />
+                  <Image src={loanEquipo.imagen_url} alt={loanEquipo.nombre} width={56} height={56} className="rounded-lg object-cover shrink-0 border border-outline-variant/15" unoptimized />
                 ) : (
-                  <div className="w-14 h-14 rounded-lg bg-surface-container-high flex items-center justify-center shrink-0">
+                  <div className="size-14 rounded-lg bg-surface-container-high flex items-center justify-center shrink-0">
                     <span className="material-symbols-outlined text-on-surface-variant text-[28px]">devices</span>
                   </div>
                 )}
                 <div className="flex-1 min-w-0">
-                  <p className="font-headline font-bold text-on-surface text-base truncate">{loanEquipo.nombre}</p>
+                  <p className="font-headline font-semibold text-on-surface text-base truncate">{loanEquipo.nombre}</p>
                   <p className="font-label text-xs text-primary uppercase tracking-wide mt-0.5">{TIPO_EQUIPO_LABELS[loanEquipo.tipo_equipo] ?? loanEquipo.tipo_equipo} · {loanEquipo.marca}</p>
                   {loanEquipo.numero_serie && (
                     <code className="text-[10px] font-mono text-on-surface-variant mt-0.5 block">{loanEquipo.numero_serie}</code>
                   )}
                 </div>
-                <span className="inline-flex items-center gap-1 text-[10px] font-label font-bold px-2 py-0.5 rounded bg-green-100 text-green-700 shrink-0">
-                  <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                <span className="inline-flex items-center gap-1 text-[10px] font-label font-semibold px-2 py-0.5 rounded bg-green-100 text-green-700 shrink-0">
+                  <span className="size-1.5 rounded-full bg-green-500" />
                   Disponible
                 </span>
               </div>
@@ -5529,7 +5546,7 @@ export default function MainMenuPage() {
                       required
                       className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition appearance-none"
                     >
-                      <option value="">— Selecciona una reserva —</option>
+                      <option value="">Selecciona una reserva</option>
                       {reservas.filter(r => r.estado !== 'cancelada').map(r => (
                         <option key={r.id} value={r.id}>
                           {r.titulo} · {r.salas?.nombre ?? 'Sin sala'} · {r.fecha} {r.hora_inicio.slice(0,5)}–{r.hora_fin.slice(0,5)}
@@ -5552,7 +5569,7 @@ export default function MainMenuPage() {
                   <label className="font-label text-xs text-on-surface-variant block mb-1.5">
                     Fecha de devolución
                   </label>
-                  <input
+                  <input aria-label="Buscar equipo"
                     type="date"
                     value={loanForm.fecha}
                     readOnly
@@ -5565,7 +5582,7 @@ export default function MainMenuPage() {
                   <label className="font-label text-xs text-on-surface-variant block mb-1.5">
                     Hora de devolución <span className="text-error">*</span>
                   </label>
-                  <input
+                  <input aria-label="Filtrar por categoría"
                     type="time"
                     value={loanForm.hora_devolucion}
                     readOnly
@@ -5582,7 +5599,7 @@ export default function MainMenuPage() {
                   Notas
                   <span className="ml-1 text-on-surface-variant/50">(opcional)</span>
                 </label>
-                <textarea
+                <textarea aria-label="Descripción del equipo"
                   value={loanForm.notas}
                   onChange={e => setLoanForm(f => ({ ...f, notas: e.target.value }))}
                   disabled={loanSubmitting}
@@ -5631,7 +5648,7 @@ export default function MainMenuPage() {
                 <div className="flex items-start gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
                   <span className="material-symbols-outlined text-[22px] text-green-500 shrink-0 mt-0.5" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
                   <div>
-                    <p className="font-label text-sm font-bold text-green-800">¡Préstamo registrado!</p>
+                    <p className="font-label text-sm font-semibold text-green-800">¡Préstamo registrado!</p>
                     {loanActa && <p className="font-mono text-xs text-green-600 mt-0.5">Acta: {loanActa}</p>}
                     <p className="font-body text-xs text-green-700 mt-0.5">Se ha enviado confirmación a tu correo. Recuerda devolver el equipo en las mismas condiciones.</p>
                   </div>
@@ -5655,7 +5672,7 @@ export default function MainMenuPage() {
                 >
                   {loanSubmitting ? (
                     <>
-                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-on-primary border-t-transparent" />
+                      <span className="size-4 animate-spin rounded-full border-2 border-on-primary border-t-transparent" />
                       Procesando…
                     </>
                   ) : (
@@ -5680,15 +5697,15 @@ export default function MainMenuPage() {
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-5 border-b border-outline-variant/15">
               <div className="flex items-center gap-3">
-                <div className="bg-primary/10 text-primary w-9 h-9 rounded-lg flex items-center justify-center">
+                <div className="bg-primary/10 text-primary size-9 rounded-lg flex items-center justify-center">
                   <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>assignment_return</span>
                 </div>
                 <div>
-                  <h2 className="font-headline text-base font-bold text-on-surface">Devolver equipo</h2>
+                  <h2 className="font-headline text-base font-semibold text-on-surface">Devolver equipo</h2>
                   {returnPrestamo.num_acta && <p className="font-mono text-[11px] text-on-surface-variant">{returnPrestamo.num_acta}</p>}
                 </div>
               </div>
-              <button onClick={() => { if (!returnSubmitting) setReturnModalOpen(false) }} className="p-1.5 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant">
+              <button type="button" onClick={() => { if (!returnSubmitting) setReturnModalOpen(false) }} className="p-1.5 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant">
                 <span className="material-symbols-outlined text-[20px]">close</span>
               </button>
             </div>
@@ -5698,7 +5715,7 @@ export default function MainMenuPage() {
               <div className="flex items-center gap-1 px-6 py-3 border-b border-outline-variant/10 bg-surface-container/30">
                 {([1, 2, 3] as const).map(s => (
                   <div key={s} className="flex items-center gap-1">
-                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-label font-bold transition-colors ${returnStep >= s ? 'bg-primary text-on-primary' : 'bg-surface-container text-on-surface-variant'}`}>{s}</div>
+                    <div className={`size-6 rounded-full flex items-center justify-center text-[11px] font-label font-bold transition-colors ${returnStep >= s ? 'bg-primary text-on-primary' : 'bg-surface-container text-on-surface-variant'}`}>{s}</div>
                     <span className={`text-[11px] font-label hidden sm:block ${returnStep >= s ? 'text-primary font-semibold' : 'text-on-surface-variant'}`}>
                       {s === 1 ? 'Condición' : s === 2 ? 'Documentación' : 'Confirmar'}
                     </span>
@@ -5712,9 +5729,9 @@ export default function MainMenuPage() {
               {/* Equipo info */}
               <div className="flex items-center gap-3 mb-5 p-3 bg-surface-container rounded-xl">
                 {returnPrestamo.equipos?.imagen_url ? (
-                  <img src={returnPrestamo.equipos.imagen_url} alt="" className="w-12 h-12 rounded-lg object-cover border border-outline-variant/15 shrink-0" />
+                  <Image src={returnPrestamo.equipos.imagen_url} alt="" width={48} height={48} className="rounded-lg object-cover border border-outline-variant/15 shrink-0" unoptimized />
                 ) : (
-                  <div className="w-12 h-12 rounded-lg bg-surface-container-high flex items-center justify-center shrink-0">
+                  <div className="size-12 rounded-lg bg-surface-container-high flex items-center justify-center shrink-0">
                     <span className="material-symbols-outlined text-on-surface-variant text-[24px]">devices</span>
                   </div>
                 )}
@@ -5734,10 +5751,10 @@ export default function MainMenuPage() {
               {returnStep === 1 && !returnSuccess && (
                 <div className="space-y-4">
                   <div>
-                    <p className="font-label text-xs font-bold text-on-surface uppercase tracking-widest mb-3">¿En qué condición devuelves el equipo?</p>
+                    <p className="font-label text-xs font-semibold text-on-surface uppercase tracking-widest mb-3">¿En qué condición devuelves el equipo?</p>
                     <div className="grid grid-cols-2 gap-2">
                       {CONDICIONES_DEVOLUCION.map(c => (
-                        <button
+                        <button type="button"
                           key={c}
                           onClick={() => {
                             setReturnCondicion(c)
@@ -5761,7 +5778,7 @@ export default function MainMenuPage() {
                     </div>
                   )}
 
-                  <button onClick={() => setReturnStep(2)} className="w-full py-2.5 rounded-xl bg-primary text-on-primary font-label font-semibold text-sm hover:opacity-90 transition">
+                  <button type="button" onClick={() => setReturnStep(2)} className="w-full py-2.5 rounded-xl bg-primary text-on-primary font-label font-semibold text-sm hover:opacity-90 transition">
                     Continuar →
                   </button>
                 </div>
@@ -5772,23 +5789,23 @@ export default function MainMenuPage() {
                 <div className="space-y-4">
                   {/* Foto de devolución */}
                   <div>
-                    <label className="font-label text-xs font-bold text-on-surface uppercase tracking-widest block mb-2">
+                    <label className="font-label text-xs font-semibold text-on-surface uppercase tracking-widest block mb-2">
                       Foto del equipo
                       {['dano_leve','dano_grave'].includes(returnCondicion) && <span className="ml-1 text-red-500">*</span>}
                     </label>
                     {returnFotoPreview ? (
                       <div className="relative">
                         <img src={returnFotoPreview} alt="preview" className="w-full h-40 object-cover rounded-xl border border-outline-variant/20" />
-                        <button onClick={() => { setReturnFotoFile(null); setReturnFotoPreview(null) }} className="absolute top-2 right-2 bg-black/50 text-white p-1 rounded-full hover:bg-black/70 transition">
+                        <button type="button" onClick={() => { setReturnFotoFile(null); setReturnFotoPreview(null) }} className="absolute top-2 right-2 bg-black/50 text-white p-1 rounded-full hover:bg-black/70 transition">
                           <span className="material-symbols-outlined text-[16px]">close</span>
                         </button>
                       </div>
                     ) : (
-                      <label className="flex flex-col items-center gap-2 py-8 border-2 border-dashed border-outline-variant/40 rounded-xl cursor-pointer hover:border-primary/50 hover:bg-surface-container/30 transition">
+                      <label htmlFor="field-mm-20" className="flex flex-col items-center gap-2 py-8 border-2 border-dashed border-outline-variant/40 rounded-xl cursor-pointer hover:border-primary/50 hover:bg-surface-container/30 transition">
                         <span className="material-symbols-outlined text-on-surface-variant text-4xl">add_a_photo</span>
                         <span className="font-body text-sm text-on-surface-variant">Toca para adjuntar foto</span>
                         <span className="font-body text-xs text-on-surface-variant/60">JPG, PNG, WEBP · máx 10 MB</span>
-                        <input
+                        <input aria-label="Nombre del solicitante" id="field-mm-20"
                           type="file"
                           accept="image/*"
                           capture="environment"
@@ -5808,8 +5825,8 @@ export default function MainMenuPage() {
 
                   {/* Observaciones */}
                   <div>
-                    <label className="font-label text-xs font-bold text-on-surface uppercase tracking-widest block mb-1.5">Observaciones <span className="text-on-surface-variant font-normal">(opcional)</span></label>
-                    <textarea
+                    <label htmlFor="field-mm-21" className="font-label text-xs font-semibold text-on-surface uppercase tracking-widest block mb-1.5">Observaciones <span className="text-on-surface-variant font-normal">(opcional)</span></label>
+                    <textarea aria-label="Descripción de la devolución" id="field-mm-21"
                       value={returnObservaciones}
                       onChange={e => setReturnObservaciones(e.target.value)}
                       rows={3}
@@ -5821,7 +5838,7 @@ export default function MainMenuPage() {
 
                   {/* Novedad toggle */}
                   <div className="border border-outline-variant/20 rounded-xl overflow-hidden">
-                    <button
+                    <button type="button"
                       onClick={() => setReturnNovedad(v => !v)}
                       className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-label font-semibold transition-colors ${returnNovedad ? 'bg-amber-50 text-amber-800' : 'bg-surface-container text-on-surface-variant hover:bg-surface-container-low'}`}
                     >
@@ -5832,14 +5849,14 @@ export default function MainMenuPage() {
                     {returnNovedad && (
                       <div className="px-4 py-3 bg-amber-50/50 space-y-3">
                         <div>
-                          <label className="font-label text-xs text-on-surface-variant block mb-1">Tipo de novedad</label>
-                          <select value={returnTipoNovedad} onChange={e => setReturnTipoNovedad(e.target.value as TipoNovedad)} className="w-full rounded-lg border border-outline-variant/40 bg-white px-3 py-2 text-sm font-body focus:outline-none focus:ring-2 focus:ring-amber-400/40 appearance-none">
+                          <label htmlFor="field-mm-22" className="font-label text-xs text-on-surface-variant block mb-1">Tipo de novedad</label>
+                          <select id="field-mm-22" value={returnTipoNovedad} onChange={e => setReturnTipoNovedad(e.target.value as TipoNovedad)} className="w-full rounded-lg border border-outline-variant/40 bg-white px-3 py-2 text-sm font-body focus:outline-none focus:ring-2 focus:ring-amber-400/40 appearance-none">
                             {TIPOS_NOVEDAD.map(t => <option key={t} value={t}>{NOVEDAD_LABEL[t]}</option>)}
                           </select>
                         </div>
                         <div>
-                          <label className="font-label text-xs text-on-surface-variant block mb-1">Descripción detallada <span className="text-red-500">*</span></label>
-                          <textarea
+                          <label htmlFor="field-mm-23" className="font-label text-xs text-on-surface-variant block mb-1">Descripción detallada <span className="text-red-500">*</span></label>
+                          <textarea aria-label="Notas de la devolución" id="field-mm-23"
                             value={returnDescNovedad}
                             onChange={e => setReturnDescNovedad(e.target.value)}
                             rows={2}
@@ -5853,8 +5870,8 @@ export default function MainMenuPage() {
                   </div>
 
                   <div className="flex gap-2">
-                    <button onClick={() => setReturnStep(1)} className="px-4 py-2.5 rounded-xl border border-outline-variant/30 text-sm font-label text-on-surface-variant hover:bg-surface-container transition">← Atrás</button>
-                    <button
+                    <button type="button" onClick={() => setReturnStep(1)} className="px-4 py-2.5 rounded-xl border border-outline-variant/30 text-sm font-label text-on-surface-variant hover:bg-surface-container transition">← Atrás</button>
+                    <button type="button"
                       onClick={() => setReturnStep(3)}
                       disabled={!returnFotoFile || (returnNovedad && !returnDescNovedad.trim())}
                       className="flex-1 py-2.5 rounded-xl bg-primary text-on-primary font-label font-semibold text-sm hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed"
@@ -5869,7 +5886,7 @@ export default function MainMenuPage() {
               {/* ── STEP 3: Confirmar ───────────────────────────── */}
               {returnStep === 3 && !returnSuccess && (
                 <div className="space-y-4">
-                  <p className="font-label text-xs font-bold text-on-surface uppercase tracking-widest">Resumen del acta de devolución</p>
+                  <p className="font-label text-xs font-semibold text-on-surface uppercase tracking-widest">Resumen del acta de devolución</p>
                   <div className="bg-surface-container rounded-xl p-4 space-y-2.5 text-sm font-body">
                     <div className="flex justify-between">
                       <span className="text-on-surface-variant">Condición de entrega</span>
@@ -5896,12 +5913,12 @@ export default function MainMenuPage() {
                   </div>
 
                   {/* Acknowledgment */}
-                  <label className="flex items-start gap-3 cursor-pointer p-3 rounded-xl border border-outline-variant/20 hover:bg-surface-container/30 transition">
-                    <input
+                  <label htmlFor="field-mm-24" className="flex items-start gap-3 cursor-pointer p-3 rounded-xl border border-outline-variant/20 hover:bg-surface-container/30 transition">
+                    <input aria-label="Número de acta" id="field-mm-24"
                       type="checkbox"
                       checked={returnConfirmed}
                       onChange={e => setReturnConfirmed(e.target.checked)}
-                      className="mt-0.5 w-4 h-4 accent-primary"
+                      className="mt-0.5 size-4 accent-primary"
                     />
                     <span className="font-body text-xs text-on-surface leading-relaxed">
                       Confirmo que la información registrada es correcta y que entrego el equipo al área de TI en las condiciones indicadas. Comprendo que cualquier diferencia con la condición de entrega puede generar responsabilidad a mi nombre.
@@ -5915,14 +5932,14 @@ export default function MainMenuPage() {
                   )}
 
                   <div className="flex gap-2">
-                    <button onClick={() => setReturnStep(2)} disabled={returnSubmitting} className="px-4 py-2.5 rounded-xl border border-outline-variant/30 text-sm font-label text-on-surface-variant hover:bg-surface-container transition disabled:opacity-50">← Atrás</button>
-                    <button
+                    <button type="button" onClick={() => setReturnStep(2)} disabled={returnSubmitting} className="px-4 py-2.5 rounded-xl border border-outline-variant/30 text-sm font-label text-on-surface-variant hover:bg-surface-container transition disabled:opacity-50">← Atrás</button>
+                    <button type="button"
                       onClick={handleSubmitDevolucion}
                       disabled={!returnConfirmed || returnSubmitting}
                       className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-label font-semibold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed ${returnNovedad ? 'bg-amber-600 text-white hover:bg-amber-700' : 'bg-primary text-on-primary hover:opacity-90'}`}
                     >
                       {returnSubmitting ? (
-                        <><span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />Procesando…</>
+                        <><span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />Procesando…</>
                       ) : (
                         <><span className="material-symbols-outlined text-[18px]">send</span>{returnNovedad ? 'Devolver y reportar novedad' : 'Confirmar devolución'}</>
                       )}
@@ -5934,13 +5951,13 @@ export default function MainMenuPage() {
               {/* ── SUCCESS ─────────────────────────────────────── */}
               {returnSuccess && (
                 <div className="flex flex-col items-center gap-4 py-4 text-center">
-                  <div className={`w-16 h-16 rounded-full flex items-center justify-center ${returnNovedad ? 'bg-amber-100' : 'bg-green-100'}`}>
+                  <div className={`size-16 rounded-full flex items-center justify-center ${returnNovedad ? 'bg-amber-100' : 'bg-green-100'}`}>
                     <span className={`material-symbols-outlined text-4xl ${returnNovedad ? 'text-amber-600' : 'text-green-600'}`} style={{ fontVariationSettings: "'FILL' 1" }}>
                       {returnNovedad ? 'report' : 'check_circle'}
                     </span>
                   </div>
                   <div>
-                    <p className="font-headline text-base font-bold text-on-surface">{returnNovedad ? 'Devolución registrada con novedad' : '¡Devolución registrada!'}</p>
+                    <p className="font-headline text-base font-semibold text-on-surface">{returnNovedad ? 'Devolución registrada con novedad' : '¡Devolución registrada!'}</p>
                     {returnSuccess.numActa && <p className="font-mono text-xs text-on-surface-variant mt-1">Acta: {returnSuccess.numActa}</p>}
                     <p className="font-body text-sm text-on-surface-variant mt-2">
                       {returnNovedad
@@ -5948,7 +5965,7 @@ export default function MainMenuPage() {
                         : 'Hemos enviado la confirmación a tu correo. ¡Gracias por devolver el equipo correctamente!'}
                     </p>
                   </div>
-                  <button onClick={() => setReturnModalOpen(false)} className="px-6 py-2.5 rounded-xl bg-primary text-on-primary font-label font-semibold text-sm hover:opacity-90 transition">
+                  <button type="button" onClick={() => setReturnModalOpen(false)} className="px-6 py-2.5 rounded-xl bg-primary text-on-primary font-label font-semibold text-sm hover:opacity-90 transition">
                     Cerrar
                   </button>
                 </div>
@@ -5966,15 +5983,15 @@ export default function MainMenuPage() {
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-5 border-b border-outline-variant/15">
               <div className="flex items-center gap-3">
-                <div className="bg-primary/10 text-primary w-9 h-9 rounded-lg flex items-center justify-center">
+                <div className="bg-primary/10 text-primary size-9 rounded-lg flex items-center justify-center">
                   <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>manage_accounts</span>
                 </div>
                 <div>
-                  <h2 className="font-headline text-base font-bold text-on-surface">Registrar devolución (Admin)</h2>
+                  <h2 className="font-headline text-base font-semibold text-on-surface">Registrar devolución (Admin)</h2>
                   {adminReturnPrestamo.num_acta && <p className="font-mono text-[11px] text-on-surface-variant">{adminReturnPrestamo.num_acta}</p>}
                 </div>
               </div>
-              <button onClick={() => { if (!adminReturnSubmitting) setAdminReturnModalOpen(false) }} className="p-1.5 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant">
+              <button type="button" onClick={() => { if (!adminReturnSubmitting) setAdminReturnModalOpen(false) }} className="p-1.5 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant">
                 <span className="material-symbols-outlined text-[20px]">close</span>
               </button>
             </div>
@@ -5983,9 +6000,9 @@ export default function MainMenuPage() {
               {/* Equipo + usuario info */}
               <div className="flex items-center gap-3 p-3 bg-surface-container rounded-xl">
                 {adminReturnPrestamo.equipos?.imagen_url ? (
-                  <img src={adminReturnPrestamo.equipos.imagen_url} alt="" className="w-12 h-12 rounded-lg object-cover border border-outline-variant/15 shrink-0" />
+                  <Image src={adminReturnPrestamo.equipos.imagen_url} alt="" width={48} height={48} className="rounded-lg object-cover border border-outline-variant/15 shrink-0" unoptimized />
                 ) : (
-                  <div className="w-12 h-12 rounded-lg bg-surface-container-high flex items-center justify-center shrink-0">
+                  <div className="size-12 rounded-lg bg-surface-container-high flex items-center justify-center shrink-0">
                     <span className="material-symbols-outlined text-on-surface-variant text-[24px]">devices</span>
                   </div>
                 )}
@@ -6002,7 +6019,7 @@ export default function MainMenuPage() {
 
               {/* Condición de devolución */}
               <div>
-                <label className="font-label text-xs font-bold text-on-surface uppercase tracking-widest block mb-2">Condición al devolver *</label>
+                <label className="font-label text-xs font-semibold text-on-surface uppercase tracking-widest block mb-2">Condición al devolver *</label>
                 <div className="grid grid-cols-2 gap-2">
                   {CONDICIONES_DEVOLUCION.map(c => (
                     <button
@@ -6023,8 +6040,8 @@ export default function MainMenuPage() {
 
               {/* Notas admin */}
               <div>
-                <label className="font-label text-xs font-bold text-on-surface uppercase tracking-widest block mb-1.5">Notas internas del equipo de TI</label>
-                <textarea
+                <label htmlFor="field-mm-25" className="font-label text-xs font-semibold text-on-surface uppercase tracking-widest block mb-1.5">Notas internas del equipo de TI</label>
+                <textarea aria-label="Condición de entrega" id="field-mm-25"
                   value={adminReturnNotas}
                   onChange={e => setAdminReturnNotas(e.target.value)}
                   rows={3}
@@ -6048,14 +6065,14 @@ export default function MainMenuPage() {
                 {adminReturnNovedad && (
                   <div className="px-4 py-3 bg-amber-50/50 space-y-3">
                     <div>
-                      <label className="font-label text-xs text-on-surface-variant block mb-1">Tipo de novedad</label>
-                      <select value={adminReturnTipoNovedad} onChange={e => setAdminReturnTipoNovedad(e.target.value)} className="w-full rounded-lg border border-outline-variant/40 bg-white px-3 py-2 text-sm font-body focus:outline-none focus:ring-2 focus:ring-amber-400/40 appearance-none">
+                      <label htmlFor="field-mm-26" className="font-label text-xs text-on-surface-variant block mb-1">Tipo de novedad</label>
+                      <select id="field-mm-26" value={adminReturnTipoNovedad} onChange={e => setAdminReturnTipoNovedad(e.target.value)} className="w-full rounded-lg border border-outline-variant/40 bg-white px-3 py-2 text-sm font-body focus:outline-none focus:ring-2 focus:ring-amber-400/40 appearance-none">
                         {TIPOS_NOVEDAD.map(t => <option key={t} value={t}>{NOVEDAD_LABEL[t]}</option>)}
                       </select>
                     </div>
                     <div>
-                      <label className="font-label text-xs text-on-surface-variant block mb-1">Descripción <span className="text-red-500">*</span></label>
-                      <textarea
+                      <label htmlFor="field-mm-27" className="font-label text-xs text-on-surface-variant block mb-1">Descripción <span className="text-red-500">*</span></label>
+                      <textarea aria-label="Condición de devolución" id="field-mm-27"
                         value={adminReturnDescNovedad}
                         onChange={e => setAdminReturnDescNovedad(e.target.value)}
                         rows={2}
@@ -6091,7 +6108,7 @@ export default function MainMenuPage() {
                   className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-label font-semibold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed ${adminReturnNovedad ? 'bg-amber-600 text-white hover:bg-amber-700' : 'bg-primary text-on-primary hover:opacity-90'}`}
                 >
                   {adminReturnSubmitting ? (
-                    <><span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />Procesando…</>
+                    <><span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />Procesando…</>
                   ) : (
                     <><span className="material-symbols-outlined text-[18px]">send</span>{adminReturnNovedad ? 'Registrar con novedad' : 'Confirmar devolución'}</>
                   )}
@@ -6110,15 +6127,15 @@ export default function MainMenuPage() {
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-5 border-b border-outline-variant/15">
               <div className="flex items-center gap-3">
-                <div className="bg-orange-100 text-orange-700 w-9 h-9 rounded-lg flex items-center justify-center">
+                <div className="bg-orange-100 text-orange-700 size-9 rounded-lg flex items-center justify-center">
                   <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>fact_check</span>
                 </div>
                 <div>
-                  <h2 className="font-headline text-base font-bold text-on-surface">Revisar devolución del equipo</h2>
+                  <h2 className="font-headline text-base font-semibold text-on-surface">Revisar devolución del equipo</h2>
                   {revisionPrestamo.num_acta && <p className="font-mono text-[11px] text-on-surface-variant">{revisionPrestamo.num_acta}</p>}
                 </div>
               </div>
-              <button onClick={() => { if (!revisionSubmitting) setRevisionModalOpen(false) }} className="p-1.5 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant">
+              <button type="button" onClick={() => { if (!revisionSubmitting) setRevisionModalOpen(false) }} className="p-1.5 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant">
                 <span className="material-symbols-outlined text-[20px]">close</span>
               </button>
             </div>
@@ -6127,9 +6144,9 @@ export default function MainMenuPage() {
               {/* Equipo + usuario info */}
               <div className="flex items-center gap-3 p-3 bg-surface-container rounded-xl">
                 {revisionPrestamo.equipos?.imagen_url ? (
-                  <img src={revisionPrestamo.equipos.imagen_url} alt="" className="w-12 h-12 rounded-lg object-cover border border-outline-variant/15 shrink-0" />
+                  <Image src={revisionPrestamo.equipos.imagen_url} alt="" width={48} height={48} className="rounded-lg object-cover border border-outline-variant/15 shrink-0" unoptimized />
                 ) : (
-                  <div className="w-12 h-12 rounded-lg bg-surface-container-high flex items-center justify-center shrink-0">
+                  <div className="size-12 rounded-lg bg-surface-container-high flex items-center justify-center shrink-0">
                     <span className="material-symbols-outlined text-on-surface-variant text-[24px]">devices</span>
                   </div>
                 )}
@@ -6169,7 +6186,7 @@ export default function MainMenuPage() {
 
               {/* Condición confirmada por admin */}
               <div>
-                <label className="font-label text-xs font-bold text-on-surface uppercase tracking-widest block mb-2">Condición física verificada por admin *</label>
+                <label className="font-label text-xs font-semibold text-on-surface uppercase tracking-widest block mb-2">Condición física verificada por admin *</label>
                 <div className="grid grid-cols-2 gap-2">
                   {CONDICIONES_DEVOLUCION.map(c => (
                     <button
@@ -6190,8 +6207,8 @@ export default function MainMenuPage() {
 
               {/* Notas admin */}
               <div>
-                <label className="font-label text-xs font-bold text-on-surface uppercase tracking-widest block mb-1.5">Notas de la revisión</label>
-                <textarea
+                <label htmlFor="field-mm-28" className="font-label text-xs font-semibold text-on-surface uppercase tracking-widest block mb-1.5">Notas de la revisión</label>
+                <textarea aria-label="Descripción de la devolución" id="field-mm-28"
                   value={revisionNotas}
                   onChange={e => setRevisionNotas(e.target.value)}
                   rows={3}
@@ -6215,14 +6232,14 @@ export default function MainMenuPage() {
                 {revisionNovedad && (
                   <div className="px-4 py-3 bg-amber-50/50 space-y-3">
                     <div>
-                      <label className="font-label text-xs text-on-surface-variant block mb-1">Tipo de novedad</label>
-                      <select value={revisionTipoNovedad} onChange={e => setRevisionTipoNovedad(e.target.value)} className="w-full rounded-lg border border-outline-variant/40 bg-white px-3 py-2 text-sm font-body focus:outline-none focus:ring-2 focus:ring-amber-400/40 appearance-none">
+                      <label htmlFor="field-mm-29" className="font-label text-xs text-on-surface-variant block mb-1">Tipo de novedad</label>
+                      <select id="field-mm-29" value={revisionTipoNovedad} onChange={e => setRevisionTipoNovedad(e.target.value)} className="w-full rounded-lg border border-outline-variant/40 bg-white px-3 py-2 text-sm font-body focus:outline-none focus:ring-2 focus:ring-amber-400/40 appearance-none">
                         {TIPOS_NOVEDAD.map(t => <option key={t} value={t}>{NOVEDAD_LABEL[t]}</option>)}
                       </select>
                     </div>
                     <div>
-                      <label className="font-label text-xs text-on-surface-variant block mb-1">Descripción <span className="text-red-500">*</span></label>
-                      <textarea
+                      <label htmlFor="field-mm-30" className="font-label text-xs text-on-surface-variant block mb-1">Descripción <span className="text-red-500">*</span></label>
+                      <textarea aria-label="Notas de la devolución" id="field-mm-30"
                         value={revisionDescNovedad}
                         onChange={e => setRevisionDescNovedad(e.target.value)}
                         rows={2}
@@ -6269,7 +6286,7 @@ export default function MainMenuPage() {
                   className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-label font-semibold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed ${revisionNovedad ? 'bg-amber-600 text-white hover:bg-amber-700' : 'bg-orange-600 text-white hover:bg-orange-700'}`}
                 >
                   {revisionSubmitting ? (
-                    <><span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />Procesando…</>
+                    <><span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />Procesando…</>
                   ) : (
                     <><span className="material-symbols-outlined text-[18px]">done_all</span>{revisionNovedad ? 'Confirmar con novedad' : 'Aprobar devolución'}</>
                   )}
@@ -6288,15 +6305,15 @@ export default function MainMenuPage() {
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-5 border-b border-outline-variant/15">
               <div className="flex items-center gap-3">
-                <div className="bg-surface-container-high text-on-surface-variant w-9 h-9 rounded-lg flex items-center justify-center">
+                <div className="bg-surface-container-high text-on-surface-variant size-9 rounded-lg flex items-center justify-center">
                   <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>swap_horiz</span>
                 </div>
                 <div>
-                  <h2 className="font-headline text-base font-bold text-on-surface">Reasignar equipo similar</h2>
+                  <h2 className="font-headline text-base font-semibold text-on-surface">Reasignar equipo similar</h2>
                   <p className="font-body text-xs text-on-surface-variant">El equipo original pasará a mantenimiento</p>
                 </div>
               </div>
-              <button onClick={() => { if (!reasignarSubmitting) setReasignarModalOpen(false) }} className="p-1.5 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant">
+              <button type="button" onClick={() => { if (!reasignarSubmitting) setReasignarModalOpen(false) }} className="p-1.5 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant">
                 <span className="material-symbols-outlined text-[20px]">close</span>
               </button>
             </div>
@@ -6305,9 +6322,9 @@ export default function MainMenuPage() {
               {/* Equipo original */}
               <div className="flex items-center gap-3 p-3 bg-red-50 border border-red-200 rounded-xl">
                 {reasignarPrestamo.equipos?.imagen_url ? (
-                  <img src={reasignarPrestamo.equipos.imagen_url} alt="" className="w-10 h-10 rounded-lg object-cover border border-red-200 shrink-0" />
+                  <Image src={reasignarPrestamo.equipos.imagen_url} alt="" width={40} height={40} className="rounded-lg object-cover border border-red-200 shrink-0" unoptimized />
                 ) : (
-                  <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
+                  <div className="size-10 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
                     <span className="material-symbols-outlined text-red-500 text-[20px]">devices</span>
                   </div>
                 )}
@@ -6320,13 +6337,13 @@ export default function MainMenuPage() {
 
               {/* Selección de equipo de reemplazo */}
               <div>
-                <label className="font-label text-xs font-bold text-on-surface uppercase tracking-widest block mb-2">Equipo de reemplazo *</label>
-                <select
+                <label htmlFor="field-mm-31" className="font-label text-xs font-semibold text-on-surface uppercase tracking-widest block mb-2">Equipo de reemplazo *</label>
+                <select id="field-mm-31"
                   value={reasignarEquipoId}
                   onChange={e => setReasignarEquipoId(e.target.value)}
                   className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition appearance-none"
                 >
-                  <option value="">— Seleccionar equipo disponible —</option>
+                  <option value="">Seleccionar equipo disponible</option>
                   {(() => {
                     // IDs de equipos que tienen préstamos activos, vencidos o pendiente revisión
                     const equiposOcupados = new Set(
@@ -6390,8 +6407,8 @@ export default function MainMenuPage() {
 
               {/* Notas */}
               <div>
-                <label className="font-label text-xs font-bold text-on-surface uppercase tracking-widest block mb-1.5">Notas de la reasignación</label>
-                <textarea
+                <label htmlFor="field-mm-32" className="font-label text-xs font-semibold text-on-surface uppercase tracking-widest block mb-1.5">Notas de la reasignación</label>
+                <textarea aria-label="Notas de la reasignación" id="field-mm-32"
                   value={reasignarNotas}
                   onChange={e => setReasignarNotas(e.target.value)}
                   rows={3}
@@ -6434,7 +6451,7 @@ export default function MainMenuPage() {
                   className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary text-on-primary font-label font-semibold text-sm hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {reasignarSubmitting ? (
-                    <><span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />Procesando…</>
+                    <><span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />Procesando…</>
                   ) : (
                     <><span className="material-symbols-outlined text-[18px]">swap_horiz</span>Confirmar reasignación</>
                   )}
@@ -6447,3 +6464,4 @@ export default function MainMenuPage() {
     </div>
   )
 }
+

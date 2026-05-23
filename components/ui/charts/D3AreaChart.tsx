@@ -37,7 +37,7 @@ export function D3AreaChart({
 
   useEffect(() => {
     if (!svgRef.current || !containerRef.current || !data.length) return
-
+    const svgEl = svgRef.current
     const containerEl = containerRef.current
     const width = containerEl.clientWidth || 400
 
@@ -231,6 +231,10 @@ export function D3AreaChart({
     void areaPath
     void linePath
 
+    return () => {
+      d3.select(svgEl).selectAll('circle').on('mouseover', null).on('mouseleave', null)
+      d3.select(svgEl).selectAll('*').remove()
+    }
   }, [data, height, color, fillColor, animationDuration, formatLabel, formatTick])
 
   if (!data.length) {
@@ -249,20 +253,7 @@ export function D3AreaChart({
       <svg ref={svgRef} className="w-full overflow-visible" />
       <div
         ref={tooltipRef}
-        style={{
-          position: 'absolute',
-          opacity: 0,
-          pointerEvents: 'none',
-          background: '#ffffff',
-          border: '1px solid #e7eefe',
-          borderRadius: '8px',
-          padding: '8px 12px',
-          boxShadow: '0 4px 16px rgba(23,28,31,0.12)',
-          transition: 'opacity 0.12s',
-          minWidth: '80px',
-          textAlign: 'center',
-          zIndex: 100,
-        }}
+        className="absolute opacity-0 pointer-events-none bg-white border border-[#e7eefe] rounded-lg px-3 py-2 shadow-[0_4px_16px_rgba(23,28,31,0.12)] transition-opacity duration-[120ms] min-w-[80px] text-center z-[100]"
       />
     </div>
   )

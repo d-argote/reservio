@@ -1,0 +1,607 @@
+[1mreact-doctor[22m [2mv0.2.3[22m
+
+[32mÔ£ö[39m Select projects to scan [2mÔÇ║[22m reservio
+[2mScanning C:\Users\Diego Argote\Desktop\reservio...[22m
+
+Ô£ö Detecting framework. Found Next.js.
+Ô£ö Detecting React version. Found React 19.2.4.
+Ô£ö Detecting Tailwind. Found Tailwind ^4.
+Ô£ö Detecting language. Found TypeScript.
+Ô£ö Detecting React Compiler. Not found.
+Ô£ö Found 33 source files.
+
+Ô£ö Running lint checks.
+Ô£ö Analyzing dead code.
+
+  [31mÔ£ù[39m [31mreact-doctor/server-auth-actions              [39m [90m├ù43[39m
+[90m      Server action "signUpUser" ÔÇö add auth check (auth(), getSession(), etc.) at the top[39m
+[90m      ÔåÆ Add `const session = await auth()` at the top and throw/redirect if unauthorized before any data access[39m
+[90m      features/auth/actions.ts:6[39m
+[90m      features/auth/actions.ts:76[39m
+[90m      features/auth/actions.ts:118[39m
+[90m      features/auth/actions.ts:149[39m
+[90m      features/auth/actions.ts:178[39m
+[90m      features/admin/actions.ts:74[39m
+[90m      features/admin/actions.ts:89[39m
+[90m      features/admin/actions.ts:107[39m
+[90m      features/admin/actions.ts:135[39m
+[90m      features/admin/actions.ts:153[39m
+[90m      features/admin/actions.ts:175[39m
+[90m      features/admin/actions.ts:196[39m
+[90m      features/admin/actions.ts:215[39m
+[90m      features/admin/actions.ts:226[39m
+[90m      features/admin/actions.ts:244[39m
+[90m      features/admin/actions.ts:262[39m
+[90m      features/admin/actions.ts:280[39m
+[90m      features/admin/actions.ts:317[39m
+[90m      features/admin/actions.ts:332[39m
+[90m      features/admin/actions.ts:350[39m
+[90m      features/admin/actions.ts:368[39m
+[90m      features/admin/actions.ts:400[39m
+[90m      features/admin/actions.ts:452[39m
+[90m      features/admin/actions.ts:473[39m
+[90m      features/admin/actions.ts:501[39m
+[90m      features/admin/actions.ts:542[39m
+[90m      features/admin/actions.ts:570[39m
+[90m      features/admin/actions.ts:630[39m
+[90m      features/admin/actions.ts:758[39m
+[90m      features/reservas/actions.ts:436[39m
+[90m      features/reservas/actions.ts:599[39m
+[90m      features/reservas/actions.ts:686[39m
+[90m      features/reservas/actions.ts:764[39m
+[90m      features/reservas/actions.ts:801[39m
+[90m      features/reservas/actions.ts:956[39m
+[90m      features/reservas/actions.ts:1029[39m
+[90m      features/reservas/actions.ts:1165[39m
+[90m      features/reservas/actions.ts:1195[39m
+[90m      features/reservas/actions.ts:1229[39m
+[90m      features/reservas/actions.ts:1321[39m
+[90m      features/reservas/actions.ts:1405[39m
+[90m      features/reservas/actions.ts:1471[39m
+[90m      features/reservas/actions.ts:1512[39m
+
+  [31mÔ£ù[39m [31mreact-doctor/effect-needs-cleanup             [39m [90m├ù4[39m
+[90m      useEffect subscribes via `on(...)` but never returns a cleanup ÔÇö leaks the registration on every re-run and on unmount. Return a cleanup function that calls the matching remove/unsubscribe call[39m
+[90m      ÔåÆ Return a cleanup function that releases the subscription / timer: `return () => target.removeEventListener(name, handler)` for listeners, `return () => clearInterval(id)` / `clearTimeout(id)` for timers, or `return unsubscribe` if the subscribe call already returned one[39m
+[90m      components/ui/charts/D3BarChart.tsx:39[39m
+[90m      components/ui/charts/D3AreaChart.tsx:38[39m
+[90m      components/ui/charts/D3DonutChart.tsx:41[39m
+[90m      components/ui/charts/D3HorizontalBars.tsx:61[39m
+
+  [33mÔÜá[39m [33mreact-doctor/design-no-redundant-size-axes    [39m [90m├ù74[39m
+[90m      w-4 h-4 ÔåÆ use the shorthand size-4 (Tailwind v3.4+)[39m
+[90m      ÔåÆ Collapse `w-N h-N` to `size-N` (Tailwind v3.4+) when both axes match[39m
+[90m      app/login/page.tsx:320[39m
+[90m      app/main-menu/page.tsx:298[39m
+[90m      app/main-menu/page.tsx:312[39m
+[90m      app/main-menu/page.tsx:1693[39m
+[90m      app/main-menu/page.tsx:1732[39m
+[90m      app/main-menu/page.tsx:1836[39m
+[90m      app/main-menu/page.tsx:1863[39m
+[90m      app/main-menu/page.tsx:2073[39m
+[90m      app/main-menu/page.tsx:2101[39m
+[90m      app/main-menu/page.tsx:2123[39m
+[90m      app/main-menu/page.tsx:2181[39m
+[90m      app/main-menu/page.tsx:2366[39m
+[90m      app/main-menu/page.tsx:2624[39m
+[90m      app/main-menu/page.tsx:2629[39m
+[90m      app/main-menu/page.tsx:2645[39m
+[90m      app/main-menu/page.tsx:2647[39m
+[90m      app/main-menu/page.tsx:2948[39m
+[90m      app/main-menu/page.tsx:3110[39m
+[90m      app/main-menu/page.tsx:3125[39m
+[90m      app/main-menu/page.tsx:3136[39m
+[90m      app/main-menu/page.tsx:3176[39m
+[90m      app/main-menu/page.tsx:3202[39m
+[90m      app/main-menu/page.tsx:3206[39m
+[90m      app/main-menu/page.tsx:3224[39m
+[90m      app/main-menu/page.tsx:3234[39m
+[90m      app/main-menu/page.tsx:3344[39m
+[90m      app/main-menu/page.tsx:3353[39m
+[90m      app/main-menu/page.tsx:3541[39m
+[90m      app/main-menu/page.tsx:3590[39m
+[90m      app/main-menu/page.tsx:3632[39m
+[90m      app/main-menu/page.tsx:3670[39m
+[90m      app/main-menu/page.tsx:3712[39m
+[90m      app/main-menu/page.tsx:3726[39m
+[90m      app/main-menu/page.tsx:3768[39m
+[90m      app/main-menu/page.tsx:3834[39m
+[90m      app/main-menu/page.tsx:3976[39m
+[90m      app/main-menu/page.tsx:3979[39m
+[90m      app/main-menu/page.tsx:3999[39m
+[90m      app/main-menu/page.tsx:4041[39m
+[90m      app/main-menu/page.tsx:4043[39m
+[90m      app/main-menu/page.tsx:4236[39m
+[90m      app/main-menu/page.tsx:4253[39m
+[90m      app/main-menu/page.tsx:4263[39m
+[90m      app/main-menu/page.tsx:4324[39m
+[90m      app/main-menu/page.tsx:4337[39m
+[90m      app/main-menu/page.tsx:4338[39m
+[90m      app/main-menu/page.tsx:4521[39m
+[90m      app/main-menu/page.tsx:4581[39m
+[90m      app/main-menu/page.tsx:5064[39m
+[90m      app/main-menu/page.tsx:5360[39m
+[90m      app/main-menu/page.tsx:5458[39m
+[90m      app/main-menu/page.tsx:5476[39m
+[90m      app/main-menu/page.tsx:5478[39m
+[90m      app/main-menu/page.tsx:5490[39m
+[90m      app/main-menu/page.tsx:5674[39m
+[90m      app/main-menu/page.tsx:5699[39m
+[90m      app/main-menu/page.tsx:5731[39m
+[90m      app/main-menu/page.tsx:5733[39m
+[90m      app/main-menu/page.tsx:5920[39m
+[90m      app/main-menu/page.tsx:5941[39m
+[90m      app/main-menu/page.tsx:5985[39m
+[90m      app/main-menu/page.tsx:6002[39m
+[90m      app/main-menu/page.tsx:6004[39m
+[90m      app/main-menu/page.tsx:6110[39m
+[90m      app/main-menu/page.tsx:6129[39m
+[90m      app/main-menu/page.tsx:6146[39m
+[90m      app/main-menu/page.tsx:6148[39m
+[90m      app/main-menu/page.tsx:6288[39m
+[90m      app/main-menu/page.tsx:6307[39m
+[90m      app/main-menu/page.tsx:6324[39m
+[90m      app/main-menu/page.tsx:6326[39m
+[90m      app/main-menu/page.tsx:6453[39m
+[90m      app/register/page.tsx:774[39m
+[90m      app/page.tsx:6[39m
+
+  [33mÔÜá[39m [33mreact-doctor/control-has-associated-label     [39m [90m├ù56[39m
+[90m      A control must be associated with a text label ÔÇö add visible text, `aria-label`, or `aria-labelledby`.[39m
+[90m      ÔåÆ Every interactive control must have an accessible label.[39m
+[90m      app/login/page.tsx:248[39m
+[90m      app/login/page.tsx:266[39m
+[90m      app/main-menu/page.tsx:2321[39m
+[90m      app/main-menu/page.tsx:2778[39m
+[90m      app/main-menu/page.tsx:3069[39m
+[90m      app/main-menu/page.tsx:3073[39m
+[90m      app/main-menu/page.tsx:3078[39m
+[90m      app/main-menu/page.tsx:3088[39m
+[90m      app/main-menu/page.tsx:3120[39m
+[90m      app/main-menu/page.tsx:3161[39m
+[90m      app/main-menu/page.tsx:3174[39m
+[90m      app/main-menu/page.tsx:3320[39m
+[90m      app/main-menu/page.tsx:3374[39m
+[90m      app/main-menu/page.tsx:3440[39m
+[90m      app/main-menu/page.tsx:3507[39m
+[90m      app/main-menu/page.tsx:3544[39m
+[90m      app/main-menu/page.tsx:3595[39m
+[90m      app/main-menu/page.tsx:3667[39m
+[90m      app/main-menu/page.tsx:3673[39m
+[90m      app/main-menu/page.tsx:3719[39m
+[90m      app/main-menu/page.tsx:4210[39m
+[90m      app/main-menu/page.tsx:4214[39m
+[90m      app/main-menu/page.tsx:4218[39m
+[90m      app/main-menu/page.tsx:4222[39m
+[90m      app/main-menu/page.tsx:4241[39m
+[90m      app/main-menu/page.tsx:4291[39m
+[90m      app/main-menu/page.tsx:4308[39m
+[90m      app/main-menu/page.tsx:4312[39m
+[90m      app/main-menu/page.tsx:4312[39m
+[90m      app/main-menu/page.tsx:4313[39m
+[90m      app/main-menu/page.tsx:4313[39m
+[90m      app/main-menu/page.tsx:4718[39m
+[90m      app/main-menu/page.tsx:4837[39m
+[90m      app/main-menu/page.tsx:4952[39m
+[90m      app/main-menu/page.tsx:5087[39m
+[90m      app/main-menu/page.tsx:5133[39m
+[90m      app/main-menu/page.tsx:5245[39m
+[90m      app/main-menu/page.tsx:5273[39m
+[90m      app/main-menu/page.tsx:5571[39m
+[90m      app/main-menu/page.tsx:5584[39m
+[90m      app/main-menu/page.tsx:5601[39m
+[90m      app/main-menu/page.tsx:5807[39m
+[90m      app/main-menu/page.tsx:5828[39m
+[90m      app/main-menu/page.tsx:5858[39m
+[90m      app/main-menu/page.tsx:5916[39m
+[90m      app/main-menu/page.tsx:6043[39m
+[90m      app/main-menu/page.tsx:6074[39m
+[90m      app/main-menu/page.tsx:6210[39m
+[90m      app/main-menu/page.tsx:6241[39m
+[90m      app/main-menu/page.tsx:6410[39m
+[90m      app/register/page.tsx:657[39m
+[90m      app/register/page.tsx:688[39m
+[90m      app/register/page.tsx:719[39m
+[90m      app/forgot-password/page.tsx:90[39m
+[90m      app/reset-password/page.tsx:168[39m
+[90m      app/reset-password/page.tsx:205[39m
+
+  [33mÔÜá[39m [33mreact-doctor/label-has-associated-control     [39m [90m├ù43[39m
+[90m      A form label must be associated with a control ÔÇö use `htmlFor` or nest the input.[39m
+[90m      ÔåÆ Associate every label with a control via `htmlFor` or by nesting the input.[39m
+[90m      app/main-menu/page.tsx:3068[39m
+[90m      app/main-menu/page.tsx:3072[39m
+[90m      app/main-menu/page.tsx:3076[39m
+[90m      app/main-menu/page.tsx:3086[39m
+[90m      app/main-menu/page.tsx:3095[39m
+[90m      app/main-menu/page.tsx:3373[39m
+[90m      app/main-menu/page.tsx:3386[39m
+[90m      app/main-menu/page.tsx:3403[39m
+[90m      app/main-menu/page.tsx:3423[39m
+[90m      app/main-menu/page.tsx:3454[39m
+[90m      app/main-menu/page.tsx:3478[39m
+[90m      app/main-menu/page.tsx:3506[39m
+[90m      app/main-menu/page.tsx:3587[39m
+[90m      app/main-menu/page.tsx:4209[39m
+[90m      app/main-menu/page.tsx:4213[39m
+[90m      app/main-menu/page.tsx:4217[39m
+[90m      app/main-menu/page.tsx:4221[39m
+[90m      app/main-menu/page.tsx:4225[39m
+[90m      app/main-menu/page.tsx:4233[39m
+[90m      app/main-menu/page.tsx:5084[39m
+[90m      app/main-menu/page.tsx:5099[39m
+[90m      app/main-menu/page.tsx:5130[39m
+[90m      app/main-menu/page.tsx:5184[39m
+[90m      app/main-menu/page.tsx:5242[39m
+[90m      app/main-menu/page.tsx:5270[39m
+[90m      app/main-menu/page.tsx:5502[39m
+[90m      app/main-menu/page.tsx:5568[39m
+[90m      app/main-menu/page.tsx:5581[39m
+[90m      app/main-menu/page.tsx:5597[39m
+[90m      app/main-menu/page.tsx:5614[39m
+[90m      app/main-menu/page.tsx:5827[39m
+[90m      app/main-menu/page.tsx:5851[39m
+[90m      app/main-menu/page.tsx:5857[39m
+[90m      app/main-menu/page.tsx:6021[39m
+[90m      app/main-menu/page.tsx:6042[39m
+[90m      app/main-menu/page.tsx:6067[39m
+[90m      app/main-menu/page.tsx:6073[39m
+[90m      app/main-menu/page.tsx:6188[39m
+[90m      app/main-menu/page.tsx:6209[39m
+[90m      app/main-menu/page.tsx:6234[39m
+[90m      app/main-menu/page.tsx:6240[39m
+[90m      app/main-menu/page.tsx:6339[39m
+[90m      app/main-menu/page.tsx:6409[39m
+
+  [33mÔÜá[39m [33mreact-doctor/jsx-max-depth                    [39m [90m├ù40[39m
+[90m      JSX nesting depth 15 exceeds maximum 14.[39m
+[90m      ÔåÆ Extract deeply nested JSX into smaller components to keep render trees readable.[39m
+[90m      app/main-menu/page.tsx:3174[39m
+[90m      app/main-menu/page.tsx:3175[39m
+[90m      app/main-menu/page.tsx:3176[39m
+[90m      app/main-menu/page.tsx:3176[39m
+[90m      app/main-menu/page.tsx:3179[39m
+[90m      app/main-menu/page.tsx:3214[39m
+[90m      app/main-menu/page.tsx:3223[39m
+[90m      app/main-menu/page.tsx:3224[39m
+[90m      app/main-menu/page.tsx:3225[39m
+[90m      app/main-menu/page.tsx:3234[39m
+[90m      app/main-menu/page.tsx:3235[39m
+[90m      app/main-menu/page.tsx:3670[39m
+[90m      app/main-menu/page.tsx:3671[39m
+[90m      app/main-menu/page.tsx:3672[39m
+[90m      app/main-menu/page.tsx:3673[39m
+[90m      app/main-menu/page.tsx:3712[39m
+[90m      app/main-menu/page.tsx:3712[39m
+[90m      app/main-menu/page.tsx:3715[39m
+[90m      app/main-menu/page.tsx:3729[39m
+[90m      app/main-menu/page.tsx:3731[39m
+[90m      app/main-menu/page.tsx:3762[39m
+[90m      app/main-menu/page.tsx:3764[39m
+[90m      app/main-menu/page.tsx:3790[39m
+[90m      app/main-menu/page.tsx:3797[39m
+[90m      app/main-menu/page.tsx:4145[39m
+[90m      app/main-menu/page.tsx:4152[39m
+[90m      app/main-menu/page.tsx:4295[39m
+[90m      app/main-menu/page.tsx:4301[39m
+[90m      app/main-menu/page.tsx:4306[39m
+[90m      app/main-menu/page.tsx:4307[39m
+[90m      app/main-menu/page.tsx:4308[39m
+[90m      app/main-menu/page.tsx:4324[39m
+[90m      app/main-menu/page.tsx:4324[39m
+[90m      app/main-menu/page.tsx:4327[39m
+[90m      app/main-menu/page.tsx:4338[39m
+[90m      app/main-menu/page.tsx:4361[39m
+[90m      app/main-menu/page.tsx:4368[39m
+[90m      app/main-menu/page.tsx:4755[39m
+[90m      app/main-menu/page.tsx:4870[39m
+[90m      app/main-menu/page.tsx:4989[39m
+
+  [33mÔÜá[39m [33mreact-doctor/design-no-bold-heading           [39m [90m├ù24[39m
+[90m      font-bold on <h1> crushes counter shapes at display sizes ÔÇö use font-semibold (600) or font-medium (500)[39m
+[90m      ÔåÆ Use `font-semibold` (600) or `font-medium` (500) on headings ÔÇö 700+ crushes letter counter shapes at display sizes[39m
+[90m      app/login/page.tsx:201[39m
+[90m      app/main-menu/page.tsx:1734[39m
+[90m      app/main-menu/page.tsx:1865[39m
+[90m      app/main-menu/page.tsx:2210[39m
+[90m      app/main-menu/page.tsx:2287[39m
+[90m      app/main-menu/page.tsx:2399[39m
+[90m      app/main-menu/page.tsx:2504[39m
+[90m      app/main-menu/page.tsx:2622[39m
+[90m      app/main-menu/page.tsx:2873[39m
+[90m      app/main-menu/page.tsx:2952[39m
+[90m      app/main-menu/page.tsx:3065[39m
+[90m      app/main-menu/page.tsx:3365[39m
+[90m      app/main-menu/page.tsx:3821[39m
+[90m      app/main-menu/page.tsx:3944[39m
+[90m      app/main-menu/page.tsx:4206[39m
+[90m      app/main-menu/page.tsx:4535[39m
+[90m      app/main-menu/page.tsx:5069[39m
+[90m      app/main-menu/page.tsx:5403[39m
+[90m      app/main-menu/page.tsx:5461[39m
+[90m      app/main-menu/page.tsx:5703[39m
+[90m      app/main-menu/page.tsx:5989[39m
+[90m      app/main-menu/page.tsx:6133[39m
+[90m      app/main-menu/page.tsx:6311[39m
+[90m      components/ui/ReservasCalendar.tsx:567[39m
+
+  [33mÔÜá[39m [33mdeslop/unused-file                            [39m [90m├ù22[39m
+[90m      Unused file ÔÇö not reachable from any entry point[39m
+[90m      ÔåÆ Delete the file if it is truly unreachable, or import it from an entry point.[39m
+[90m      components/ui/AnimatedModal.tsx[39m
+[90m      components/ui/AnimatedToast.tsx[39m
+[90m      components/ui/AvailabilityTimeline.tsx[39m
+[90m      components/ui/ReservasCalendar.tsx[39m
+[90m      components/ui/TabContent.tsx[39m
+[90m      components/ui/charts/D3AreaChart.tsx[39m
+[90m      components/ui/charts/D3BarChart.tsx[39m
+[90m      components/ui/charts/D3DonutChart.tsx[39m
+[90m      components/ui/charts/D3HorizontalBars.tsx[39m
+[90m      components/ui/charts/LineChartMonthly.tsx[39m
+[90m      config/features.ts[39m
+[90m      features/admin/actions.ts[39m
+[90m      features/auth/actions.ts[39m
+[90m      features/reservas/actions.ts[39m
+[90m      hooks/useAnime.ts[39m
+[90m      hooks/useRealtimeSync.ts[39m
+[90m      lib/availability-utils.ts[39m
+[90m      lib/equipo-catalogo.ts[39m
+[90m      lib/supabase/admin.ts[39m
+[90m      lib/supabase/client.ts[39m
+[90m      lib/supabase/server.ts[39m
+[90m      lib/supabase/session.ts[39m
+
+  [33mÔÜá[39m [33mreact-doctor/exhaustive-deps                  [39m [90m├ù21[39m
+[90m      The ref value `svgRef.current` will likely have changed by the time this effect cleanup function runs. Copy it to a variable inside the hook callback and use that variable in cleanup.[39m
+[90m      ÔåÆ List every value the hook callback captures in its dependency array.[39m
+[90m      components/ui/charts/D3BarChart.tsx:39[39m
+[90m      components/ui/charts/D3BarChart.tsx:200[39m
+[90m      components/ui/charts/D3BarChart.tsx:200[39m
+[90m      app/main-menu/page.tsx:783[39m
+[90m      components/ui/charts/D3AreaChart.tsx:38[39m
+[90m      components/ui/charts/D3AreaChart.tsx:237[39m
+[90m      components/ui/charts/D3AreaChart.tsx:237[39m
+[90m      components/ui/charts/D3DonutChart.tsx:41[39m
+[90m      hooks/useAnime.ts:44[39m
+[90m      hooks/useAnime.ts:44[39m
+[90m      hooks/useAnime.ts:92[39m
+[90m      hooks/useAnime.ts:92[39m
+[90m      hooks/useAnime.ts:145[39m
+[90m      hooks/useAnime.ts:186[39m
+[90m      hooks/useAnime.ts:215[39m
+[90m      hooks/useAnime.ts:252[39m
+[90m      hooks/useAnime.ts:252[39m
+[90m      hooks/useAnime.ts:276[39m
+[90m      components/ui/charts/D3HorizontalBars.tsx:61[39m
+[90m      components/ui/charts/D3HorizontalBars.tsx:200[39m
+[90m      components/ui/TabContent.tsx:66[39m
+
+  [33mÔÜá[39m [33mreact-doctor/nextjs-no-img-element            [39m [90m├ù21[39m
+[90m      Use next/image instead of <img> ÔÇö provides automatic optimization, lazy loading, and responsive srcset[39m
+[90m      ÔåÆ `import Image from 'next/image'` ÔÇö provides automatic WebP/AVIF, lazy loading, and responsive srcset[39m
+[90m      app/main-menu/page.tsx:1732[39m
+[90m      app/main-menu/page.tsx:1836[39m
+[90m      app/main-menu/page.tsx:1863[39m
+[90m      app/main-menu/page.tsx:2284[39m
+[90m      app/main-menu/page.tsx:2488[39m
+[90m      app/main-menu/page.tsx:2645[39m
+[90m      app/main-menu/page.tsx:2832[39m
+[90m      app/main-menu/page.tsx:3590[39m
+[90m      app/main-menu/page.tsx:3670[39m
+[90m      app/main-menu/page.tsx:3726[39m
+[90m      app/main-menu/page.tsx:4041[39m
+[90m      app/main-menu/page.tsx:4236[39m
+[90m      app/main-menu/page.tsx:4295[39m
+[90m      app/main-menu/page.tsx:4337[39m
+[90m      app/main-menu/page.tsx:5386[39m
+[90m      app/main-menu/page.tsx:5476[39m
+[90m      app/main-menu/page.tsx:5731[39m
+[90m      app/main-menu/page.tsx:5797[39m
+[90m      app/main-menu/page.tsx:6002[39m
+[90m      app/main-menu/page.tsx:6146[39m
+[90m      app/main-menu/page.tsx:6324[39m
+
+  [33mÔÜá[39m [33mreact-doctor/design-no-em-dash-in-jsx-text    [39m [90m├ù19[39m
+[90m      Em dash (ÔÇö) in JSX text reads as model output ÔÇö replace with comma, colon, semicolon, or parentheses[39m
+[90m      ÔåÆ Replace em dashes in JSX prose with commas, colons, semicolons, or parentheses so UI copy reads less like generated text.[39m
+[90m      app/main-menu/page.tsx:1717[39m
+[90m      app/main-menu/page.tsx:2085[39m
+[90m      app/main-menu/page.tsx:2213[39m
+[90m      app/main-menu/page.tsx:2746[39m
+[90m      app/main-menu/page.tsx:3679[39m
+[90m      app/main-menu/page.tsx:3686[39m
+[90m      app/main-menu/page.tsx:3692[39m
+[90m      app/main-menu/page.tsx:3698[39m
+[90m      app/main-menu/page.tsx:3762[39m
+[90m      app/main-menu/page.tsx:3843[39m
+[90m      app/main-menu/page.tsx:3852[39m
+[90m      app/main-menu/page.tsx:3876[39m
+[90m      app/main-menu/page.tsx:3890[39m
+[90m      app/main-menu/page.tsx:3899[39m
+[90m      app/main-menu/page.tsx:3922[39m
+[90m      app/main-menu/page.tsx:4746[39m
+[90m      app/main-menu/page.tsx:5115[39m
+[90m      app/main-menu/page.tsx:5548[39m
+[90m      app/main-menu/page.tsx:6345[39m
+
+  [33mÔÜá[39m [33mreact-doctor/js-combine-iterations            [39m [90m├ù9[39m
+[90m      .filter().map() iterates the array twice ÔÇö combine into a single loop with .reduce() or for...of[39m
+[90m      ÔåÆ Combine `.map().filter()` (or similar chains) into a single pass with `.reduce()` or a `for...of` loop to avoid iterating the array twice[39m
+[90m      app/main-menu/page.tsx:1479[39m
+[90m      app/main-menu/page.tsx:2747[39m
+[90m      app/main-menu/page.tsx:3157[39m
+[90m      app/main-menu/page.tsx:5549[39m
+[90m      app/main-menu/page.tsx:6349[39m
+[90m      app/main-menu/page.tsx:6356[39m
+[90m      app/main-menu/page.tsx:6364[39m
+[90m      app/main-menu/page.tsx:6381[39m
+[90m      app/main-menu/page.tsx:6387[39m
+
+  [33mÔÜá[39m [33mreact-doctor/click-events-have-key-events     [39m [90m├ù9[39m
+[90m      Visible non-interactive elements with click handlers must have a corresponding keyboard listener (`onKeyUp`, `onKeyDown`, or `onKeyPress`).[39m
+[90m      ÔåÆ Pair `onClick` with `onKeyUp` / `onKeyDown` / `onKeyPress` for keyboard users.[39m
+[90m      app/main-menu/page.tsx:1857[39m
+[90m      app/main-menu/page.tsx:5054[39m
+[90m      app/main-menu/page.tsx:5379[39m
+[90m      app/main-menu/page.tsx:5450[39m
+[90m      app/main-menu/page.tsx:5693[39m
+[90m      app/main-menu/page.tsx:5980[39m
+[90m      app/main-menu/page.tsx:6124[39m
+[90m      app/main-menu/page.tsx:6302[39m
+[90m      components/ui/AnimatedModal.tsx:68[39m
+
+  [33mÔÜá[39m [33mreact-doctor/no-static-element-interactions   [39m [90m├ù9[39m
+[90m      Static HTML elements with event handlers require a role ÔÇö add `role="ÔÇª"` or use a semantic HTML element instead.[39m
+[90m      ÔåÆ Static HTML elements with event handlers require a role, or use a semantic HTML element instead.[39m
+[90m      app/main-menu/page.tsx:1857[39m
+[90m      app/main-menu/page.tsx:5054[39m
+[90m      app/main-menu/page.tsx:5379[39m
+[90m      app/main-menu/page.tsx:5450[39m
+[90m      app/main-menu/page.tsx:5693[39m
+[90m      app/main-menu/page.tsx:5980[39m
+[90m      app/main-menu/page.tsx:6124[39m
+[90m      app/main-menu/page.tsx:6302[39m
+[90m      components/ui/AnimatedModal.tsx:68[39m
+
+  [33mÔÜá[39m [33mreact-doctor/rerender-state-only-in-handlers  [39m [90m├ù6[39m
+[90m      useState "necesitaEquipo" is updated but never read in the component's return ÔÇö use useRef so updates don't trigger re-renders[39m
+[90m      ÔåÆ Replace useState with useRef when the value is only mutated and never read in render ÔÇö `ref.current = ...` updates without re-rendering the component[39m
+[90m      app/main-menu/page.tsx:506[39m
+[90m      app/main-menu/page.tsx:507[39m
+[90m      app/main-menu/page.tsx:611[39m
+[90m      app/main-menu/page.tsx:636[39m
+[90m      components/ui/charts/D3HorizontalBars.tsx:38[39m
+[90m      app/reset-password/page.tsx:71[39m
+
+  [33mÔÜá[39m [33mreact-doctor/no-array-index-key               [39m [90m├ù5[39m
+[90m      Array index in `key` doesn't uniquely identify the element ÔÇö re-renders may use stale state.[39m
+[90m      ÔåÆ Use a stable, data-derived `key` instead of the array index.[39m
+[90m      components/ui/charts/LineChartMonthly.tsx:93[39m
+[90m      components/ui/charts/LineChartMonthly.tsx:157[39m
+[90m      app/main-menu/page.tsx:387[39m
+[90m      app/register/page.tsx:252[39m
+[90m      app/reset-password/page.tsx:38[39m
+
+  [33mÔÜá[39m [33mreact-doctor/no-array-index-as-key            [39m [90m├ù5[39m
+[90m      Array index "i" used as key ÔÇö causes bugs when list is reordered or filtered[39m
+[90m      ÔåÆ Use a stable unique identifier: `key={item.id}` or `key={item.slug}` ÔÇö index keys break on reorder/filter[39m
+[90m      components/ui/charts/LineChartMonthly.tsx:93[39m
+[90m      components/ui/charts/LineChartMonthly.tsx:157[39m
+[90m      app/main-menu/page.tsx:387[39m
+[90m      app/register/page.tsx:252[39m
+[90m      app/reset-password/page.tsx:38[39m
+
+  [33mÔÜá[39m [33mreact-doctor/server-after-nonblocking         [39m [90m├ù4[39m
+[90m      console.warn() in server action ÔÇö wrap in `after(() => console.warn(...))` so it doesn't delay the user-visible response[39m
+[90m      ÔåÆ `import { after } from 'next/server'` then wrap: `after(() => analytics.track(...))` ÔÇö response isn't blocked[39m
+[90m      features/auth/actions.ts:55[39m
+[90m      features/auth/actions.ts:61[39m
+[90m      features/auth/actions.ts:122[39m
+[90m      features/reservas/actions.ts:259[39m
+
+  [33mÔÜá[39m [33mreact-doctor/no-giant-component               [39m [90m├ù4[39m
+[90m      Component "LoginPage" is 340 lines ÔÇö consider breaking it into smaller focused components[39m
+[90m      ÔåÆ Extract logical sections into focused components: `<UserHeader />`, `<UserActions />`, etc.[39m
+[90m      app/login/page.tsx:14[39m
+[90m      app/main-menu/page.tsx:415[39m
+[90m      app/register/page.tsx:270[39m
+[90m      components/ui/ReservasCalendar.tsx:125[39m
+
+  [33mÔÜá[39m [33mreact-doctor/prefer-useReducer                [39m [90m├ù4[39m
+[90m      Component "LoginPage" has 6 useState calls ÔÇö consider useReducer for related state[39m
+[90m      ÔåÆ Group related state: `const [state, dispatch] = useReducer(reducer, { field1, field2, ... })`[39m
+[90m      app/login/page.tsx:14[39m
+[90m      app/main-menu/page.tsx:415[39m
+[90m      app/register/page.tsx:270[39m
+[90m      app/reset-password/page.tsx:65[39m
+
+  [33mÔÜá[39m [33mreact-doctor/design-no-redundant-padding-axes [39m [90m├ù3[39m
+[90m      px-8 py-8 ÔåÆ use the shorthand p-8[39m
+[90m      ÔåÆ Collapse `px-N py-N` to `p-N` when both axes match. Keep them split only when one axis varies at a breakpoint (`py-2 md:py-3`)[39m
+[90m      app/main-menu/page.tsx:1731[39m
+[90m      app/main-menu/page.tsx:1862[39m
+[90m      app/main-menu/page.tsx:5507[39m
+
+  [33mÔÜá[39m [33mreact-doctor/prefer-tag-over-role             [39m [90m├ù3[39m
+[90m      Prefer the semantic `<button>` element over `role="button"` on a generic tag.[39m
+[90m      ÔåÆ Replace `role` with the semantic HTML element when one exists.[39m
+[90m      components/ui/ReservasCalendar.tsx:304[39m
+[90m      components/ui/ReservasCalendar.tsx:421[39m
+[90m      components/ui/ReservasCalendar.tsx:495[39m
+
+  [33mÔÜá[39m [33mreact-doctor/nextjs-no-font-link              [39m [90m├ù2[39m
+[90m      Loading Google Fonts via <link> ÔÇö use next/font instead for self-hosting, zero layout shift, and no render-blocking requests[39m
+[90m      ÔåÆ `import { Inter } from "next/font/google"` ÔÇö self-hosted, zero layout shift, no render-blocking requests[39m
+[90m      app/layout.tsx:49[39m
+[90m      app/layout.tsx:51[39m
+
+  [33mÔÜá[39m [33mreact-doctor/nextjs-image-missing-sizes       [39m [90m├ù2[39m
+[90m      next/image with fill but no sizes ÔÇö the browser downloads the largest image. Add a sizes attribute for responsive behavior[39m
+[90m      ÔåÆ Add sizes for responsive behavior: `sizes="(max-width: 768px) 100vw, 50vw"` matching your layout breakpoints[39m
+[90m      app/login/page.tsx:139[39m
+[90m      app/register/page.tsx:494[39m
+
+  [33mÔÜá[39m [33mreact-doctor/js-hoist-intl                    [39m [90m├ù2[39m
+[90m      new Intl.DateTimeFormat() inside a function ÔÇö hoist to module scope or wrap in useMemo so it isn't recreated each call[39m
+[90m      ÔåÆ Hoist `new Intl.NumberFormat(...)` to module scope or wrap in `useMemo` ÔÇö Intl constructors allocate dozens of objects per locale lookup[39m
+[90m      app/main-menu/page.tsx:401[39m
+[90m      features/reservas/actions.ts:87[39m
+
+  [33mÔÜá[39m [33mreact-doctor/rendering-hydration-mismatch-time[39m [90m├ù2[39m
+[90m      new Date() reachable from JSX renders differently on server vs client ÔÇö wrap in useEffect+useState (client-only) or add suppressHydrationWarning to the parent if intentional[39m
+[90m      ÔåÆ Wrap dynamic time/random values in useEffect+useState (client-only) or add suppressHydrationWarning to the parent if intentional[39m
+[90m      app/main-menu/page.tsx:4031[39m
+[90m      app/main-menu/page.tsx:4391[39m
+
+  [33mÔÜá[39m [33mreact-doctor/design-no-three-period-ellipsis  [39m [90m├ù2[39m
+[90m      Three-period ellipsis ("...") in JSX text ÔÇö use the actual ellipsis character "ÔÇª" (or `&hellip;`)[39m
+[90m      ÔåÆ Use the typographic ellipsis "ÔÇª" (or `&hellip;`) instead of three periods ÔÇö pairs with action-with-followup labels ("RenameÔÇª", "LoadingÔÇª")[39m
+[90m      app/register/page.tsx:777[39m
+[90m      app/reset-password/page.tsx:149[39m
+
+  [33mÔÜá[39m [33mreact-doctor/no-initialize-state              [39m [90m├ù2[39m
+[90m      Avoid initializing state in an effect. Instead, initialize "renderedWidth"'s `useState()` with "el". For SSR hydration, prefer `useSyncExternalStore()`.[39m
+[90m      ÔåÆ Pass the initial value directly to useState() instead of setting it from a mount-only useEffect. For SSR hydration, prefer useSyncExternalStore().[39m
+[90m      components/ui/charts/D3HorizontalBars.tsx:47[39m
+[90m      components/ui/charts/D3HorizontalBars.tsx:48[39m
+
+  [33mÔÜá[39m [33mreact-doctor/nextjs-no-client-side-redirect[39m
+[90m      router.push() in useEffect ÔÇö use redirect() from next/navigation or handle navigation in an event handler[39m
+[90m      ÔåÆ Avoid redirects inside useEffect. Use an event handler, middleware, or server-side redirect (App Router: redirect() from next/navigation; Pages Router: getServerSideProps redirect)[39m
+[90m      app/main-menu/page.tsx:709[39m
+
+  [33mÔÜá[39m [33mreact-doctor/react-compiler-destructure-method[39m
+[90m      Destructure for clarity: `const { push } = useRouter()` then call `push(...)` directly ÔÇö easier for React Compiler to memoize and clearer about which methods this component depends on[39m
+[90m      ÔåÆ Destructure the method up front: `const { push } = useRouter()` then call `push(...)` directly ÔÇö clearer dependency graph and easier for React Compiler to memoize[39m
+[90m      app/main-menu/page.tsx:709[39m
+
+  [33mÔÜá[39m [33mreact-doctor/no-cascading-set-state[39m
+[90m      4 setState calls in a single useEffect ÔÇö consider using useReducer or deriving state[39m
+[90m      ÔåÆ Combine into useReducer: `const [state, dispatch] = useReducer(reducer, initialState)`[39m
+[90m      app/main-menu/page.tsx:757[39m
+
+  [33mÔÜá[39m [33mreact-doctor/rendering-conditional-render[39m
+[90m      Conditional rendering with a numeric value can render '0' ÔÇö use `value > 0`, `Boolean(value)`, or a ternary[39m
+[90m      ÔåÆ Change to `{items.length > 0 && <List />}` or use a ternary: `{items.length ? <List /> : null}`[39m
+[90m      components/ui/charts/D3DonutChart.tsx:168[39m
+
+  [33mÔÜá[39m [33mreact-doctor/js-batch-dom-css[39m
+[90m      Multiple sequential element.style assignments ÔÇö batch with cssText or classList for fewer reflows[39m
+[90m      ÔåÆ Batch DOM/CSS reads and writes ÔÇö interleaving them inside a loop causes layout thrashing. Read first, then write[39m
+[90m      components/ui/TabContent.tsx:45[39m
+
+  [32mÔöîÔöÇÔöÇÔöÇÔöÇÔöÇÔöÉ[39m  [32m78[39m [2m/ 100[22m [32mGreat[39m
+  [32mÔöé Ôùá Ôùá Ôöé[39m  [32mÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûê[39m[2mÔûæÔûæÔûæÔûæÔûæÔûæÔûæÔûæÔûæÔûæÔûæ[22m
+  [32mÔöé  Ôû¢  Ôöé[39m  React Doctor [2m(www.react.doctor)[22m
+  [32mÔööÔöÇÔöÇÔöÇÔöÇÔöÇÔöÿ[39m
+
+  [31m445 issues[39m [2macross 29/33 files  in 4.3s[22m
+[90m  Full diagnostics written to C:\Users\DIEGOA~1\AppData\Local\Temp\react-doctor-370b039c-337f-4c4d-be3e-10aaf824cefd[39m
+
+  [1mÔåÆ Share your results:[22m [36mhttps://www.react.doctor/share?p=reservio&s=78&e=47&w=398&f=29[39m
+
+  [1mÔåÆ Catch these issues on every PR:[22m [36mhttps://react.review[39m
+  [2mReact Review is a GitHub App built on React Doctor, and it runs on each pull request,[22m
+  [2mposts new issues as inline review comments, and tracks your team's score over time.[22m
+
+

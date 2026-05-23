@@ -60,6 +60,7 @@ export function D3HorizontalBars({
 
   useEffect(() => {
     if (!svgRef.current || !containerRef.current || !data.length || !renderedWidth) return
+    const svgEl = svgRef.current
 
     const totalW = renderedWidth
 
@@ -194,6 +195,10 @@ export function D3HorizontalBars({
         .text(d.displayLabel ?? (d.label.length > 15 ? d.label.slice(0, 14) + '…' : d.label))
     })
 
+    return () => {
+      d3.select(svgEl).selectAll('rect').on('mouseover', null).on('mousemove', null).on('mouseleave', null)
+      d3.select(svgEl).selectAll('*').remove()
+    }
   }, [data, renderedWidth, computedHeight, availableColor, totalColor, animationDuration, formatValue, marginRight])
 
   if (!data.length) {
@@ -224,19 +229,7 @@ export function D3HorizontalBars({
       {/* Tooltip */}
       <div
         ref={tooltipRef}
-        style={{
-          position: 'absolute',
-          opacity: 0,
-          pointerEvents: 'none',
-          background: '#ffffff',
-          border: '1px solid #e7eefe',
-          borderRadius: '8px',
-          padding: '8px 12px',
-          boxShadow: '0 4px 16px rgba(23,28,31,0.12)',
-          transition: 'opacity 0.12s',
-          minWidth: '140px',
-          zIndex: 100,
-        }}
+        className="absolute opacity-0 pointer-events-none bg-white border border-[#e7eefe] rounded-lg px-3 py-2 shadow-[0_4px_16px_rgba(23,28,31,0.12)] transition-opacity duration-[120ms] min-w-[140px] z-[100]"
       />
     </div>
   )
