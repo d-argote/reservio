@@ -3,8 +3,8 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase/client'
+import { getEquipos } from '@/features/admin/actions'
 import {
-  getEquipos,
   getMisPrestamos,
   createPrestamoEquipo,
   devolverEquipo,

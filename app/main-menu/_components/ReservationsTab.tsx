@@ -361,11 +361,11 @@ export function ReservationsTab({
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-0.5 bg-surface-container rounded-xl p-1 border border-outline-variant/20">
                 <button type="button" onClick={() => setReservaView2('upcoming')} title="Próximas reservas"
-                  className={`flex items-center gap-1.5 px-3 h-8 rounded-lg transition-all font-label text-xs font-medium ${reservaView2 === 'upcoming' ? 'bg-primary text-on-primary shadow-sm' : 'text-on-surface-variant hover:bg-surface-container-high'}`}>
+                  className={`flex items-center gap-1.5 px-3 h-8 rounded-lg transition-all font-label text-xs font-medium ${(reservaView2 as string) === 'upcoming' ? 'bg-primary text-on-primary shadow-sm' : 'text-on-surface-variant hover:bg-surface-container-high'}`}>
                   <span className="material-symbols-outlined text-[16px]">upcoming</span>Próximas
                 </button>
                 <button type="button" onClick={() => { setReservaView2('history'); loadHistorialReservas() }} title="Historial de reservas"
-                  className={`flex items-center gap-1.5 px-3 h-8 rounded-lg transition-all font-label text-xs font-medium ${reservaView2 === 'history' ? 'bg-primary text-on-primary shadow-sm' : 'text-on-surface-variant hover:bg-surface-container-high'}`}>
+                  className={`flex items-center gap-1.5 px-3 h-8 rounded-lg transition-all font-label text-xs font-medium ${(reservaView2 as string) === 'history' ? 'bg-primary text-on-primary shadow-sm' : 'text-on-surface-variant hover:bg-surface-container-high'}`}>
                   <span className="material-symbols-outlined text-[16px]">history</span>Historial
                 </button>
               </div>

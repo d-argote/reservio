@@ -1,4 +1,5 @@
-'use client'
+const fs = require('fs');
+const pageContent = `'use client'
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
@@ -150,10 +151,10 @@ export default function MainMenuPage() {
                 onClick={() => {
                   setActiveTab(item.id as ActiveTab)
                 }}
-                className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group
-                  ${isActive ? 'bg-primary-container text-on-primary-container font-semibold shadow-sm' : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-medium'}`}
+                className={\`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group
+                  \${isActive ? 'bg-primary-container text-on-primary-container font-semibold shadow-sm' : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-medium'}\`}
               >
-                <span className={`material-symbols-outlined text-[22px] transition-transform group-hover:scale-110 ${isActive ? 'text-primary' : 'text-secondary group-hover:text-primary'}`}
+                <span className={\`material-symbols-outlined text-[22px] transition-transform group-hover:scale-110 \${isActive ? 'text-primary' : 'text-secondary group-hover:text-primary'}\`}
                   style={isActive ? { fontVariationSettings: "'FILL' 1" } : undefined}>
                   {item.icon}
                 </span>
@@ -220,10 +221,10 @@ export default function MainMenuPage() {
                         setActiveTab(item.id as ActiveTab)
                         setMobileMenuOpen(false)
                       }}
-                      className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all duration-200
-                        ${isActive ? 'bg-primary-container text-on-primary-container font-semibold shadow-sm' : 'text-on-surface-variant hover:bg-surface-container font-medium'}`}
+                      className={\`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all duration-200
+                        \${isActive ? 'bg-primary-container text-on-primary-container font-semibold shadow-sm' : 'text-on-surface-variant hover:bg-surface-container font-medium'}\`}
                     >
-                      <span className={`material-symbols-outlined text-[22px] ${isActive ? 'text-primary' : 'text-secondary'}`}
+                      <span className={\`material-symbols-outlined text-[22px] \${isActive ? 'text-primary' : 'text-secondary'}\`}
                         style={isActive ? { fontVariationSettings: "'FILL' 1" } : undefined}>
                         {item.icon}
                       </span>
@@ -333,15 +334,15 @@ export default function MainMenuPage() {
           <button type="button"
             key={item.id}
             onClick={() => setActiveTab(item.id as ActiveTab)}
-            className={`flex flex-col items-center justify-center w-full h-full gap-0.5 transition-colors
-              ${activeTab === item.id ? 'text-primary' : 'text-secondary hover:text-primary'}`}
+            className={\`flex flex-col items-center justify-center w-full h-full gap-0.5 transition-colors
+              \${activeTab === item.id ? 'text-primary' : 'text-secondary hover:text-primary'}\`}
           >
-            <div className={`px-4 py-1 rounded-full transition-all duration-300 ${activeTab === item.id ? 'bg-primary-container text-on-primary-container scale-110' : 'bg-transparent text-on-surface-variant'}`}>
+            <div className={\`px-4 py-1 rounded-full transition-all duration-300 \${activeTab === item.id ? 'bg-primary-container text-on-primary-container scale-110' : 'bg-transparent text-on-surface-variant'}\`}>
               <span className="material-symbols-outlined text-[20px]" style={activeTab === item.id ? { fontVariationSettings: "'FILL' 1" } : undefined}>
                 {item.icon}
               </span>
             </div>
-            <span className={`text-[10px] font-label tracking-wide ${activeTab === item.id ? 'font-bold' : 'font-medium'}`}>{item.label}</span>
+            <span className={\`text-[10px] font-label tracking-wide \${activeTab === item.id ? 'font-bold' : 'font-medium'}\`}>{item.label}</span>
           </button>
         ))}
       </nav>
@@ -351,3 +352,7 @@ export default function MainMenuPage() {
     </div>
   )
 }
+`;
+
+fs.writeFileSync('app/main-menu/page.tsx', pageContent);
+console.log('page.tsx replaced successfully.');
