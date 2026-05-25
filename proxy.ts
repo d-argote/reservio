@@ -14,7 +14,7 @@ const PUBLIC_PATHS = new Set([
 // Si ya tienes sesión y entras a /login → te lleva a /main-menu
 const AUTH_ONLY_PATHS = new Set(['/login', '/register', '/forgot-password'])
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   try {

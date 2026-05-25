@@ -2,23 +2,22 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import Image from 'next/image'
+import dynamic from 'next/dynamic'
 import { supabase } from '@/lib/supabase/client'
 import {
   getUsuarios, updateUserRole,
   getEquipos, getPrestamosAdmin, getAlertasEquiposAdmin, getPrestamosAdminHistorial,
-  createEquipo, updateEquipo, deleteEquipo, uploadImagen,
+  createEquipo, updateEquipo, deleteEquipo,
   getSalasAdmin, createSala, updateSala, deleteSala,
   devolverPrestamoAdmin, confirmarRevisionAdmin, reasignarEquipoAdmin,
   updateEquipoEstado, asignarEquipoASala,
-  createUsuarioAdmin, toggleUsuarioActivo, updateUsuarioEmail, updateUsuarioNombre, sendPasswordResetAdmin,
-  type PrestamoEquipoAdmin, type AlertaEquipoAdmin
+  createUsuarioAdmin, toggleUsuarioActivo, updateUsuarioEmail, updateUsuarioNombre, sendPasswordResetAdmin
 } from '@/features/admin/actions'
 import {
   devolverEquipo,
   updatePrestamoReserva,
   createPrestamoEquipo,
   getMisPrestamos,
-  uploadFotoDevolucion,
   getEquiposRetornos,
   recalcularEstadosEquiposDB,
   getReportData,
@@ -28,10 +27,9 @@ import {
   type TipoNovedad,
   type ReportData
 } from '@/features/reservas/actions'
-import type { UsuarioAdmin, Equipo, SalaAdmin } from '@/features/admin/types'
+import type { UsuarioAdmin, Equipo, SalaAdmin, PrestamoEquipoAdmin, AlertaEquipoAdmin } from '@/features/admin/types'
 import {
   TIPO_EQUIPO_LABELS,
-  TIPO_EQUIPO_OPTIONS,
   getSistemas,
   getMarcas,
   getTipos,
@@ -45,7 +43,8 @@ import {
   CONDICION_LABEL, CONDICION_COLOR, CONDICION_ICON, NOVEDAD_LABEL,
   CONDICIONES_ENTREGA, CONDICIONES_DEVOLUCION, TIPOS_NOVEDAD,
   SkeletonSummaryCard, SkeletonRoomCard,
-  adminValidateNombre, adminValidateEmail, adminValidatePassword, AdminPasswordRequirements
+  adminValidateNombre, adminValidateEmail, adminValidatePassword, AdminPasswordRequirements,
+  uploadFotoDevolucion, uploadImagen
 } from './helpers'
 import { Line, Bar, Doughnut } from 'react-chartjs-2'
 import {
@@ -53,6 +52,11 @@ import {
 } from 'chart.js'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Title, Tooltip, Legend, Filler)
+
+const D3DonutChart = dynamic(
+  () => import('@/components/ui/charts/D3DonutChart').then(m => ({ default: m.D3DonutChart })),
+  { ssr: false, loading: () => <div className="w-[180px] h-[180px] bg-surface-container rounded-full animate-pulse" /> }
+)
 
 export interface AdminTabProps {
   userProfile: { nombre: string; rol: string } | null
@@ -212,6 +216,13 @@ export function AdminTab({ userProfile, showGlobalError }: AdminTabProps) {
   const [reportSearchEquipos, setReportSearchEquipos] = useState('')
   const [reportPageReservas, setReportPageReservas] = useState(1)
   const REPORT_PAGE_SIZE = 10
+
+  const loadSalasAdmin = useCallback(async () => {
+    setLoadingSalasAdmin(true)
+    const result = await getSalasAdmin()
+    if (result.data) setSalasAdmin(result.data)
+    setLoadingSalasAdmin(false)
+  }, [])
 
   const loadUsuarios = useCallback(async () => {
     setLoadingUsuarios(true)
