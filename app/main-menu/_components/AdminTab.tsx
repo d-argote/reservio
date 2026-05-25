@@ -58,6 +58,26 @@ const D3DonutChart = dynamic(
   { ssr: false, loading: () => <div className="w-[180px] h-[180px] bg-surface-container rounded-full animate-pulse" /> }
 )
 
+const D3HorizontalBars = dynamic(
+  () => import('@/components/ui/charts/D3HorizontalBars').then(m => ({ default: m.D3HorizontalBars })),
+  { ssr: false, loading: () => <div className="w-full h-[200px] bg-surface-container rounded-xl animate-pulse" /> }
+)
+
+const D3AreaChart = dynamic(
+  () => import('@/components/ui/charts/D3AreaChart').then(m => ({ default: m.D3AreaChart })),
+  { ssr: false, loading: () => <div className="w-full h-[200px] bg-surface-container rounded-xl animate-pulse" /> }
+)
+
+const D3BarChart = dynamic(
+  () => import('@/components/ui/charts/D3BarChart').then(m => ({ default: m.D3BarChart })),
+  { ssr: false, loading: () => <div className="w-full h-[200px] bg-surface-container rounded-xl animate-pulse" /> }
+)
+
+const LineChartMonthly = dynamic(
+  () => import('@/components/ui/charts/LineChartMonthly').then(m => ({ default: m.LineChartMonthly })),
+  { ssr: false, loading: () => <div className="w-full h-[200px] bg-surface-container rounded-xl animate-pulse" /> }
+)
+
 export interface AdminTabProps {
   userProfile: { nombre: string; rol: string } | null
   showGlobalError: (msg: string) => void
