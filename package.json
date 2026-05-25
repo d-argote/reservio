@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "doctor": "react-doctor"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.2",
@@ -32,6 +33,7 @@
     "eslint-config-next": "16.2.4",
     "supabase": "^2.101.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "react-doctor": "^0.2.6"
   }
 }

@@ -63,8 +63,9 @@ export default function MainMenuPage() {
   const salasRefreshRef = useRef<(() => void) | null>(null)
   const equiposRefreshRef = useRef<(() => void) | null>(null)
 
-  // Navigation from TechTab -> ReservationsTab with initial equipo
+  // Navigation from cross-tabs -> ReservationsTab with initial ids
   const [initialEquipoId, setInitialEquipoId] = useState<string | undefined>(undefined)
+  const [initialSalaId, setInitialSalaId] = useState<string | undefined>(undefined)
 
   useEffect(() => {
     const init = async () => {
@@ -106,6 +107,11 @@ export default function MainMenuPage() {
   // Cross-tab navigation
   const handleOpenReservationWithEquipo = (equipoId: string) => {
     setInitialEquipoId(equipoId)
+    setActiveTab('reservations')
+  }
+  
+  const handleOpenReservationWithSala = (salaId: string) => {
+    setInitialSalaId(salaId)
     setActiveTab('reservations')
   }
 
@@ -288,16 +294,17 @@ export default function MainMenuPage() {
                 isAdmin={profile.rol === 'admin'}
                 onShowComingSoon={showComingSoon}
                 onShowGlobalError={showGlobalError}
-                onPreviewSala={(sala) => { setActiveTab('rooms'); }}
+                onPreviewSala={(sala) => { setInitialSalaId(sala.id); setActiveTab('reservations'); }}
                 salasRefreshRef={salasRefreshRef}
                 initialEquipoId={initialEquipoId}
-                onInitialNavHandled={() => setInitialEquipoId(undefined)}
+                initialSalaId={initialSalaId}
+                onInitialNavHandled={() => { setInitialEquipoId(undefined); setInitialSalaId(undefined); }}
               />
             )}
             
             {activeTab === 'rooms' && (
               <RoomsTab 
-                onPreviewSala={() => {}}
+                onPreviewSala={(sala) => handleOpenReservationWithSala(sala.id)}
                 refreshRef={salasRefreshRef}
               />
             )}

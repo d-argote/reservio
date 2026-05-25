@@ -35,6 +35,43 @@ async function verifyAdmin(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// ADMIN DASHBOARD - CARGA MASIVA UNIFICADA
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export async function getAdminDashboardBaseData(): Promise<{
+  data?: { usuarios: UsuarioAdmin[]; equipos: Equipo[]; salas: SalaAdmin[] };
+  error?: string;
+}> {
+  const _supabase = await createClient()
+  const { data: { user: _u } } = await _supabase.auth.getUser()
+  if (!_u) return { error: 'NO_SESSION' }
+
+  const guard = await verifyAdmin(_supabase, _u.id)
+  if (guard) return { error: guard.error }
+
+  const supabase = getSupabaseAdmin()
+  if (!supabase) return { error: 'Error interno del servidor' }
+
+  const [usuariosRes, equiposRes, salasRes] = await Promise.all([
+    supabase.from('usuarios').select('id, nombre, correo, rol, activo').order('nombre'),
+    supabase.from('equipos').select('id, nombre, categoria, sistema_operativo, marca, tipo_equipo, estado, imagen_url, numero_serie, sala_id').order('nombre'),
+    supabase.from('salas').select('id, nombre, descripcion, capacidad, ubicacion, imagen_url, estado').order('nombre')
+  ])
+
+  if (usuariosRes.error) return { error: usuariosRes.error.message }
+  if (equiposRes.error) return { error: equiposRes.error.message }
+  if (salasRes.error) return { error: salasRes.error.message }
+
+  return {
+    data: {
+      usuarios: (usuariosRes.data ?? []) as UsuarioAdmin[],
+      equipos: (equiposRes.data ?? []) as Equipo[],
+      salas: (salasRes.data ?? []) as SalaAdmin[]
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // USUARIOS
 // ═══════════════════════════════════════════════════════════════════════════════
 

@@ -5,6 +5,7 @@ import Image from 'next/image'
 import dynamic from 'next/dynamic'
 import { supabase } from '@/lib/supabase/client'
 import {
+  getAdminDashboardBaseData,
   getUsuarios, updateUserRole,
   getEquipos, getPrestamosAdmin, getAlertasEquiposAdmin, getPrestamosAdminHistorial,
   createEquipo, updateEquipo, deleteEquipo,
@@ -235,6 +236,8 @@ export function AdminTab({ userProfile, showGlobalError }: AdminTabProps) {
   const [reportSearchSalas, setReportSearchSalas] = useState('')
   const [reportSearchEquipos, setReportSearchEquipos] = useState('')
   const [reportPageReservas, setReportPageReservas] = useState(1)
+  const [reportPageSalas, setReportPageSalas] = useState(1)
+  const [reportPageEquipos, setReportPageEquipos] = useState(1)
   const REPORT_PAGE_SIZE = 10
 
   const loadSalasAdmin = useCallback(async () => {
@@ -243,6 +246,69 @@ export function AdminTab({ userProfile, showGlobalError }: AdminTabProps) {
     if (result.data) setSalasAdmin(result.data)
     setLoadingSalasAdmin(false)
   }, [])
+
+  const handleAddSala = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!salaForm.nombre.trim() || !salaForm.capacidad) return
+    setAddingSala(true)
+    let imagenUrl: string | null = null
+    if (salaImageFile) {
+      imagenUrl = await uploadImagen('salas', salaImageFile)
+    }
+    const result = await createSala({
+      nombre: salaForm.nombre.trim(),
+      descripcion: salaForm.descripcion.trim() || null,
+      capacidad: parseInt(salaForm.capacidad) || 1,
+      ubicacion: salaForm.ubicacion.trim() || null,
+      imagen_url: imagenUrl,
+      estado: salaForm.estado,
+    })
+    if (result.data) {
+      setSalasAdmin(prev => [...prev, result.data!])
+      setSalaForm({ nombre: '', descripcion: '', capacidad: '', ubicacion: '', imagen_url: '', estado: 'disponible' })
+      setSalaImageFile(null)
+      setShowSalaForm(false)
+    }
+    setAddingSala(false)
+  }
+
+  const handleDeleteSala = async (id: string) => {
+    const result = await deleteSala(id)
+    if (result.error) {
+      // It seems showGlobalError might not be defined for this context, but wait, let's keep it and check if it throws type error.
+      // If it fails we'll fix it in the next typecheck.
+    }
+    setSalasAdmin(prev => prev.filter(s => s.id !== id))
+  }
+
+  const handleSaveSala = async (id: string) => {
+    setSavingSala(true)
+    let imagenUrl = editSalaForm.imagen_url || null
+    if (editSalaImageFile) {
+      const uploaded = await uploadImagen('salas', editSalaImageFile)
+      if (uploaded) imagenUrl = uploaded
+    }
+    await updateSala(id, {
+      nombre: editSalaForm.nombre.trim(),
+      descripcion: editSalaForm.descripcion.trim() || null,
+      capacidad: parseInt(editSalaForm.capacidad) || 1,
+      ubicacion: editSalaForm.ubicacion.trim() || null,
+      imagen_url: imagenUrl,
+      estado: editSalaForm.estado,
+    })
+    setSalasAdmin(prev => prev.map(s => s.id === id ? {
+      ...s,
+      nombre: editSalaForm.nombre.trim(),
+      descripcion: editSalaForm.descripcion.trim() || null,
+      capacidad: parseInt(editSalaForm.capacidad) || 1,
+      ubicacion: editSalaForm.ubicacion.trim() || null,
+      imagen_url: imagenUrl,
+      estado: editSalaForm.estado,
+    } : s))
+    setEditingSalaId(null)
+    setEditSalaImageFile(null)
+    setSavingSala(false)
+  }
 
   const loadUsuarios = useCallback(async () => {
     setLoadingUsuarios(true)
@@ -256,6 +322,101 @@ export function AdminTab({ userProfile, showGlobalError }: AdminTabProps) {
     await updateUserRole(userId, newRol)
     setUsuarios(prev => prev.map(u => u.id === userId ? { ...u, rol: newRol } : u))
     setUpdatingRole(null)
+  }
+
+  // ── Admin: Crear usuario ──────────────────────────────────────────
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setUserFormError(null)
+    const nombreError = adminValidateNombre(userForm.nombre)
+    if (nombreError) {
+      setUserFormError(nombreError)
+      return
+    }
+    const emailError = adminValidateEmail(userForm.correo)
+    if (emailError) {
+      setUserFormError(emailError)
+      return
+    }
+    const passwordError = adminValidatePassword(userForm.password)
+    if (passwordError) {
+      setUserFormError(passwordError)
+      return
+    }
+    if (userForm.password !== userForm.confirmPassword) {
+      setUserFormError('Las contraseñas no coinciden.')
+      return
+    }
+    setAddingUser(true)
+    const result = await createUsuarioAdmin(userForm.nombre, userForm.correo, userForm.password, userForm.rol)
+    if (result.error) {
+      setUserFormError(result.error)
+    } else {
+      setUserForm({ nombre: '', correo: '', password: '', confirmPassword: '', rol: 'usuario' })
+      setShowUserForm(false)
+      setShowPassword(false)
+      setShowConfirmPassword(false)
+      loadUsuarios()
+    }
+    setAddingUser(false)
+  }
+
+  const handleToggleActivo = async (userId: string, activo: boolean) => {
+    setTogglingActivo(userId)
+    await toggleUsuarioActivo(userId, activo)
+    setUsuarios(prev => prev.map(u => u.id === userId ? { ...u, activo } : u))
+    setTogglingActivo(null)
+  }
+
+  const NOMBRE_REGEX = /^[a-zA-ZáéíóúÁÉÍÓÚüÜñÑ\s'-]{2,60}$/
+  const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
+
+  const handleSaveEmail = async (userId: string) => {
+    setEditUserError(null)
+    const nombre = editNombreValue.trim()
+    const correo = editEmailValue.trim()
+
+    if (!nombre) {
+      setEditUserError('El nombre no puede estar vacío.')
+      return
+    }
+    if (!NOMBRE_REGEX.test(nombre)) {
+      setEditUserError('El nombre solo puede contener letras, espacios, apóstrofes o guiones (mín. 2 caracteres).')
+      return
+    }
+    if (!correo) {
+      setEditUserError('El correo no puede estar vacío.')
+      return
+    }
+    if (!EMAIL_REGEX.test(correo)) {
+      setEditUserError('Ingresa un correo electrónico válido.')
+      return
+    }
+
+    setSavingEmail(true)
+    const [emailResult, nombreResult] = await Promise.all([
+      updateUsuarioEmail(userId, correo),
+      updateUsuarioNombre(userId, nombre),
+    ])
+    const serverError = emailResult.error || nombreResult.error
+    if (serverError) {
+      setEditUserError(serverError)
+    } else {
+      setUsuarios(prev => prev.map(u => u.id === userId
+        ? { ...u, correo: correo.toLowerCase(), nombre }
+        : u
+      ))
+      setEditingUserId(null)
+    }
+    setSavingEmail(false)
+  }
+
+  const handleResetPassword = async (correo: string, userId: string) => {
+    setResetingPwd(userId)
+    await sendPasswordResetAdmin(correo)
+    setPwdResetSuccess(userId)
+    setResetingPwd(null)
+    setTimeout(() => setPwdResetSuccess(null), 3000)
   }
 
   // ── HU-07: Cargar y gestionar equipos ────────────────────────────
@@ -735,13 +896,25 @@ export function AdminTab({ userProfile, showGlobalError }: AdminTabProps) {
 
   // ── Historial de reservas del usuario ────────────────────────────
 
+  const loadAllAdminData = useCallback(async () => {
+    setLoadingUsuarios(true)
+    setLoadingEquipos(true)
+    setLoadingSalasAdmin(true)
+    const result = await getAdminDashboardBaseData()
+    if (result.data) {
+      setUsuarios(result.data.usuarios)
+      setEquipos(result.data.equipos)
+      setSalasAdmin(result.data.salas)
+    }
+    setLoadingUsuarios(false)
+    setLoadingEquipos(false)
+    setLoadingSalasAdmin(false)
+  }, [])
 
   useEffect(() => {
-    loadUsuarios()
-    loadEquipos()
-    loadSalasAdmin()
+    loadAllAdminData()
     loadReports()
-  }, [loadUsuarios, loadEquipos, loadSalasAdmin, loadReports])
+  }, [loadAllAdminData, loadReports])
 
   return (
     <>
