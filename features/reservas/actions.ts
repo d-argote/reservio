@@ -3,7 +3,7 @@
 import { after } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getSupabaseAdmin } from '@/lib/supabase/admin'
-import { ADMIN_ROLES } from '@/features/admin/actions'
+import { ADMIN_ROLES } from '@/features/admin/types'
 import nodemailer from 'nodemailer'
 
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -34,12 +34,8 @@ import {
   reasignarEquipoAdmin,
   actualizarNotasAdmin,
   getAlertasEquiposAdmin,
-  type UsuarioAdmin,
-  type Equipo,
-  type SalaAdmin,
-  type PrestamoEquipoAdmin,
-  type AlertaEquipoAdmin,
 } from '@/features/admin/actions'
+import type { UsuarioAdmin, Equipo, SalaAdmin, PrestamoEquipoAdmin, AlertaEquipoAdmin } from '@/features/admin/types'
 import { getSistemas, getMarcas, getTipos, getTiposDirectos, isTechCategory, TIPO_EQUIPO_LABELS, CATEGORIA_LABELS } from '@/lib/equipo-catalogo'
 import {
   createReserva,
