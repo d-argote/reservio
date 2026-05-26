@@ -195,7 +195,7 @@ export function D3BarChart({
       .attr('opacity', 1)
 
     return () => {
-      d3.select(svgEl).selectAll('.bar').on('mouseover', null).on('mouseleave', null)
+      d3.select(svgEl).selectAll('*').on('mouseover', null).on('mousemove', null).on('mouseleave', null)
       d3.select(svgEl).selectAll('*').remove()
     }
   }, [data, height, accentColor, secondaryColor, formatLabel, formatTick, animationDuration])

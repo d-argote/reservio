@@ -613,12 +613,12 @@ export function ReservationsTab({
             </div>
             <form onSubmit={handleSubmitReserva} className="px-6 py-5 space-y-4 overflow-y-auto flex-1">
               <div>
-                <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Título *</label>
-                <input aria-label="Título de la reserva" type="text" value={form.titulo} onChange={e => setForm({ ...form, titulo: e.target.value })} placeholder="Ej: Reunión de equipo Q3" className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition" disabled={submitting} />
+                <label htmlFor="res-titulo" className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Título *</label>
+                <input id="res-titulo" aria-label="Título de la reserva" type="text" value={form.titulo} onChange={e => setForm({ ...form, titulo: e.target.value })} placeholder="Ej: Reunión de equipo Q3" className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition" disabled={submitting} />
               </div>
               <div>
-                <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Sala *</label>
-                <select value={form.sala_id} onChange={e => setForm({ ...form, sala_id: e.target.value })} className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition appearance-none" disabled={submitting || loadingSalas}>
+                <label htmlFor="res-sala" className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Sala *</label>
+                <select id="res-sala" value={form.sala_id} onChange={e => setForm({ ...form, sala_id: e.target.value })} className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition appearance-none" disabled={submitting || loadingSalas}>
                   <option value="">Selecciona una sala…</option>
                   {salas.map(s => (
                     <option key={s.id} value={s.id} disabled={s.estado === 'mantenimiento'}>
@@ -628,8 +628,8 @@ export function ReservationsTab({
                 </select>
               </div>
               <div>
-                <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Fecha *</label>
-                <input aria-label="Fecha de la reserva" type="date" value={form.fecha} min={getBogotaNow().dateStr}
+                <label htmlFor="res-fecha" className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Fecha *</label>
+                <input id="res-fecha" aria-label="Fecha de la reserva" type="date" value={form.fecha} min={getBogotaNow().dateStr}
                   onChange={e => {
                     const newFecha = e.target.value
                     const { dateStr: localToday } = getBogotaNow()
@@ -663,7 +663,7 @@ export function ReservationsTab({
                 )
               )}
               <div>
-                <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Duración</label>
+                <p className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Duración</p>
                 <div className="flex flex-wrap gap-2">
                   {([0.5, 1, 2, 4, 6, 8] as const).map(h => (
                     <button key={h} type="button" disabled={submitting}
@@ -678,8 +678,8 @@ export function ReservationsTab({
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Hora inicio *</label>
-                  <input aria-label="Hora de inicio" type="time" value={form.hora_inicio}
+                  <label htmlFor="res-hora-inicio" className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Hora inicio *</label>
+                  <input id="res-hora-inicio" aria-label="Hora de inicio" type="time" value={form.hora_inicio}
                     min={(() => { const { dateStr: localToday, timeStr } = getBogotaNow(); return form.fecha === localToday ? timeStr : undefined })()}
                     onChange={e => {
                       const inicio = e.target.value
@@ -694,8 +694,8 @@ export function ReservationsTab({
                   />
                 </div>
                 <div>
-                  <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Hora fin *</label>
-                  <input aria-label="Hora de fin" type="time" value={form.hora_fin}
+                  <label htmlFor="res-hora-fin" className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Hora fin *</label>
+                  <input id="res-hora-fin" aria-label="Hora de fin" type="time" value={form.hora_fin}
                     onChange={e => {
                       const fin = e.target.value
                       setForm(f => {

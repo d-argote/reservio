@@ -455,7 +455,14 @@ export function TechTab({ userId, onOpenReservationWithEquipo, refreshRef }: Tec
             <div key={item.id} className="bg-surface-container-lowest rounded-2xl overflow-hidden border border-outline-variant/15 card-lift group flex flex-col" data-anim>
               <div className="relative h-48 overflow-hidden bg-surface-container">
                 {item.imagen_url ? (
-                  <img src={item.imagen_url} alt={item.nombre} className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-300" />
+                  <Image
+                    fill
+                    unoptimized
+                    src={item.imagen_url}
+                    alt={item.nombre}
+                    sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+                    className="object-cover group-hover:scale-[1.02] transition-transform duration-300"
+                  />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center bg-surface-container-high">
                     <span className="material-symbols-outlined text-on-surface-variant text-6xl">devices</span>
@@ -574,12 +581,12 @@ export function TechTab({ userId, onOpenReservationWithEquipo, refreshRef }: Tec
             <form onSubmit={handleSubmitLoan} className="px-6 py-4 space-y-4 overflow-y-auto flex-1">
               <p className="font-label text-xs uppercase tracking-widest text-on-surface-variant">Detalles del préstamo</p>
               <div>
-                <label className="font-label text-xs text-on-surface-variant block mb-1.5">
+                <label htmlFor="tech-loan-reserva" className="font-label text-xs text-on-surface-variant block mb-1.5">
                   Vincular a una reserva activa <span className="text-error">*</span>
                 </label>
                 {reservas.filter(r => r.estado !== 'cancelada').length === 0 ? (
                   <div className="space-y-2">
-                    <div className="flex items-start gap-2 bg-surface-container rounded-lg px-3 py-3 text-sm font-body text-on-surface-variant">
+                    <div className="flex items-start gap-2 bg-surface-container rounded-lg p-3 text-sm font-body text-on-surface-variant">
                       <span className="material-symbols-outlined text-[18px] text-error shrink-0 mt-0.5">event_busy</span>
                       <span>No tienes reservas activas. Para solicitar un equipo debes tener una sala reservada.</span>
                     </div>
@@ -593,6 +600,7 @@ export function TechTab({ userId, onOpenReservationWithEquipo, refreshRef }: Tec
                 ) : (
                   <>
                     <select
+                      id="tech-loan-reserva"
                       value={loanForm.reserva_id}
                       onChange={e => {
                         const rid = e.target.value
@@ -621,20 +629,20 @@ export function TechTab({ userId, onOpenReservationWithEquipo, refreshRef }: Tec
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="font-label text-xs text-on-surface-variant block mb-1.5">Fecha de devolución</label>
-                  <input aria-label="Fecha de devolución" type="date" value={loanForm.fecha} readOnly disabled={loanSubmitting} className="w-full rounded-lg border border-outline-variant/40 bg-surface-container px-3 py-2.5 text-sm font-body text-on-surface-variant cursor-not-allowed" required />
+                  <label htmlFor="tech-loan-fecha" className="font-label text-xs text-on-surface-variant block mb-1.5">Fecha de devolución</label>
+                  <input id="tech-loan-fecha" aria-label="Fecha de devolución" type="date" value={loanForm.fecha} readOnly disabled={loanSubmitting} className="w-full rounded-lg border border-outline-variant/40 bg-surface-container px-3 py-2.5 text-sm font-body text-on-surface-variant cursor-not-allowed" required />
                 </div>
                 <div>
-                  <label className="font-label text-xs text-on-surface-variant block mb-1.5">Hora de devolución <span className="text-error">*</span></label>
-                  <input aria-label="Hora de devolución" type="time" value={loanForm.hora_devolucion} readOnly disabled={loanSubmitting} className="w-full rounded-lg border border-outline-variant/40 bg-surface-container px-3 py-2.5 text-sm font-body text-on-surface-variant cursor-not-allowed" required />
+                  <label htmlFor="tech-loan-hora" className="font-label text-xs text-on-surface-variant block mb-1.5">Hora de devolución <span className="text-error">*</span></label>
+                  <input id="tech-loan-hora" aria-label="Hora de devolución" type="time" value={loanForm.hora_devolucion} readOnly disabled={loanSubmitting} className="w-full rounded-lg border border-outline-variant/40 bg-surface-container px-3 py-2.5 text-sm font-body text-on-surface-variant cursor-not-allowed" required />
                 </div>
               </div>
               <div>
-                <label className="font-label text-xs text-on-surface-variant block mb-1.5">Notas <span className="ml-1 text-on-surface-variant/50">(opcional)</span></label>
-                <textarea aria-label="Notas del préstamo" value={loanForm.notas} onChange={e => setLoanForm(f => ({ ...f, notas: e.target.value }))} disabled={loanSubmitting} placeholder="Ej: Para presentación del proyecto final…" rows={2} maxLength={300} className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition resize-none" />
+                <label htmlFor="tech-loan-notas" className="font-label text-xs text-on-surface-variant block mb-1.5">Notas <span className="ml-1 text-on-surface-variant/50">(opcional)</span></label>
+                <textarea id="tech-loan-notas" aria-label="Notas del préstamo" value={loanForm.notas} onChange={e => setLoanForm(f => ({ ...f, notas: e.target.value }))} disabled={loanSubmitting} placeholder="Ej: Para presentación del proyecto final…" rows={2} maxLength={300} className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition resize-none" />
               </div>
               <div>
-                <label className="font-label text-xs text-on-surface-variant block mb-1.5 uppercase tracking-widest">Condición del equipo al recibirlo *</label>
+                <p className="font-label text-xs text-on-surface-variant block mb-1.5 uppercase tracking-widest">Condición del equipo al recibirlo *</p>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {CONDICIONES_ENTREGA.map(c => (
                     <button key={c} type="button" onClick={() => setLoanForm(f => ({ ...f, condicion_entrega: c }))}
@@ -767,8 +775,8 @@ export function TechTab({ userId, onOpenReservationWithEquipo, refreshRef }: Tec
                       Foto del equipo{['dano_leve','dano_grave'].includes(returnCondicion) && <span className="ml-1 text-red-500">*</span>}
                     </label>
                     {returnFotoPreview ? (
-                      <div className="relative">
-                        <img src={returnFotoPreview} alt="preview" className="w-full h-40 object-cover rounded-xl border border-outline-variant/20" />
+                      <div className="relative h-40">
+                        <Image unoptimized fill src={returnFotoPreview} alt="preview" sizes="100vw" className="object-cover rounded-xl border border-outline-variant/20" />
                         <button type="button" onClick={() => { setReturnFotoFile(null); setReturnFotoPreview(null) }} className="absolute top-2 right-2 bg-black/50 text-white p-1 rounded-full hover:bg-black/70 transition">
                           <span className="material-symbols-outlined text-[16px]">close</span>
                         </button>

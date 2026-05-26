@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import Image from 'next/image'
 import dynamic from 'next/dynamic'
 import { supabase } from '@/lib/supabase/client'
@@ -56,7 +56,7 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarEleme
 
 const D3DonutChart = dynamic(
   () => import('@/components/ui/charts/D3DonutChart').then(m => ({ default: m.D3DonutChart })),
-  { ssr: false, loading: () => <div className="w-[180px] h-[180px] bg-surface-container rounded-full animate-pulse" /> }
+  { ssr: false, loading: () => <div className="size-[180px] bg-surface-container rounded-full animate-pulse" /> }
 )
 
 const D3HorizontalBars = dynamic(
@@ -128,6 +128,37 @@ export function AdminTab({ userProfile, showGlobalError }: AdminTabProps) {
   const [equiposSeleccionados, setEquiposSeleccionados] = useState<string[]>([])
   const [techSearch, setTechSearch] = useState('')
   const [techFilter, setTechFilter] = useState('')
+  // Custom inline-add states for the equipment registration form
+  const [customCatActive, setCustomCatActive] = useState(false)
+  const [customMarcaActive, setCustomMarcaActive] = useState(false)
+  const [customTipoActive, setCustomTipoActive] = useState(false)
+
+  // Derived custom catalog options from existing equipment (persisted in DB automatically)
+  const customCategorias = useMemo(() => {
+    const known = new Set(Object.keys(CATEGORIA_LABELS))
+    return [...new Set(equipos.map(e => e.categoria).filter((c): c is string => !!c && !known.has(c)))]
+  }, [equipos])
+
+  const customTiposEquipo = useMemo(() => {
+    const known = new Set(Object.keys(TIPO_EQUIPO_LABELS))
+    return [...new Set(equipos.map(e => e.tipo_equipo).filter((t): t is string => !!t && !known.has(t)))]
+  }, [equipos])
+
+  const customMarcasTech = useMemo(() => {
+    const staticBrands = new Set<string>(
+      ['ordenador', 'movil'].flatMap(cat =>
+        ['windows', 'macos', 'linux', 'android', 'ios'].flatMap(so =>
+          getMarcas(cat, so).map(m => m.value)
+        )
+      )
+    )
+    return [...new Set(
+      equipos
+        .filter(e => isTechCategory(e.categoria))
+        .map(e => e.marca)
+        .filter((m): m is string => !!m && !staticBrands.has(m))
+    )]
+  }, [equipos])
 
   // ── Préstamos de equipo (Sprint 3) ────────────────────────────────────────
   const [loanModalOpen, setLoanModalOpen] = useState(false)
@@ -809,6 +840,9 @@ export function AdminTab({ userProfile, showGlobalError }: AdminTabProps) {
         setEquipoSeriales([''])
         setShowEquipoForm(false)
         setEquipoFormStage('form')
+        setCustomCatActive(false)
+        setCustomMarcaActive(false)
+        setCustomTipoActive(false)
       }, 1800)
     } else {
       setEquipoFormStage('form')
@@ -1104,7 +1138,7 @@ export function AdminTab({ userProfile, showGlobalError }: AdminTabProps) {
                                       <div className="flex items-center gap-2">
                                         <input aria-label="Editar correo electrónico" type="email" value={editEmailValue} onChange={e => { setEditEmailValue(e.target.value); setEditUserError(null) }} className="bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none focus:ring-1 focus:ring-primary w-44" placeholder="correo@ejemplo.com" />
                                         <button type="button" onClick={() => handleSaveEmail(u.id)} disabled={savingEmail} className="p-1 rounded hover:bg-green-100 text-green-600 disabled:opacity-50">
-                                          {savingEmail ? <span className="h-3 w-3 animate-spin rounded-full border border-green-600 border-t-transparent inline-block" /> : <span className="material-symbols-outlined text-[16px]">check</span>}
+                                          {savingEmail ? <span className="size-3 animate-spin rounded-full border border-green-600 border-t-transparent inline-block" /> : <span className="material-symbols-outlined text-[16px]">check</span>}
                                         </button>
                                         <button type="button" onClick={() => { setEditingUserId(null); setEditUserError(null) }} className="p-1 rounded hover:bg-red-50 text-red-500">
                                           <span className="material-symbols-outlined text-[16px]">close</span>
@@ -1272,7 +1306,7 @@ export function AdminTab({ userProfile, showGlobalError }: AdminTabProps) {
                         {/* Stage: processing */}
                         {equipoFormStage === 'processing' && (
                           <div className="flex flex-col items-center justify-center py-16 gap-4">
-                            <div className="h-12 w-12 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+                            <div className="size-12 animate-spin rounded-full border-4 border-primary border-t-transparent" />
                             <p className="font-headline font-semibold text-on-surface text-lg">Registrando equipo…</p>
                             <p className="font-body text-sm text-on-surface-variant">Procesando los datos del nuevo activo.</p>
                           </div>
@@ -1315,26 +1349,63 @@ export function AdminTab({ userProfile, showGlobalError }: AdminTabProps) {
                               {/* Categoría */}
                               <div>
                                 <label htmlFor="field-mm-7" className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Categoría *</label>
-                                <select id="field-mm-7"
-                                  value={equipoForm.categoria}
-                                  onChange={(e) => setEquipoField('categoria', e.target.value)}
-                                  className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
-                                  required
-                                >
-                                  <option value="">Selecciona categoría</option>
-                                  {Object.entries(CATEGORIA_LABELS).map(([val, lbl]) => (
-                                    <option key={val} value={val}>{lbl}</option>
-                                  ))}
-                                </select>
+                                {customCatActive ? (
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      autoFocus
+                                      type="text"
+                                      value={equipoForm.categoria}
+                                      onChange={(e) => setEquipoField('categoria', e.target.value)}
+                                      placeholder="Ej: Robótica, Audiovisual…"
+                                      className="flex-1 bg-surface-container-low border border-primary/50 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
+                                      required
+                                    />
+                                    <button type="button"
+                                      onClick={() => { setCustomCatActive(false); setCustomMarcaActive(false); setCustomTipoActive(false); setEquipoField('categoria', '') }}
+                                      className="p-2 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant" title="Volver al catálogo"
+                                    >
+                                      <span className="material-symbols-outlined text-[18px]">undo</span>
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <select id="field-mm-7"
+                                    value={equipoForm.categoria}
+                                    onChange={(e) => {
+                                      if (e.target.value === '_nueva_cat') {
+                                        setCustomCatActive(true); setCustomMarcaActive(false); setCustomTipoActive(false)
+                                        setEquipoField('categoria', '')
+                                      } else {
+                                        setCustomMarcaActive(false); setCustomTipoActive(false)
+                                        setEquipoField('categoria', e.target.value)
+                                      }
+                                    }}
+                                    className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
+                                    required
+                                  >
+                                    <option value="">Selecciona categoría</option>
+                                    {Object.entries(CATEGORIA_LABELS).map(([val, lbl]) => (
+                                      <option key={val} value={val}>{lbl}</option>
+                                    ))}
+                                    {customCategorias.length > 0 && (
+                                      <>
+                                        <option disabled>── Personalizadas ──</option>
+                                        {customCategorias.map(c => (
+                                          <option key={c} value={c}>{c}</option>
+                                        ))}
+                                      </>
+                                    )}
+                                    <option value="_nueva_cat">+ Nueva categoría…</option>
+                                  </select>
+                                )}
                               </div>
 
                               {/* Sistema Operativo - solo para categorías tech */}
                               {isTechCategory(equipoForm.categoria) && (
                               <div>
-                                <label className={`font-label text-xs uppercase tracking-widest block mb-1.5 ${equipoForm.categoria ? 'text-on-surface-variant' : 'text-on-surface-variant/40'}`}>
+                                <label htmlFor="field-mm-so" className={`font-label text-xs uppercase tracking-widest block mb-1.5 ${equipoForm.categoria ? 'text-on-surface-variant' : 'text-on-surface-variant/40'}`}>
                                   Sistema Operativo *
                                 </label>
-                                <select
+                                <select id="field-mm-so"
                                   value={equipoForm.sistema_operativo}
                                   onChange={(e) => setEquipoField('sistema_operativo', e.target.value)}
                                   disabled={!equipoForm.categoria}
@@ -1351,13 +1422,39 @@ export function AdminTab({ userProfile, showGlobalError }: AdminTabProps) {
 
                               {/* Marca */}
                               <div>
-                                <label className={`font-label text-xs uppercase tracking-widest block mb-1.5 ${isTechCategory(equipoForm.categoria) ? (equipoForm.sistema_operativo ? 'text-on-surface-variant' : 'text-on-surface-variant/40') : (equipoForm.categoria ? 'text-on-surface-variant' : 'text-on-surface-variant/40')}`}>
+                                <label htmlFor="field-mm-marca" className={`font-label text-xs uppercase tracking-widest block mb-1.5 ${isTechCategory(equipoForm.categoria) ? (equipoForm.sistema_operativo ? 'text-on-surface-variant' : 'text-on-surface-variant/40') : (equipoForm.categoria ? 'text-on-surface-variant' : 'text-on-surface-variant/40')}`}>
                                   Marca *
                                 </label>
                                 {isTechCategory(equipoForm.categoria) ? (
-                                  <select
+                                  customMarcaActive ? (
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        autoFocus
+                                        type="text"
+                                        value={equipoForm.marca}
+                                        onChange={(e) => setEquipoField('marca', e.target.value)}
+                                        placeholder="Ej: MSI, Toshiba…"
+                                        className="flex-1 bg-surface-container-low border border-primary/50 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
+                                        required
+                                      />
+                                      <button type="button"
+                                        onClick={() => { setCustomMarcaActive(false); setCustomTipoActive(false); setEquipoField('marca', '') }}
+                                        className="p-2 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant" title="Volver al catálogo"
+                                      >
+                                        <span className="material-symbols-outlined text-[18px]">undo</span>
+                                      </button>
+                                    </div>
+                                  ) : (
+                                  <select id="field-mm-marca"
                                     value={equipoForm.marca}
-                                    onChange={(e) => setEquipoField('marca', e.target.value)}
+                                    onChange={(e) => {
+                                      if (e.target.value === '_nueva_marca') {
+                                        setCustomMarcaActive(true); setCustomTipoActive(false)
+                                        setEquipoField('marca', '')
+                                      } else {
+                                        setEquipoField('marca', e.target.value)
+                                      }
+                                    }}
                                     disabled={!equipoForm.sistema_operativo}
                                     className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-40 disabled:cursor-not-allowed"
                                     required
@@ -1366,9 +1463,19 @@ export function AdminTab({ userProfile, showGlobalError }: AdminTabProps) {
                                     {getMarcas(equipoForm.categoria, equipoForm.sistema_operativo).map(o => (
                                       <option key={o.value} value={o.value}>{o.label}</option>
                                     ))}
+                                    {customMarcasTech.length > 0 && (
+                                      <>
+                                        <option disabled>── Personalizadas ──</option>
+                                        {customMarcasTech.map(m => (
+                                          <option key={m} value={m}>{m}</option>
+                                        ))}
+                                      </>
+                                    )}
+                                    <option value="_nueva_marca">+ Nueva marca…</option>
                                   </select>
+                                  )
                                 ) : (
-                                  <input aria-label="Categoría del equipo"
+                                  <input id="field-mm-marca" aria-label="Categoría del equipo"
                                     type="text"
                                     value={equipoForm.marca}
                                     onChange={(e) => setEquipoField('marca', e.target.value)}
@@ -1382,31 +1489,67 @@ export function AdminTab({ userProfile, showGlobalError }: AdminTabProps) {
 
                               {/* Tipo de equipo */}
                               <div>
-                                <label className={`font-label text-xs uppercase tracking-widest block mb-1.5 ${(isTechCategory(equipoForm.categoria) ? equipoForm.marca : equipoForm.categoria) ? 'text-on-surface-variant' : 'text-on-surface-variant/40'}`}>
+                                <label htmlFor="field-mm-tipo" className={`font-label text-xs uppercase tracking-widest block mb-1.5 ${(isTechCategory(equipoForm.categoria) ? equipoForm.marca : equipoForm.categoria) ? 'text-on-surface-variant' : 'text-on-surface-variant/40'}`}>
                                   Tipo de Equipo *
                                 </label>
-                                <select
-                                  value={equipoForm.tipo_equipo}
-                                  onChange={(e) => setEquipoField('tipo_equipo', e.target.value)}
-                                  disabled={isTechCategory(equipoForm.categoria) ? !equipoForm.marca : !equipoForm.categoria}
-                                  className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-40 disabled:cursor-not-allowed"
-                                  required
-                                >
-                                  <option value="">Selecciona tipo</option>
-                                  {isTechCategory(equipoForm.categoria)
-                                    ? getTipos(equipoForm.categoria, equipoForm.sistema_operativo, equipoForm.marca).map(o => (
-                                        <option key={o.value} value={o.value}>{o.label}</option>
-                                      ))
-                                    : getTiposDirectos(equipoForm.categoria).map(o => (
-                                        <option key={o.value} value={o.value}>{o.label}</option>
-                                      ))
-                                  }
-                                </select>
+                                {customTipoActive ? (
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      autoFocus
+                                      type="text"
+                                      value={equipoForm.tipo_equipo}
+                                      onChange={(e) => setEquipoField('tipo_equipo', e.target.value)}
+                                      placeholder="Ej: Escáner 3D, Drone…"
+                                      className="flex-1 bg-surface-container-low border border-primary/50 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
+                                      required
+                                    />
+                                    <button type="button"
+                                      onClick={() => { setCustomTipoActive(false); setEquipoField('tipo_equipo', '') }}
+                                      className="p-2 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant" title="Volver al catálogo"
+                                    >
+                                      <span className="material-symbols-outlined text-[18px]">undo</span>
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <select
+                                    value={equipoForm.tipo_equipo}
+                                    onChange={(e) => {
+                                      if (e.target.value === '_nuevo_tipo') {
+                                        setCustomTipoActive(true)
+                                        setEquipoField('tipo_equipo', '')
+                                      } else {
+                                        setEquipoField('tipo_equipo', e.target.value)
+                                      }
+                                    }}
+                                    disabled={isTechCategory(equipoForm.categoria) ? !equipoForm.marca : !equipoForm.categoria}
+                                    className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    required
+                                  >
+                                    <option value="">Selecciona tipo</option>
+                                    {isTechCategory(equipoForm.categoria)
+                                      ? getTipos(equipoForm.categoria, equipoForm.sistema_operativo, equipoForm.marca).map(o => (
+                                          <option key={o.value} value={o.value}>{o.label}</option>
+                                        ))
+                                      : getTiposDirectos(equipoForm.categoria).map(o => (
+                                          <option key={o.value} value={o.value}>{o.label}</option>
+                                        ))
+                                    }
+                                    {customTiposEquipo.length > 0 && (
+                                      <>
+                                        <option disabled>── Personalizados ──</option>
+                                        {customTiposEquipo.map(t => (
+                                          <option key={t} value={t}>{t}</option>
+                                        ))}
+                                      </>
+                                    )}
+                                    <option value="_nuevo_tipo">+ Nuevo tipo…</option>
+                                  </select>
+                                )}
                               </div>
 
                               {/* Estado inicial */}
                               <div>
-                                <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Estado Inicial</label>
+                                <label htmlFor="field-mm-estado-sel" className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Estado Inicial</label>
                                 <div className="flex items-center gap-3 bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2">
                                   <span className={`inline-flex items-center gap-1 text-xs font-label font-bold px-2 py-0.5 rounded ${
                                     equipoForm.estado === 'disponible' ? 'bg-green-100 text-green-700' :
@@ -1518,7 +1661,7 @@ export function AdminTab({ userProfile, showGlobalError }: AdminTabProps) {
                                 <label htmlFor="field-mm-9" className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Imagen</label>
                                 <div className="flex items-center gap-3">
                                   {equipoImageFile && (
-                                    <img src={URL.createObjectURL(equipoImageFile)} alt="preview" className="size-12 rounded-lg object-cover border border-outline-variant/20 shrink-0" />
+                                    <Image unoptimized src={URL.createObjectURL(equipoImageFile)} alt="preview" width={48} height={48} className="size-12 rounded-lg object-cover border border-outline-variant/20 shrink-0" />
                                   )}
                                   <label htmlFor="field-mm-10" className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-outline-variant/50 cursor-pointer hover:border-primary/60 transition-colors text-sm font-body text-on-surface-variant w-full">
                                     <span className="material-symbols-outlined text-[18px]">upload</span>
@@ -1537,7 +1680,7 @@ export function AdminTab({ userProfile, showGlobalError }: AdminTabProps) {
                             <div className="mt-5 flex items-center justify-end gap-3 pt-4 border-t border-outline-variant/15">
                               <button
                                 type="button"
-                                onClick={() => { setShowEquipoForm(false); setEquipoFormStage('form'); setEquipoImageFile(null); setEquipoSeriales(['']); setEquipoCantidad(1) }}
+                                onClick={() => { setShowEquipoForm(false); setEquipoFormStage('form'); setEquipoImageFile(null); setEquipoSeriales(['']); setEquipoCantidad(1); setCustomCatActive(false); setCustomMarcaActive(false); setCustomTipoActive(false) }}
                                 className="px-4 py-2 rounded-lg border border-outline-variant/30 text-sm font-label font-medium text-on-surface hover:bg-surface-container transition-colors"
                               >
                                 Cancelar
@@ -1598,7 +1741,7 @@ export function AdminTab({ userProfile, showGlobalError }: AdminTabProps) {
                                           <input aria-label="Nombre del equipo" type="text" value={editEquipoForm.nombre} onChange={e => setEditEquipoField('nombre', e.target.value)} className="w-full bg-surface-container-low border border-primary/40 rounded-lg px-2 py-1 text-xs font-body text-on-surface focus:outline-none min-w-[120px]" />
                                           <label htmlFor="field-mm-11" className="flex items-center gap-1 cursor-pointer text-xs text-on-surface-variant hover:text-primary transition-colors">
                                             {editEquipoImageFile
-                                              ? <img src={URL.createObjectURL(editEquipoImageFile)} alt="" className="size-5 rounded object-cover shrink-0" />
+                                              ? <Image unoptimized src={URL.createObjectURL(editEquipoImageFile)} alt="" width={20} height={20} className="size-5 rounded object-cover shrink-0" />
                                               : <span className="material-symbols-outlined text-[14px]">image</span>}
                                             <span className="truncate max-w-[100px]">{editEquipoImageFile ? editEquipoImageFile.name : 'Cambiar imagen…'}</span>
                                             <input aria-label="Imagen del equipo" id="field-mm-11" type="file" accept="image/*" className="hidden" onChange={e => setEditEquipoImageFile(e.target.files?.[0] ?? null)} />
@@ -1696,7 +1839,7 @@ export function AdminTab({ userProfile, showGlobalError }: AdminTabProps) {
                                             ))}
                                           </select>
                                           {asignandoSala === eq.id && (
-                                            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary border-t-transparent shrink-0" />
+                                            <span className="size-3.5 animate-spin rounded-full border-2 border-primary border-t-transparent shrink-0" />
                                           )}
                                         </div>
                                       </td>
@@ -2164,7 +2307,7 @@ export function AdminTab({ userProfile, showGlobalError }: AdminTabProps) {
                           <label htmlFor="field-mm-17" className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Imagen</label>
                           <div className="flex items-center gap-3">
                             {salaImageFile && (
-                              <img src={URL.createObjectURL(salaImageFile)} alt="preview" className="size-12 rounded-lg object-cover border border-outline-variant/20 shrink-0" />
+                              <Image unoptimized src={URL.createObjectURL(salaImageFile)} alt="preview" width={48} height={48} className="size-12 rounded-lg object-cover border border-outline-variant/20 shrink-0" />
                             )}
                             <label htmlFor="field-mm-18" className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-outline-variant/50 cursor-pointer hover:border-primary/60 transition-colors text-sm font-body text-on-surface-variant w-full">
                               <span className="material-symbols-outlined text-[18px]">upload</span>
@@ -2223,10 +2366,13 @@ export function AdminTab({ userProfile, showGlobalError }: AdminTabProps) {
                                         {/* Preview: nuevo archivo seleccionado, o imagen actual de BD */}
                                         {(editSalaImageFile || editSalaForm.imagen_url) && (
                                           <div className="relative w-full h-20 rounded-lg overflow-hidden bg-surface-container">
-                                            <img
-                                              src={editSalaImageFile ? URL.createObjectURL(editSalaImageFile) : editSalaForm.imagen_url}
+                                            <Image
+                                              unoptimized
+                                              fill
+                                              src={editSalaImageFile ? URL.createObjectURL(editSalaImageFile) : editSalaForm.imagen_url!}
                                               alt="Vista previa"
-                                              className="w-full h-full object-cover"
+                                              sizes="100%"
+                                              className="object-cover"
                                             />
                                             {!editSalaImageFile && (
                                               <span className="absolute bottom-1 left-1 text-[9px] font-label font-semibold uppercase tracking-wider bg-black/50 text-white px-1.5 py-0.5 rounded">Actual</span>
@@ -2449,7 +2595,7 @@ export function AdminTab({ userProfile, showGlobalError }: AdminTabProps) {
                 <div className="space-y-6">
                   {loadingReports ? (
                     <div className="flex items-center justify-center py-24 gap-3">
-                      <span className="h-7 w-7 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                      <span className="size-7 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                       <span className="font-body text-sm text-on-surface-variant">Generando reportes…</span>
                     </div>
                   ) : !reportData ? (
@@ -2997,7 +3143,7 @@ export function AdminTab({ userProfile, showGlobalError }: AdminTabProps) {
 
               {/* Condición de devolución */}
               <div>
-                <label className="font-label text-xs font-semibold text-on-surface uppercase tracking-widest block mb-2">Condición al devolver *</label>
+                <p className="font-label text-xs font-semibold text-on-surface uppercase tracking-widest block mb-2">Condición al devolver *</p>
                 <div className="grid grid-cols-2 gap-2">
                   {CONDICIONES_DEVOLUCION.map(c => (
                     <button
@@ -3164,7 +3310,7 @@ export function AdminTab({ userProfile, showGlobalError }: AdminTabProps) {
 
               {/* Condición confirmada por admin */}
               <div>
-                <label className="font-label text-xs font-semibold text-on-surface uppercase tracking-widest block mb-2">Condición física verificada por admin *</label>
+                <p className="font-label text-xs font-semibold text-on-surface uppercase tracking-widest block mb-2">Condición física verificada por admin *</p>
                 <div className="grid grid-cols-2 gap-2">
                   {CONDICIONES_DEVOLUCION.map(c => (
                     <button

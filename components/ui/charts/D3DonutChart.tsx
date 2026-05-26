@@ -157,7 +157,7 @@ export function D3DonutChart({
     }
 
     return () => {
-      d3.select(svgEl).selectAll('path').on('mouseover', null).on('mouseleave', null)
+      d3.select(svgEl).selectAll('*').on('mouseover', null).on('mousemove', null).on('mouseleave', null)
       d3.select(svgEl).selectAll('*').remove()
     }
   }, [data, size, outerR, innerR, animationDuration, total])

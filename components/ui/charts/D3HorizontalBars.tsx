@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import * as d3 from 'd3'
 
 export interface HBarDatum {
@@ -35,19 +35,23 @@ export function D3HorizontalBars({
   const svgRef = useRef<SVGSVGElement>(null)
   const tooltipRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const [renderedWidth, setRenderedWidth] = useState(0)
+  const renderedWidthRef = useRef(0)
+  const [redrawCount, setRedrawCount] = useState(0)
+  const triggerRedraw = useCallback(() => setRedrawCount(n => n + 1), [])
 
   // Measure container width and re-measure on resize
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
+    renderedWidthRef.current = el.clientWidth
+    triggerRedraw()
     const observer = new ResizeObserver(entries => {
-      setRenderedWidth(entries[0].contentRect.width)
+      renderedWidthRef.current = entries[0].contentRect.width
+      triggerRedraw()
     })
     observer.observe(el)
-    setRenderedWidth(el.clientWidth)
     return () => observer.disconnect()
-  }, [])
+  }, [triggerRedraw])
 
   const barH = 20
   const gap = 20
@@ -59,6 +63,7 @@ export function D3HorizontalBars({
   const computedHeight = height ?? (data.length * (barH + gap) + marginTop + marginBottom)
 
   useEffect(() => {
+    const renderedWidth = renderedWidthRef.current
     if (!svgRef.current || !containerRef.current || !data.length || !renderedWidth) return
     const svgEl = svgRef.current
 
@@ -196,10 +201,10 @@ export function D3HorizontalBars({
     })
 
     return () => {
-      d3.select(svgEl).selectAll('rect').on('mouseover', null).on('mousemove', null).on('mouseleave', null)
+      d3.select(svgEl).selectAll('*').on('mouseover', null).on('mousemove', null).on('mouseleave', null)
       d3.select(svgEl).selectAll('*').remove()
     }
-  }, [data, renderedWidth, computedHeight, availableColor, totalColor, animationDuration, formatValue, marginRight])
+  }, [data, computedHeight, availableColor, totalColor, animationDuration, formatValue, marginRight, redrawCount])
 
   if (!data.length) {
     return (

@@ -1,6 +1,7 @@
-'use client'
+﻿'use client'
 
 import { useState, useCallback, useEffect, useRef } from 'react'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { useRealtimeSync } from '@/hooks/useRealtimeSync'
@@ -81,13 +82,17 @@ export default function MainMenuPage() {
 
       const { data: userRecord } = await supabase
         .from('usuarios')
-        .select('rol')
+        .select('rol, correo, activo, created_at')
         .eq('id', session.user.id)
         .single()
 
       if (userRecord?.rol) rol = userRecord.rol as string
 
-      setProfile({ nombre, rol })
+      const correo: string = userRecord?.correo ?? session.user.email ?? ''
+      const activo: boolean = userRecord?.activo ?? true
+      const createdAt: string = userRecord?.created_at ?? session.user.created_at ?? ''
+
+      setProfile({ nombre, rol, correo, activo, createdAt })
       setCurrentUserId(session.user.id)
       setIsLoading(false)
     }
@@ -137,16 +142,18 @@ export default function MainMenuPage() {
   return (
     <div className="flex h-screen bg-surface overflow-hidden relative selection:bg-primary/20 selection:text-primary">
       {/* ── Sidebar (desktop) ──────────────────────────────────── */}
-      <aside className="hidden md:flex flex-col w-[260px] lg:w-[280px] h-full bg-surface-container-low border-r border-outline-variant/15 flex-shrink-0 z-20 shadow-[4px_0_24px_rgba(23,28,31,0.04)]">
-        <div className="h-20 flex items-center px-6 gap-3 mb-2">
-          <div className="size-10 rounded-xl bg-primary flex items-center justify-center text-on-primary shadow-sm hover:shadow-md transition-shadow">
-            <span className="material-symbols-outlined text-[24px]">calendar_month</span>
+      <aside className="hidden md:flex flex-col w-72 h-full bg-surface text-primary font-body border-r border-outline-variant/20 flex-shrink-0 z-20">
+        {/* Brand */}
+        <div className="p-8 flex items-center gap-3 border-b border-outline-variant/20 mb-2">
+          <img src="/logo.png" alt="Reservio Logo" className="size-10 object-contain drop-shadow-sm" />
+          <div>
+            <h1 className="font-headline text-2xl font-black text-primary mb-0 leading-none">Reservio</h1>
+            <p className="font-body text-secondary text-[11px] font-semibold tracking-wider uppercase mt-1">Workspace</p>
           </div>
-          <h1 className="font-headline text-2xl font-bold text-on-surface tracking-tight">Reservio</h1>
         </div>
 
-        <nav className="flex-1 px-4 py-2 space-y-1.5 overflow-y-auto">
-          <p className="px-3 pb-2 text-[11px] font-label font-bold text-on-surface-variant uppercase tracking-[0.1em]">Menú Principal</p>
+        {/* Nav items */}
+        <div className="flex flex-col gap-y-1 flex-grow overflow-y-auto pb-4 px-2">
           {navItems.map((item) => {
             if (item.id === 'admin' && profile?.rol !== 'admin') return null
             const isActive = activeTab === item.id
@@ -156,24 +163,28 @@ export default function MainMenuPage() {
                 onClick={() => {
                   setActiveTab(item.id as ActiveTab)
                 }}
-                className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group
-                  ${isActive ? 'bg-primary-container text-on-primary-container font-semibold shadow-sm' : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-medium'}`}
+                className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200
+                  ${isActive
+                    ? 'border-l-[3px] border-primary bg-surface-container-lowest text-primary font-semibold'
+                    : 'text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface'
+                  }`}
               >
-                <span className={`material-symbols-outlined text-[22px] transition-transform group-hover:scale-110 ${isActive ? 'text-primary' : 'text-secondary group-hover:text-primary'}`}
+                <span className="material-symbols-outlined"
                   style={isActive ? { fontVariationSettings: "'FILL' 1" } : undefined}>
                   {item.icon}
                 </span>
-                <span className="font-label text-[14px]">{item.label}</span>
+                <span>{item.label}</span>
               </button>
             )
           })}
-        </nav>
+        </div>
 
-        <div className="p-4 mt-auto border-t border-outline-variant/15">
+        {/* Sign out */}
+        <div className="p-6 mt-auto">
           <button type="button" onClick={handleSignOut}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-error hover:bg-error-container hover:text-on-error-container transition-colors font-label font-medium text-sm group"
+            className="w-full flex items-center justify-center gap-2 border border-outline-variant/30 text-on-surface-variant py-3 rounded-lg hover:border-error/40 hover:text-error hover:bg-error/5 transition-colors text-sm font-medium font-label"
           >
-            <span className="material-symbols-outlined text-[20px] transition-transform group-hover:-translate-x-1">logout</span>
+            <span className="material-symbols-outlined text-lg">logout</span>
             Cerrar Sesión
           </button>
         </div>
@@ -182,40 +193,34 @@ export default function MainMenuPage() {
       {/* ── Main Content Area ──────────────────────────────────── */}
       <main className="flex-1 flex flex-col h-full overflow-y-auto overflow-x-hidden md:pl-2 relative scroll-smooth bg-surface-container-lowest">
         {/* Mobile Header */}
-        <header className="md:hidden flex items-center justify-between px-5 h-16 bg-surface border-b border-outline-variant/15 sticky top-0 z-30 shadow-sm">
+        <header className="md:hidden bg-surface/95 backdrop-blur-sm sticky top-0 z-30 flex items-center justify-between px-6 h-16 border-b border-outline-variant/20 shadow-sm">
           <div className="flex items-center gap-2">
-            <div className="size-8 rounded-lg bg-primary flex items-center justify-center text-on-primary shadow-sm">
-              <span className="material-symbols-outlined text-[20px]">calendar_month</span>
-            </div>
-            <h1 className="font-headline text-lg font-bold text-on-surface">Reservio</h1>
+            <Image src="/logo.png" alt="Logo" width={28} height={28} className="size-7 object-contain" />
+            <span className="font-headline text-xl font-black text-primary tracking-wide">Reservio</span>
           </div>
-          <button type="button" onClick={() => setMobileMenuOpen(true)} className="p-2 -mr-2 rounded-full hover:bg-surface-container transition-colors text-on-surface">
-            <span className="material-symbols-outlined">menu</span>
+          <button type="button"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="p-2 rounded-full hover:bg-surface-container transition-colors"
+          >
+            <span className="material-symbols-outlined text-on-surface-variant">
+              {mobileMenuOpen ? 'close' : 'menu'}
+            </span>
           </button>
         </header>
 
         {/* Mobile menu modal */}
         {mobileMenuOpen && (
-          <div className="md:hidden fixed inset-0 z-50 flex">
-            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setMobileMenuOpen(false)} />
-            <div className="relative w-4/5 max-w-sm bg-surface-container-lowest h-full shadow-2xl flex flex-col animate-slide-in-right ml-auto">
-              <div className="p-5 border-b border-outline-variant/15 flex items-center justify-between bg-surface">
-                <div className="flex items-center gap-3">
-                  <div className="size-10 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center font-headline font-bold text-lg">
-                    {profile?.nombre?.charAt(0).toUpperCase()}
-                  </div>
-                  <div>
-                    <p className="font-label text-sm font-semibold text-on-surface">{profile?.nombre}</p>
-                    <p className="font-body text-[11px] text-on-surface-variant uppercase tracking-wider">{profile?.rol}</p>
-                  </div>
+          <div className="md:hidden fixed inset-0 z-50">
+            <div className="absolute inset-0 bg-black/40" onClick={() => setMobileMenuOpen(false)} />
+            <div className="absolute left-0 top-0 bottom-0 w-72 bg-surface flex flex-col shadow-2xl">
+              <div className="p-8 pt-16 flex items-center gap-3">
+                <Image src="/logo.png" alt="Reservio Logo" width={40} height={40} className="size-10 object-contain drop-shadow-sm" />
+                <div>
+                  <h1 className="font-headline text-2xl font-black text-primary mb-0 leading-none">Reservio</h1>
+                  <p className="font-body text-secondary text-[11px] font-semibold tracking-wider uppercase mt-1">Workspace</p>
                 </div>
-                <button type="button" onClick={() => setMobileMenuOpen(false)} className="p-1.5 -mr-1.5 rounded-full hover:bg-surface-container transition-colors text-on-surface-variant">
-                  <span className="material-symbols-outlined">close</span>
-                </button>
               </div>
-
-              <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-                <p className="px-3 pb-2 text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-[0.1em]">Navegación</p>
+              <div className="flex flex-col gap-y-1 flex-grow overflow-y-auto pb-4 px-2">
                 {navItems.map((item) => {
                   if (item.id === 'admin' && profile?.rol !== 'admin') return null
                   const isActive = activeTab === item.id
@@ -226,24 +231,26 @@ export default function MainMenuPage() {
                         setActiveTab(item.id as ActiveTab)
                         setMobileMenuOpen(false)
                       }}
-                      className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all duration-200
-                        ${isActive ? 'bg-primary-container text-on-primary-container font-semibold shadow-sm' : 'text-on-surface-variant hover:bg-surface-container font-medium'}`}
+                      className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200
+                        ${isActive
+                          ? 'bg-surface-container-lowest text-primary font-semibold'
+                          : 'text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface'
+                        }`}
                     >
-                      <span className={`material-symbols-outlined text-[22px] ${isActive ? 'text-primary' : 'text-secondary'}`}
+                      <span className="material-symbols-outlined"
                         style={isActive ? { fontVariationSettings: "'FILL' 1" } : undefined}>
                         {item.icon}
                       </span>
-                      <span className="font-label text-[15px]">{item.label}</span>
+                      <span>{item.label}</span>
                     </button>
                   )
                 })}
-              </nav>
-
-              <div className="p-4 border-t border-outline-variant/15 bg-surface pb-8">
+              </div>
+              <div className="p-6">
                 <button type="button" onClick={handleSignOut}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-error/30 text-error hover:bg-error/5 transition-colors font-label font-semibold text-sm"
+                  className="w-full flex items-center justify-center gap-2 border border-outline-variant/30 text-on-surface-variant py-3 rounded-lg hover:border-error/40 hover:text-error hover:bg-error/5 transition-colors text-sm font-medium font-label"
                 >
-                  <span className="material-symbols-outlined text-[20px]">logout</span>
+                  <span className="material-symbols-outlined text-lg">logout</span>
                   Cerrar Sesión
                 </button>
               </div>
@@ -324,10 +331,80 @@ export default function MainMenuPage() {
               />
             )}
             
-            {activeTab === 'profile' && (
-              <div className="py-20 text-center">
-                <span className="material-symbols-outlined text-4xl text-on-surface-variant mb-2">person</span>
-                <p className="text-on-surface font-label">Sección de perfil en construcción</p>
+            {activeTab === 'profile' && profile && (
+              <div className="max-w-2xl space-y-5">
+                {/* Avatar + name card */}
+                <div className="bg-surface-container-lowest rounded-2xl border border-outline-variant/20 p-6 flex items-center gap-5 shadow-sm">
+                  <div className="size-20 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center font-headline font-bold text-4xl shrink-0 shadow-inner">
+                    {profile.nombre.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <h3 className="font-headline text-2xl font-bold text-on-surface">{profile.nombre}</h3>
+                    <span className={`inline-flex items-center gap-1 mt-1.5 text-xs font-label font-semibold px-2.5 py-1 rounded-full ${
+                      profile.activo
+                        ? 'bg-green-100 text-green-700 border border-green-200'
+                        : 'bg-surface-container-high text-on-surface-variant border border-outline-variant/30'
+                    }`}>
+                      <span className={`size-1.5 rounded-full ${profile.activo ? 'bg-green-500' : 'bg-on-surface-variant/40'}`} />
+                      {profile.activo ? 'Activo' : 'Inactivo'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Info fields */}
+                <div className="bg-surface-container-lowest rounded-2xl border border-outline-variant/20 shadow-sm overflow-hidden">
+                  <div className="px-6 py-4 border-b border-outline-variant/10">
+                    <p className="font-label text-[11px] font-bold text-on-surface-variant uppercase tracking-widest">Información de la cuenta</p>
+                  </div>
+                  <dl className="divide-y divide-outline-variant/10">
+                    <div className="flex items-center gap-4 px-6 py-4">
+                      <span className="material-symbols-outlined text-[20px] text-secondary shrink-0">person</span>
+                      <div className="min-w-0">
+                        <dt className="font-label text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider">Nombre</dt>
+                        <dd className="font-body text-sm text-on-surface mt-0.5 truncate">{profile.nombre}</dd>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4 px-6 py-4">
+                      <span className="material-symbols-outlined text-[20px] text-secondary shrink-0">mail</span>
+                      <div className="min-w-0">
+                        <dt className="font-label text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider">Correo electrónico</dt>
+                        <dd className="font-body text-sm text-on-surface mt-0.5 truncate">{profile.correo}</dd>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4 px-6 py-4">
+                      <span className="material-symbols-outlined text-[20px] text-secondary shrink-0">shield_person</span>
+                      <div className="min-w-0">
+                        <dt className="font-label text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider">Rol</dt>
+                        <dd className="font-body text-sm text-on-surface mt-0.5 capitalize">{profile.rol}</dd>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4 px-6 py-4">
+                      <span className="material-symbols-outlined text-[20px] text-secondary shrink-0">calendar_today</span>
+                      <div className="min-w-0">
+                        <dt className="font-label text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider">Miembro desde</dt>
+                        <dd className="font-body text-sm text-on-surface mt-0.5">
+                          {profile.createdAt
+                            ? new Date(profile.createdAt).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' })
+                            : '—'}
+                        </dd>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4 px-6 py-4">
+                      <span className="material-symbols-outlined text-[20px] text-secondary shrink-0">toggle_on</span>
+                      <div className="min-w-0">
+                        <dt className="font-label text-[11px] font-semibold text-on-surface-variant uppercase tracking-wider">Estado</dt>
+                        <dd className="font-body text-sm mt-0.5">
+                          <span className={`inline-flex items-center gap-1 font-semibold ${
+                            profile.activo ? 'text-green-600' : 'text-on-surface-variant'
+                          }`}>
+                            <span className={`size-2 rounded-full ${profile.activo ? 'bg-green-500' : 'bg-on-surface-variant/40'}`} />
+                            {profile.activo ? 'Cuenta activa' : 'Cuenta inactiva'}
+                          </span>
+                        </dd>
+                      </div>
+                    </div>
+                  </dl>
+                </div>
               </div>
             )}
           </div>

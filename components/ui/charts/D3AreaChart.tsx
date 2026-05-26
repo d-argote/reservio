@@ -232,7 +232,7 @@ export function D3AreaChart({
     void linePath
 
     return () => {
-      d3.select(svgEl).selectAll('circle').on('mouseover', null).on('mouseleave', null)
+      d3.select(svgEl).selectAll('*').on('mouseover', null).on('mousemove', null).on('mouseleave', null)
       d3.select(svgEl).selectAll('*').remove()
     }
   }, [data, height, color, fillColor, animationDuration, formatLabel, formatTick])

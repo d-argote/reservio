@@ -179,6 +179,9 @@ export async function resetPasswordForEmail(correo: string) {
 export async function updatePassword(newPassword: string) {
   const supabase = await createClient()
 
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (!user || authError) return { error: 'UNAUTHORIZED' }
+
   // Actualiza la contraseña del usuario actualmente autenticado (la sesión se establece vía el link de recuperación)
   const { error } = await supabase.auth.updateUser({
     password: newPassword

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect, useRef } from 'react'
+import Image from 'next/image'
 import { getSalasConDisponibilidadFecha } from '@/features/reservas/actions'
 import { getBogotaNow, getRoomImage, SkeletonRoomCard } from './helpers'
 import type { Sala } from './types'
@@ -67,10 +68,13 @@ export function RoomsTab({ onPreviewSala, refreshRef }: RoomsTabProps) {
           return (
             <div key={sala.id} className="bg-surface-container-lowest rounded-2xl overflow-hidden border border-outline-variant/15 card-lift group flex flex-col" data-anim>
               <div className="relative h-48 overflow-hidden bg-surface-container">
-                <img
+                <Image
+                  fill
+                  unoptimized
                   src={sala.imagen_url || getRoomImage(idx)}
                   alt={sala.nombre}
-                  className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-300"
+                  sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+                  className="object-cover group-hover:scale-[1.02] transition-transform duration-300"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-80" />
                 <div className="absolute bottom-4 left-4 right-4 flex justify-between items-end">

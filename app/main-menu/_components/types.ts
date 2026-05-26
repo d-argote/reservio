@@ -3,6 +3,9 @@ import type { EstadoDisponibilidad } from '@/features/reservas/actions'
 export interface UserProfile {
   nombre: string
   rol: string
+  correo: string
+  activo: boolean
+  createdAt: string
 }
 
 export interface Sala {
