@@ -314,31 +314,34 @@ export function AdminTab({ userProfile, showGlobalError }: AdminTabProps) {
 
   const handleSaveSala = async (id: string) => {
     setSavingSala(true)
-    let imagenUrl = editSalaForm.imagen_url || null
-    if (editSalaImageFile) {
-      const uploaded = await uploadImagen('salas', editSalaImageFile)
-      if (uploaded) imagenUrl = uploaded
+    try {
+      let imagenUrl = editSalaForm.imagen_url || null
+      if (editSalaImageFile) {
+        const uploaded = await uploadImagen('salas', editSalaImageFile)
+        if (uploaded) imagenUrl = uploaded
+      }
+      await updateSala(id, {
+        nombre: editSalaForm.nombre.trim(),
+        descripcion: editSalaForm.descripcion.trim() || null,
+        capacidad: parseInt(editSalaForm.capacidad) || 1,
+        ubicacion: editSalaForm.ubicacion.trim() || null,
+        imagen_url: imagenUrl,
+        estado: editSalaForm.estado,
+      })
+      setSalasAdmin(prev => prev.map(s => s.id === id ? {
+        ...s,
+        nombre: editSalaForm.nombre.trim(),
+        descripcion: editSalaForm.descripcion.trim() || null,
+        capacidad: parseInt(editSalaForm.capacidad) || 1,
+        ubicacion: editSalaForm.ubicacion.trim() || null,
+        imagen_url: imagenUrl,
+        estado: editSalaForm.estado,
+      } : s))
+      setEditingSalaId(null)
+      setEditSalaImageFile(null)
+    } finally {
+      setSavingSala(false)
     }
-    await updateSala(id, {
-      nombre: editSalaForm.nombre.trim(),
-      descripcion: editSalaForm.descripcion.trim() || null,
-      capacidad: parseInt(editSalaForm.capacidad) || 1,
-      ubicacion: editSalaForm.ubicacion.trim() || null,
-      imagen_url: imagenUrl,
-      estado: editSalaForm.estado,
-    })
-    setSalasAdmin(prev => prev.map(s => s.id === id ? {
-      ...s,
-      nombre: editSalaForm.nombre.trim(),
-      descripcion: editSalaForm.descripcion.trim() || null,
-      capacidad: parseInt(editSalaForm.capacidad) || 1,
-      ubicacion: editSalaForm.ubicacion.trim() || null,
-      imagen_url: imagenUrl,
-      estado: editSalaForm.estado,
-    } : s))
-    setEditingSalaId(null)
-    setEditSalaImageFile(null)
-    setSavingSala(false)
   }
 
   const loadUsuarios = useCallback(async () => {
@@ -425,21 +428,24 @@ export function AdminTab({ userProfile, showGlobalError }: AdminTabProps) {
     }
 
     setSavingEmail(true)
-    const [emailResult, nombreResult] = await Promise.all([
-      updateUsuarioEmail(userId, correo),
-      updateUsuarioNombre(userId, nombre),
-    ])
-    const serverError = emailResult.error || nombreResult.error
-    if (serverError) {
-      setEditUserError(serverError)
-    } else {
-      setUsuarios(prev => prev.map(u => u.id === userId
-        ? { ...u, correo: correo.toLowerCase(), nombre }
-        : u
-      ))
-      setEditingUserId(null)
+    try {
+      const [emailResult, nombreResult] = await Promise.all([
+        updateUsuarioEmail(userId, correo),
+        updateUsuarioNombre(userId, nombre),
+      ])
+      const serverError = emailResult.error || nombreResult.error
+      if (serverError) {
+        setEditUserError(serverError)
+      } else {
+        setUsuarios(prev => prev.map(u => u.id === userId
+          ? { ...u, correo: correo.toLowerCase(), nombre }
+          : u
+        ))
+        setEditingUserId(null)
+      }
+    } finally {
+      setSavingEmail(false)
     }
-    setSavingEmail(false)
   }
 
   const handleResetPassword = async (correo: string, userId: string) => {
@@ -552,13 +558,13 @@ export function AdminTab({ userProfile, showGlobalError }: AdminTabProps) {
     setLoanSuccess(true)
     // Actualizar estado del equipo localmente
     setEquipos(prev => prev.map(e => e.id === loanEquipo.id ? { ...e, estado: 'reservado' as const } : e))
-    await loadMisPrestamos()
+    await loadMisPrestamos().catch(console.error)
+    setLoanSubmitting(false)
     setTimeout(() => {
       setLoanModalOpen(false)
       setLoanSuccess(false)
       setLoanEquipo(null)
     }, 1800)
-    setLoanSubmitting(false)
   }
 
   // Return modal: open
@@ -629,7 +635,7 @@ export function AdminTab({ userProfile, showGlobalError }: AdminTabProps) {
     if (result.error) {
       setEditPrestamoError(result.error)
     } else {
-      await loadMisPrestamos()
+      await loadMisPrestamos().catch(console.error)
       setEditandoPrestamoId(null)
       setEditPrestamoReservaId('')
     }
@@ -805,80 +811,86 @@ export function AdminTab({ userProfile, showGlobalError }: AdminTabProps) {
     }
 
     setAddingEquipo(true)
-    setEquipoFormStage('processing')
-    let imagenUrl: string | null = null
-    if (equipoImageFile) {
-      imagenUrl = await uploadImagen('equipos', equipoImageFile)
-    }
-    const nuevosEquipos: Equipo[] = []
-    const equipoPromises = Array.from({ length: cantidad }, (_, i) => {
-      const nombreUnidad = cantidad > 1
-        ? `${equipoForm.nombre.trim()} #${i + 1}`
-        : equipoForm.nombre.trim()
-      return createEquipo({
-        nombre: nombreUnidad,
-        categoria: equipoForm.categoria,
-        sistema_operativo: equipoForm.sistema_operativo,
-        marca: equipoForm.marca,
-        tipo_equipo: equipoForm.tipo_equipo,
-        estado: equipoForm.estado,
-        imagen_url: imagenUrl,
-        numero_serie: serialesUsados[i],
+    try {
+      setEquipoFormStage('processing')
+      let imagenUrl: string | null = null
+      if (equipoImageFile) {
+        imagenUrl = await uploadImagen('equipos', equipoImageFile)
+      }
+      const nuevosEquipos: Equipo[] = []
+      const equipoPromises = Array.from({ length: cantidad }, (_, i) => {
+        const nombreUnidad = cantidad > 1
+          ? `${equipoForm.nombre.trim()} #${i + 1}`
+          : equipoForm.nombre.trim()
+        return createEquipo({
+          nombre: nombreUnidad,
+          categoria: equipoForm.categoria,
+          sistema_operativo: equipoForm.sistema_operativo,
+          marca: equipoForm.marca,
+          tipo_equipo: equipoForm.tipo_equipo,
+          estado: equipoForm.estado,
+          imagen_url: imagenUrl,
+          numero_serie: serialesUsados[i],
+        })
       })
-    })
-    const results = await Promise.all(equipoPromises)
-    for (const result of results) {
-      if (result.data) nuevosEquipos.push(result.data)
-    }
-    if (nuevosEquipos.length > 0) {
-      setEquipos(prev => [...prev, ...nuevosEquipos])
-      setEquipoFormStage('success')
-      setTimeout(() => {
-        setEquipoForm({ nombre: '', categoria: '', sistema_operativo: '', marca: '', tipo_equipo: '', estado: 'disponible', imagen_url: '' })
-        setEquipoImageFile(null)
-        setEquipoCantidad(1)
-        setEquipoSeriales([''])
-        setShowEquipoForm(false)
+      const results = await Promise.all(equipoPromises)
+      for (const result of results) {
+        if (result.data) nuevosEquipos.push(result.data)
+      }
+      if (nuevosEquipos.length > 0) {
+        setEquipos(prev => [...prev, ...nuevosEquipos])
+        setEquipoFormStage('success')
+        setTimeout(() => {
+          setEquipoForm({ nombre: '', categoria: '', sistema_operativo: '', marca: '', tipo_equipo: '', estado: 'disponible', imagen_url: '' })
+          setEquipoImageFile(null)
+          setEquipoCantidad(1)
+          setEquipoSeriales([''])
+          setShowEquipoForm(false)
+          setEquipoFormStage('form')
+          setCustomCatActive(false)
+          setCustomMarcaActive(false)
+          setCustomTipoActive(false)
+        }, 1800)
+      } else {
         setEquipoFormStage('form')
-        setCustomCatActive(false)
-        setCustomMarcaActive(false)
-        setCustomTipoActive(false)
-      }, 1800)
-    } else {
-      setEquipoFormStage('form')
+      }
+    } finally {
+      setAddingEquipo(false)
     }
-    setAddingEquipo(false)
   }
 
   const handleSaveEquipo = async (id: string) => {
     setSavingEquipo(true)
-    let imagenUrl = editEquipoForm.imagen_url || null
-    if (editEquipoImageFile) {
-      const uploaded = await uploadImagen('equipos', editEquipoImageFile)
-      if (uploaded) imagenUrl = uploaded
+    try {
+      let imagenUrl = editEquipoForm.imagen_url || null
+      if (editEquipoImageFile) {
+        const uploaded = await uploadImagen('equipos', editEquipoImageFile)
+        if (uploaded) imagenUrl = uploaded
+      }
+      await updateEquipo(id, {
+        nombre: editEquipoForm.nombre.trim(),
+        categoria: editEquipoForm.categoria,
+        sistema_operativo: editEquipoForm.sistema_operativo,
+        marca: editEquipoForm.marca,
+        tipo_equipo: editEquipoForm.tipo_equipo,
+        estado: editEquipoForm.estado,
+        imagen_url: imagenUrl,
+      })
+      setEquipos(prev => prev.map(eq => eq.id === id ? {
+        ...eq,
+        nombre: editEquipoForm.nombre.trim(),
+        categoria: editEquipoForm.categoria,
+        sistema_operativo: editEquipoForm.sistema_operativo,
+        marca: editEquipoForm.marca,
+        tipo_equipo: editEquipoForm.tipo_equipo,
+        estado: editEquipoForm.estado,
+        imagen_url: imagenUrl,
+      } : eq))
+      setEditingEquipoId(null)
+      setEditEquipoImageFile(null)
+    } finally {
+      setSavingEquipo(false)
     }
-    await updateEquipo(id, {
-      nombre: editEquipoForm.nombre.trim(),
-      categoria: editEquipoForm.categoria,
-      sistema_operativo: editEquipoForm.sistema_operativo,
-      marca: editEquipoForm.marca,
-      tipo_equipo: editEquipoForm.tipo_equipo,
-      estado: editEquipoForm.estado,
-      imagen_url: imagenUrl,
-    })
-    setEquipos(prev => prev.map(eq => eq.id === id ? {
-      ...eq,
-      nombre: editEquipoForm.nombre.trim(),
-      categoria: editEquipoForm.categoria,
-      sistema_operativo: editEquipoForm.sistema_operativo,
-      marca: editEquipoForm.marca,
-      tipo_equipo: editEquipoForm.tipo_equipo,
-      estado: editEquipoForm.estado,
-      imagen_url: imagenUrl,
-    } : eq))
-    setEditingEquipoId(null)
-    setEditEquipoImageFile(null)
-    setSavingEquipo(false)
   }
 
   function setEditEquipoField(field: string, value: string) {

@@ -283,6 +283,21 @@ export async function updateEquipoEstado(
 
   const supabase = getSupabaseAdmin()
   if (!supabase) return { error: 'Error interno del servidor' }
+
+  // Bloquear cambio a 'disponible' si hay préstamos activos o programados
+  if (estado === 'disponible') {
+    const ahora = new Date().toISOString()
+    const { count } = await supabase
+      .from('prestamos_equipo')
+      .select('id', { count: 'exact', head: true })
+      .eq('equipo_id', id)
+      .eq('estado', 'activo')
+      .gt('fecha_fin_esperada', ahora)
+    if ((count ?? 0) > 0) {
+      return { error: 'No se puede marcar como disponible: el equipo tiene préstamos activos o programados. Ciérralos antes de cambiar el estado.' }
+    }
+  }
+
   const { error } = await supabase
     .from('equipos')
     .update({ estado })
@@ -555,27 +570,17 @@ export async function devolverPrestamoAdmin(
 
   const novedadFinal = !!novedadTipo || ['dano_leve','dano_grave','perdido'].includes(condicionDevolucion)
 
-  const { error } = await supabase
-    .from('prestamos_equipo')
-    .update({
-      estado: 'devuelto',
-      fecha_devolucion: new Date().toISOString(),
-      condicion_devolucion: condicionDevolucion,
-      notas_admin: notasAdmin,
-      novedad: novedadFinal,
-      tipo_novedad: novedadFinal ? (novedadTipo ?? 'dano_fisico') : null,
-      descripcion_novedad: novedadFinal ? descripcionNovedad : null,
-    })
-    .eq('id', prestamoId)
-
+  // Actualizar préstamo + estado del equipo en una sola transacción DB
+  const { error } = await supabase.rpc('devolver_prestamo_admin_atomic', {
+    p_prestamo_id:  prestamoId,
+    p_equipo_id:    equipoId,
+    p_condicion:    condicionDevolucion,
+    p_notas_admin:  notasAdmin,
+    p_novedad:      novedadFinal,
+    p_tipo_novedad: novedadFinal ? (novedadTipo ?? 'dano_fisico') : null,
+    p_desc_novedad: novedadFinal ? (descripcionNovedad ?? null) : null,
+  })
   if (error) return { error: error.message }
-
-  // Si fue perdido, marcar como mantenimiento; si hay daño grave, igual
-  const nuevoEstado = condicionDevolucion === 'perdido' || condicionDevolucion === 'dano_grave'
-    ? 'mantenimiento'
-    : 'disponible'
-
-  await supabase.from('equipos').update({ estado: nuevoEstado }).eq('id', equipoId)
 
   return { success: true }
 }
@@ -642,27 +647,17 @@ export async function confirmarRevisionAdmin(
 
   const novedadFinal = !!novedadTipo || ['dano_leve', 'dano_grave', 'perdido'].includes(condicionDevolucion)
 
-  const { error } = await supabase
-    .from('prestamos_equipo')
-    .update({
-      estado: 'devuelto',
-      notas_admin: notasAdmin,
-      novedad: novedadFinal,
-      tipo_novedad: novedadFinal ? (novedadTipo ?? 'dano_fisico') : null,
-      descripcion_novedad: novedadFinal ? descripcionNovedad : null,
-    })
-    .eq('id', prestamoId)
-
+  // Actualizar préstamo + estado del equipo en una sola transacción DB
+  const { error } = await supabase.rpc('confirmar_revision_admin_atomic', {
+    p_prestamo_id:  prestamoId,
+    p_equipo_id:    equipoId,
+    p_condicion:    condicionDevolucion,
+    p_notas_admin:  notasAdmin,
+    p_novedad:      novedadFinal,
+    p_tipo_novedad: novedadFinal ? (novedadTipo ?? 'dano_fisico') : null,
+    p_desc_novedad: novedadFinal ? (descripcionNovedad ?? null) : null,
+  })
   if (error) return { error: error.message }
-
-  // Update equipment state based on condition
-  const nuevoEstadoEquipo: Equipo['estado'] =
-    condicionDevolucion === 'perdido' || condicionDevolucion === 'dano_grave'
-      ? 'mantenimiento'
-      : 'disponible'
-
-  await supabase.from('equipos').update({ estado: nuevoEstadoEquipo }).eq('id', equipoId)
-
   return { success: true }
 }
 
@@ -734,6 +729,7 @@ export async function reasignarEquipoAdmin(
       .eq('equipo_id', equipoReemplazoId)
       .in('estado', ['activo', 'vencido'])
       .lt('fecha_inicio', original.fecha_fin_esperada)
+      .gt('fecha_fin_esperada', original.fecha_inicio)   // ← FIX 5: condición faltante
       .limit(1)
 
     if (solapados && solapados.length > 0) {
@@ -741,45 +737,16 @@ export async function reasignarEquipoAdmin(
     }
   }
 
-  // 1. Close original loan as devuelto with novedad (damaged)
-  const { error: closeErr } = await supabase
-    .from('prestamos_equipo')
-    .update({
-      estado: 'devuelto',
-      fecha_devolucion: new Date().toISOString(),
-      notas_admin: notasAdmin,
-      novedad: true,
-      tipo_novedad: 'dano_fisico',
-      descripcion_novedad: notasAdmin ?? 'Equipo reasignado por administrador',
-    })
-    .eq('id', prestamoOriginalId)
-
-  if (closeErr) return { error: closeErr.message }
-
-  // 2. Mark original equipment as mantenimiento
-  await supabase.from('equipos').update({ estado: 'mantenimiento' }).eq('id', equipoOriginalId)
-
-  // 3. Create new loan with replacement equipment
-  // Preserve original end date; start now
-  const { error: newLoanErr } = await supabase
-    .from('prestamos_equipo')
-    .insert({
-      equipo_id: equipoReemplazoId,
-      usuario_id: usuarioId,
-      sala_id: original.sala_id,
-      reserva_id: original.reserva_id,
-      fecha_inicio: new Date().toISOString(),
-      fecha_fin_esperada: original.fecha_fin_esperada,
-      estado: 'activo',
-      condicion_entrega: original.condicion_entrega ?? 'bueno',
-      notas: `Reemplazo del equipo original (acta vinculada al préstamo ${prestamoOriginalId})`,
-    })
-
-  if (newLoanErr) return { error: newLoanErr.message }
-
-  // 4. Mark replacement equipment as reservado
-  await supabase.from('equipos').update({ estado: 'reservado' }).eq('id', equipoReemplazoId)
-
+  // Ejecutar reasignación en una sola transacción DB (evita estado inconsistente
+  // si alguno de los 4 pasos falla a mitad del proceso)
+  const { error: reasignarErr } = await supabase.rpc('reasignar_equipo_admin_atomic', {
+    p_prestamo_original_id: prestamoOriginalId,
+    p_equipo_original_id:   equipoOriginalId,
+    p_equipo_reemplazo_id:  equipoReemplazoId,
+    p_usuario_id:           usuarioId,
+    p_notas_admin:          notasAdmin,
+  })
+  if (reasignarErr) return { error: reasignarErr.message }
   return { success: true }
 }
 

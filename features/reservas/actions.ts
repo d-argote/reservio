@@ -5,6 +5,9 @@ import { createClient } from '@/lib/supabase/server'
 import { getSupabaseAdmin } from '@/lib/supabase/admin'
 import { ADMIN_ROLES } from '@/features/admin/types'
 import nodemailer from 'nodemailer'
+import { enqueueEmail, flushEmailQueue } from '@/lib/email-queue'
+
+export { flushEmailQueue }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TIPOS
@@ -148,8 +151,7 @@ async function recalcularEstadoEquipo(equipoId: string): Promise<void> {
     .select('id', { count: 'exact', head: true })
     .eq('equipo_id', equipoId)
     .eq('estado', 'activo')
-    .lte('fecha_inicio', ahora)
-    .gt('fecha_fin_esperada', ahora)
+    .gt('fecha_fin_esperada', ahora)  // incluye préstamos futuros programados
 
   const nuevoEstado = (count ?? 0) > 0 ? 'reservado' : 'disponible'
   await adminClient.from('equipos').update({ estado: nuevoEstado }).eq('id', equipoId)
@@ -243,16 +245,20 @@ async function sendReservaEmail(opts: {
   const fromName = process.env.SMTP_FROM_NAME ?? 'ITAM Reservio'
   const fromAddr = process.env.SMTP_USER ?? ''
 
+  const subject = `${cfg.label}: ${opts.titulo} \u2014 ITAM Reservio`
   try {
     const info = await transporter.sendMail({
       from: `"${fromName}" <${fromAddr}>`,
       to: opts.to,
-      subject: `${cfg.label}: ${opts.titulo} \u2014 ITAM Reservio`,
+      subject,
       html,
     })
     after(() => console.log('[Email] Enviado OK →', info.messageId))
   } catch (err) {
-    console.error('[Email] Error al enviar correo SMTP:', err)
+    console.error('[Email] Sin conexión SMTP, encolando para reintento:', err)
+    await enqueueEmail({ recipient: opts.to, subject, html_body: html }).catch(e =>
+      console.error('[Email] No se pudo encolar el correo:', e)
+    )
   }
 }
 
@@ -430,7 +436,7 @@ async function sendNovedadEmailAdmin(opts: {
 export async function createReserva(
   data: ReservaInput,
   equiposIds: string[] = [],
-): Promise<{ data?: { id: string }; error?: string; prestamosError?: string }> {
+): Promise<{ data?: { id: string }; error?: string }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
@@ -542,22 +548,26 @@ export async function createReserva(
       estado:             'activo',
     }))
 
-    const [pivotRes, prestamosRes] = await Promise.all([
-      writeClient.from('reserva_equipos').insert(pivotRows),
-      writeClient.from('prestamos_equipo').insert(prestamoRows),
-    ])
-
+    // ── Paso 1: Pivot (secuencial — rollback si falla) ─────────────────────────
+    // Si el pivot falla, borramos la reserva recién creada (ON DELETE CASCADE
+    // limpia automáticamente reserva_equipos y prestamos_equipo).
+    const pivotRes = await writeClient.from('reserva_equipos').insert(pivotRows)
     if (pivotRes.error) {
+      await (adminClient ?? supabase).from('reservas').delete().eq('id', reserva.id).catch(console.error)
       console.error('[createReserva] Error inserting reserva_equipos:', pivotRes.error)
-      return { data: { id: reserva.id }, prestamosError: pivotRes.error.message }
+      return { error: 'Error al asignar equipos a la reserva. Por favor intenta de nuevo.' }
     }
+
+    // ── Paso 2: Préstamos (rollback completo si el trigger 23P01 se dispara) ─────
+    const prestamosRes = await writeClient.from('prestamos_equipo').insert(prestamoRows)
     if (prestamosRes.error) {
+      // Rollback: CASCADE elimina pivot + cualquier préstamo parcialmente insertado
+      await (adminClient ?? supabase).from('reservas').delete().eq('id', reserva.id).catch(console.error)
       console.error('[createReserva] Error inserting prestamos_equipo:', prestamosRes.error)
-      // 23P01 = exclusion_violation — equipment already booked at this time by another user
       if (prestamosRes.error.code === '23P01') {
-        return { data: { id: reserva.id }, prestamosError: 'Uno de los equipos ya fue reservado por otro usuario en ese horario. Elige equipos diferentes.' }
+        return { error: 'Uno de los equipos ya fue reservado por otro usuario en ese horario. Elige equipos diferentes.' }
       }
-      return { data: { id: reserva.id }, prestamosError: prestamosRes.error.message }
+      return { error: prestamosRes.error.message }
     }
 
     // Marcar equipos 'reservado' si la reserva está activa AHORA (fire-and-forget)
@@ -712,12 +722,13 @@ export async function cancelarReserva(id: string): Promise<{ success?: boolean; 
     const writeClient = adminClient ?? supabase
     const equipoIds = (pivotRows as { equipo_id: string }[]).map(r => r.equipo_id)
 
-    // Cerrar prestamos activos vinculados a esta reserva
+    // Cerrar todos los préstamos no finalizados vinculados a esta reserva
+    // (incluye pendiente_revision y vencido, no solo activo)
     await writeClient
       .from('prestamos_equipo')
       .update({ estado: 'devuelto', fecha_devolucion: new Date().toISOString() })
       .eq('reserva_id', id)
-      .eq('estado', 'activo')
+      .in('estado', ['activo', 'pendiente_revision', 'vencido'])
 
     // Recalcular estado de equipos en paralelo (batch, no N+1)
     await Promise.all(equipoIds.map(equipoId => recalcularEstadoEquipo(equipoId)))
@@ -1043,6 +1054,20 @@ export async function createPrestamoEquipo(
   const fechaFinDate = new Date(fechaFinEsperada + '-05:00')
   if (isNaN(fechaFinDate.getTime()) || fechaFinDate <= new Date()) {
     return { error: 'La fecha y hora de devolución debe ser posterior al momento actual.' }
+  }
+
+  // Límite de 3 préstamos activos simultáneos por usuario (no aplica a administradores)
+  const { data: perfil } = await supabase
+    .from('usuarios').select('rol').eq('id', user.id).single()
+  if (!ADMIN_ROLES.includes(perfil?.rol as typeof ADMIN_ROLES[number])) {
+    const { count: activosCuenta } = await supabase
+      .from('prestamos_equipo')
+      .select('id', { count: 'exact', head: true })
+      .eq('usuario_id', user.id)
+      .in('estado', ['activo', 'pendiente_revision'])
+    if ((activosCuenta ?? 0) >= 3) {
+      return { error: 'Has alcanzado el límite de 3 préstamos activos simultáneos. Devuelve un equipo antes de solicitar otro.' }
+    }
   }
 
   // Verificar que la reserva pertenece al usuario
@@ -1531,8 +1556,7 @@ export async function recalcularEstadosEquiposDB(): Promise<{ updated: number; e
     .from('prestamos_equipo')
     .select('equipo_id')
     .eq('estado', 'activo')
-    .lte('fecha_inicio', ahora)
-    .gt('fecha_fin_esperada', ahora)
+    .gt('fecha_fin_esperada', ahora)  // incluye préstamos futuros programados
 
   const enUsoIds = new Set((enUso ?? []).map(p => p.equipo_id))
 

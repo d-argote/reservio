@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Plus_Jakarta_Sans, DM_Sans, Manrope } from "next/font/google";
+import { EmailFlushProvider } from "@/components/EmailFlushProvider";
 import "./globals.css";
 
 // ── Fuentes: carga local via next/font (sin render-blocking, sin DNS externo) ──
@@ -54,6 +55,7 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-full flex flex-col">
+        <EmailFlushProvider />
         {children}
       </body>
     </html>

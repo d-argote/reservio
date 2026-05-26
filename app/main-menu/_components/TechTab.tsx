@@ -194,13 +194,13 @@ export function TechTab({ userId, onOpenReservationWithEquipo, refreshRef }: Tec
     setLoanActa(result.data?.num_acta ?? null)
     setLoanSuccess(true)
     setEquipos(prev => prev.map(e => e.id === loanEquipo.id ? { ...e, estado: 'reservado' as const } : e))
-    await loadMisPrestamos()
+    await loadMisPrestamos().catch(console.error)
+    setLoanSubmitting(false)
     setTimeout(() => {
       setLoanModalOpen(false)
       setLoanSuccess(false)
       setLoanEquipo(null)
     }, 1800)
-    setLoanSubmitting(false)
   }
 
   const handleAbrirDevolucion = (prestamo: PrestamoEquipo) => {
@@ -250,7 +250,7 @@ export function TechTab({ userId, onOpenReservationWithEquipo, refreshRef }: Tec
     if (result.error) {
       setEditPrestamoError(result.error)
     } else {
-      await loadMisPrestamos()
+      await loadMisPrestamos().catch(console.error)
       setEditandoPrestamoId(null)
       setEditPrestamoReservaId('')
     }

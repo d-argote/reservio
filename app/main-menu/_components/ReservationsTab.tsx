@@ -261,12 +261,6 @@ export function ReservationsTab({
         fecha: form.fecha, hora_inicio: form.hora_inicio, hora_fin: form.hora_fin,
       }, [])
       if (result.error) { setModalError(result.error); setSubmitting(false); return }
-      if (result.prestamosError) {
-        setModalError(`Reserva creada, pero no se pudieron registrar los préstamos de equipo: ${result.prestamosError}.`)
-        setSubmitting(false)
-        fetchReservas(); fetchCalendarReservas()
-        return
-      }
     }
 
     setSubmitting(false)
@@ -690,7 +684,8 @@ export function ReservationsTab({
                         return next
                       })
                     }}
-                    className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition" disabled={submitting}
+                    className={`w-full rounded-lg border bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition ${(() => { const { dateStr: lt, totalMinutes: cm } = getBogotaNow(); if (!form.hora_inicio || form.fecha !== lt) return 'border-outline-variant/40'; const [hh, mm] = form.hora_inicio.split(':').map(Number); return (hh * 60 + mm) < cm ? 'border-red-400 bg-red-50/40' : 'border-outline-variant/40' })()}`}
+                    disabled={submitting}
                   />
                 </div>
                 <div>
@@ -724,6 +719,12 @@ export function ReservationsTab({
               {form.hora_fin && form.hora_inicio && form.hora_fin <= form.hora_inicio && (
                 <p className="text-xs text-red-500 font-body flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">error</span>La hora de fin debe ser posterior a la de inicio.</p>
               )}
+              {(() => { const { dateStr: lt, totalMinutes: cm } = getBogotaNow(); if (!form.hora_inicio || form.fecha !== lt) return null; const [hh, mm] = form.hora_inicio.split(':').map(Number); return (hh * 60 + mm) < cm ? (
+                <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  <span className="material-symbols-outlined text-[16px] text-red-500 shrink-0 mt-0.5">schedule</span>
+                  <span className="text-xs font-label text-red-700 leading-snug">La hora de inicio ya pasó. Por favor, selecciona una hora válida para hoy.</span>
+                </div>
+              ) : null })()}
               {modalError && (
                 <div className="flex items-start gap-2 bg-error-container text-on-error-container rounded-lg px-4 py-3 text-sm font-body">
                   <span className="material-symbols-outlined text-[18px] shrink-0 mt-0.5">error</span>{modalError}
