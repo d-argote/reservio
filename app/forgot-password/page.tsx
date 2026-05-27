@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { resetPasswordForEmail } from '@/features/auth/actions'
 
@@ -25,9 +26,10 @@ export default function ForgotPasswordPage() {
 
     if (result.error) {
       if (result.error === 'USER_NOT_FOUND') {
-        // Por seguridad, puedes simular éxito incluso si el email no existe, 
-        // pero aquí mostramos el error según la lógica de tu app.
-        setGlobalError('No encontramos una cuenta con ese correo electrónico.')
+        // Por seguridad (prevención de user enumeration / OWASP A07),
+        // mostramos el mismo mensaje de éxito aunque el email no exista.
+        setIsSuccess(true)
+        return
       } else if (result.error === 'RATE_LIMIT') {
         setGlobalError('Demasiados intentos. Por favor espera unos minutos.')
       } else {
@@ -44,11 +46,11 @@ export default function ForgotPasswordPage() {
       <div className="w-full max-w-md bg-surface-container-lowest rounded-2xl p-8 sm:p-10 shadow-2xl shadow-on-surface/5">
         <div className="text-center mb-8">
           <div className="flex justify-center mb-6">
-            <div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20">
-              <img src="/logo.png" alt="Reservio Logo" className="w-9 h-9 object-contain drop-shadow-sm" />
+            <div className="size-16 rounded-2xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20">
+              <Image src="/logo.png" alt="Reservio Logo" width={36} height={36} className="object-contain drop-shadow-sm" />
             </div>
           </div>
-          <h2 className="font-headline text-2xl font-bold text-on-surface">
+          <h2 className="font-headline text-2xl font-semibold text-on-surface">
             Recupera tu contraseña
           </h2>
           <p className="font-body text-on-surface-variant mt-2 text-sm">

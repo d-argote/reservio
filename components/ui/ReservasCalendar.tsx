@@ -85,7 +85,40 @@ function Row({ icon, children }: { icon: string; children: React.ReactNode }) {
     </div>
   )
 }
+// ── Sub-components at module scope — required for Fast Refresh & stable identity ──
 
+function Chip({ r, onSelect }: { r: CalReserva; onSelect: (r: CalReserva) => void }) {
+  const st = EV[r.estado]
+  return (
+    <button
+      type="button"
+      onClick={ev => { ev.stopPropagation(); onSelect(r) }}
+      className={`w-full text-left flex items-center gap-1 rounded-md px-1.5 py-[3px] text-[10px] font-label font-semibold leading-tight border overflow-hidden ${st.bg} ${st.text} ${st.border} hover:brightness-95 transition-all`}
+    >
+      <span className={`shrink-0 size-1.5 rounded-full ${st.dot}`} />
+      <span className="truncate">{r.titulo}</span>
+    </button>
+  )
+}
+
+function EventBlock({ r, style, onSelect }: { r: CalReserva; style: React.CSSProperties; onSelect: (r: CalReserva) => void }) {
+  const st = EV[r.estado]
+  return (
+    <button
+      type="button"
+      onClick={ev => { ev.stopPropagation(); onSelect(r) }}
+      className={`absolute left-0.5 right-0.5 rounded-lg border overflow-hidden text-left hover:brightness-95 hover:shadow-md transition-all z-10 flex flex-col ${st.bg} ${st.border}`}
+      style={style}
+    >
+      <div className={`h-1 w-full shrink-0 ${st.bar}`} />
+      <div className="px-2 py-0.5 flex-1 min-h-0">
+        <p className={`text-[11px] font-label font-bold ${st.text} leading-tight truncate`}>{r.titulo}</p>
+        <p className={`text-[10px] font-body ${st.text} opacity-75`}>{r.hora_inicio.slice(0, 5)}–{r.hora_fin.slice(0, 5)}</p>
+        {r.salas && <p className={`text-[9px] font-body ${st.text} opacity-55 truncate`}>{r.salas.nombre}</p>}
+      </div>
+    </button>
+  )
+}
 // ════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ════════════════════════════════════════════════════════════════════════════
@@ -177,41 +210,6 @@ export function ReservasCalendar({
     })
   }, [view, current])
 
-  // ── Inline sub-components ─────────────────────────────────────────
-
-  /** Month view chip */
-  function Chip({ r }: { r: CalReserva }) {
-    const st = EV[r.estado]
-    return (
-      <button
-        onClick={ev => { ev.stopPropagation(); setSelected(r) }}
-        className={`w-full text-left flex items-center gap-1 rounded-md px-1.5 py-[3px] text-[10px] font-label font-semibold leading-tight border overflow-hidden ${st.bg} ${st.text} ${st.border} hover:brightness-95 transition-all`}
-      >
-        <span className={`shrink-0 w-1.5 h-1.5 rounded-full ${st.dot}`} />
-        <span className="truncate">{r.titulo}</span>
-      </button>
-    )
-  }
-
-  /** Week/day time-grid event block */
-  function EventBlock({ r, style }: { r: CalReserva; style: React.CSSProperties }) {
-    const st = EV[r.estado]
-    return (
-      <button
-        onClick={ev => { ev.stopPropagation(); setSelected(r) }}
-        className={`absolute left-0.5 right-0.5 rounded-lg border overflow-hidden text-left hover:brightness-95 hover:shadow-md transition-all z-10 flex flex-col ${st.bg} ${st.border}`}
-        style={style}
-      >
-        <div className={`h-1 w-full shrink-0 ${st.bar}`} />
-        <div className="px-2 py-0.5 flex-1 min-h-0">
-          <p className={`text-[11px] font-label font-bold ${st.text} leading-tight truncate`}>{r.titulo}</p>
-          <p className={`text-[10px] font-body ${st.text} opacity-75`}>{r.hora_inicio.slice(0, 5)}–{r.hora_fin.slice(0, 5)}</p>
-          {r.salas && <p className={`text-[9px] font-body ${st.text} opacity-55 truncate`}>{r.salas.nombre}</p>}
-        </div>
-      </button>
-    )
-  }
-
   // ── Render ────────────────────────────────────────────────────────
   return (
     <div className="bg-surface-container-lowest rounded-2xl border border-outline-variant/25 overflow-hidden shadow-sm">
@@ -221,6 +219,7 @@ export function ReservasCalendar({
         {/* Navigation */}
         <div className="flex items-center gap-2">
           <button
+            type="button"
             onClick={goToday}
             className="font-label text-xs font-semibold border border-outline-variant rounded-lg px-3 py-1.5 text-on-surface hover:bg-surface-container transition-colors"
           >
@@ -228,19 +227,21 @@ export function ReservasCalendar({
           </button>
           <div className="flex rounded-lg overflow-hidden border border-outline-variant">
             <button
+              type="button"
               onClick={() => nav(-1)}
               className="w-8 h-[34px] flex items-center justify-center text-on-surface hover:bg-surface-container transition-colors border-r border-outline-variant"
             >
               <span className="material-symbols-outlined text-[18px]">chevron_left</span>
             </button>
             <button
+              type="button"
               onClick={() => nav(1)}
               className="w-8 h-[34px] flex items-center justify-center text-on-surface hover:bg-surface-container transition-colors"
             >
               <span className="material-symbols-outlined text-[18px]">chevron_right</span>
             </button>
           </div>
-          <h2 className="font-headline font-bold text-on-surface text-base min-w-[180px] capitalize">{label()}</h2>
+          <h2 className="font-headline font-semibold text-on-surface text-base min-w-[180px] capitalize">{label()}</h2>
           {loading && (
             <span className="material-symbols-outlined text-[16px] text-on-surface-variant animate-spin">progress_activity</span>
           )}
@@ -250,6 +251,7 @@ export function ReservasCalendar({
         <div className="flex items-center gap-0.5 bg-surface-container rounded-xl p-1">
           {(['day', 'week', 'month'] as CalView[]).map(v => (
             <button
+              type="button"
               key={v}
               onClick={() => setView(v)}
               className={`font-label text-xs font-semibold px-3 py-1.5 rounded-lg transition-all ${
@@ -281,12 +283,12 @@ export function ReservasCalendar({
           {/* Day grid */}
           {monthRows.map((row, ri) => (
             <div
-              key={ri}
+              key={row.find(d => d !== null)?.toISOString() ?? `pad-${ri}`}
               className={`grid grid-cols-7 ${ri < monthRows.length - 1 ? 'border-b border-outline-variant/15' : ''}`}
             >
               {row.map((day, ci) => {
                 if (!day) {
-                  return <div key={ci} className="min-h-[110px] bg-surface-container-lowest/40 border-r border-outline-variant/10 last:border-r-0" />
+                  return <div key={`null-${ri}-${ci}`} className="min-h-[110px] bg-surface-container-lowest/40 border-r border-outline-variant/10 last:border-r-0" />
                 }
                 const ds           = toLocal(day)
                 const events       = byDate.get(ds) ?? []
@@ -298,13 +300,17 @@ export function ReservasCalendar({
 
                 return (
                   <div
-                    key={ci}
+                    key={ds}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Ver ${ds}`}
                     onClick={() => { setCurrent(day); setView('day') }}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setCurrent(day); setView('day') } }}
                     className={`min-h-[110px] p-1.5 border-r border-outline-variant/10 last:border-r-0 cursor-pointer hover:bg-surface-container/40 transition-colors flex flex-col gap-0.5 group ${!isThisMonth ? 'opacity-35' : ''}`}
                   >
                     {/* Day number */}
                     <div className="flex items-center justify-between mb-0.5">
-                      <span className={`w-7 h-7 flex items-center justify-center rounded-full text-xs font-label font-bold transition-colors ${
+                      <span className={`size-7 flex items-center justify-center rounded-full text-xs font-label font-bold transition-colors ${
                         isToday
                           ? 'bg-primary text-on-primary'
                           : 'text-on-surface group-hover:bg-surface-container'
@@ -313,9 +319,11 @@ export function ReservasCalendar({
                       </span>
                       {/* Add button on hover */}
                       <button
+                        type="button"
                         onClick={e => { e.stopPropagation(); onNewReserva(ds) }}
-                        className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded-full bg-primary/15 text-primary flex items-center justify-center hover:bg-primary/25 transition-all"
+                        className="opacity-0 group-hover:opacity-100 size-5 rounded-full bg-primary/15 text-primary flex items-center justify-center hover:bg-primary/25 transition-all"
                         title="Nueva reserva"
+                        aria-label="Nueva reserva"
                       >
                         <span className="material-symbols-outlined text-[12px]">add</span>
                       </button>
@@ -323,7 +331,7 @@ export function ReservasCalendar({
 
                     {/* Event chips */}
                     <div className="flex-1 space-y-0.5 overflow-hidden">
-                      {visible.map(r => <Chip key={r.id} r={r} />)}
+                      {visible.map(r => <Chip key={r.id} r={r} onSelect={setSelected} />)}
                       {extra > 0 && (
                         <p className="text-[9px] font-label text-secondary/70 pl-1.5">+{extra} más</p>
                       )}
@@ -332,6 +340,7 @@ export function ReservasCalendar({
                     {/* Empty hint */}
                     {events.length === 0 && (
                       <button
+                        type="button"
                         onClick={e => { e.stopPropagation(); onNewReserva(ds) }}
                         className="opacity-0 group-hover:opacity-100 text-[9px] font-label text-on-surface-variant/50 text-center pb-1 hover:text-primary transition-all"
                       >
@@ -348,7 +357,7 @@ export function ReservasCalendar({
           <div className="px-5 py-3 border-t border-outline-variant/15 bg-surface-container-low/30 flex items-center gap-5 flex-wrap">
             {(['confirmada', 'pendiente', 'cancelada'] as const).map(s => (
               <div key={s} className="flex items-center gap-1.5">
-                <span className={`w-2.5 h-2.5 rounded-full ${EV[s].dot}`} />
+                <span className={`size-2.5 rounded-full ${EV[s].dot}`} />
                 <span className="text-[10px] font-label text-on-surface-variant capitalize">{s}</span>
               </div>
             ))}
@@ -377,8 +386,9 @@ export function ReservasCalendar({
                 <div key={ds} className="py-2 text-center border-l border-outline-variant/10">
                   <p className="text-[10px] font-label uppercase tracking-wide text-on-surface-variant">{DIAS_SHORT[day.getDay()]}</p>
                   <button
+                    type="button"
                     onClick={() => { setCurrent(day); setView('day') }}
-                    className={`mt-0.5 w-8 h-8 rounded-full mx-auto flex items-center justify-center text-sm font-label font-bold transition-colors ${
+                    className={`mt-0.5 size-8 rounded-full mx-auto flex items-center justify-center text-sm font-label font-bold transition-colors ${
                       isTd ? 'bg-primary text-on-primary' : 'text-on-surface hover:bg-surface-container'
                     }`}
                   >
@@ -408,9 +418,13 @@ export function ReservasCalendar({
               return (
                 <div
                   key={ds}
-                  className={`relative border-l border-outline-variant/10 cursor-pointer ${isTd ? 'bg-primary/[0.025]' : 'hover:bg-surface-container/20'}`}
-                  style={{ height: HOURS.length * SLOT_H }}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Ver reservas del ${ds}`}
+                  className={`relative border-r border-outline-variant/10 cursor-pointer ${isTd ? 'bg-primary/[0.03]' : ''}`}
+                  style={{ height: (HOUR_END - HOUR_START) * SLOT_H }}
                   onClick={() => onNewReserva(ds)}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNewReserva(ds) } }}
                 >
                   {/* Hour lines */}
                   {HOURS.map(h => (
@@ -435,7 +449,7 @@ export function ReservasCalendar({
                     if (endM < 0 || startM > (HOUR_END - HOUR_START) * 60) return null
                     const top    = (Math.max(0, startM) / 60) * SLOT_H
                     const height = Math.max(((Math.min(endM, (HOUR_END - HOUR_START) * 60) - Math.max(0, startM)) / 60) * SLOT_H, 26)
-                    return <EventBlock key={r.id} r={r} style={{ top, height }} />
+                    return <EventBlock key={r.id} r={r} style={{ top, height }} onSelect={setSelected} />
                   })}
                 </div>
               )
@@ -457,7 +471,7 @@ export function ReservasCalendar({
             <div className="py-2" />
             <div className="py-3 text-center border-l border-outline-variant/10">
               <p className="text-[10px] font-label uppercase tracking-wide text-on-surface-variant">{DIAS_FULL[current.getDay()]}</p>
-              <span className={`mt-1 w-11 h-11 rounded-full mx-auto flex items-center justify-center text-xl font-headline font-bold ${
+              <span className={`mt-1 size-11 rounded-full mx-auto flex items-center justify-center text-xl font-headline font-semibold ${
                 toLocal(current) === todayStr ? 'bg-primary text-on-primary' : 'text-on-surface'
               }`}>
                 {current.getDate()}
@@ -478,9 +492,13 @@ export function ReservasCalendar({
 
             {/* Single day column */}
             <div
+              role="button"
+              tabIndex={0}
+              aria-label={`Nueva reserva el ${toLocal(current)}`}
               className="relative border-l border-outline-variant/10 cursor-pointer hover:bg-surface-container/10"
               style={{ height: HOURS.length * SLOT_H }}
               onClick={() => onNewReserva(toLocal(current))}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNewReserva(toLocal(current)) } }}
             >
               {HOURS.map(h => (
                 <div key={h} className="absolute left-0 right-0 border-t border-outline-variant/10" style={{ top: (h - HOUR_START) * SLOT_H }} />
@@ -494,13 +512,13 @@ export function ReservasCalendar({
                 if (endM < 0 || startM > (HOUR_END - HOUR_START) * 60) return null
                 const top    = (Math.max(0, startM) / 60) * SLOT_H
                 const height = Math.max(((Math.min(endM, (HOUR_END - HOUR_START) * 60) - Math.max(0, startM)) / 60) * SLOT_H, 30)
-                return <EventBlock key={r.id} r={r} style={{ top, height }} />
+                return <EventBlock key={r.id} r={r} style={{ top, height }} onSelect={setSelected} />
               })}
 
               {/* Empty state for day */}
               {(byDate.get(toLocal(current)) ?? []).length === 0 && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 pointer-events-none">
-                  <div className="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center">
+                  <div className="size-12 rounded-full bg-surface-container flex items-center justify-center">
                     <span className="material-symbols-outlined text-on-surface-variant text-2xl">event_available</span>
                   </div>
                   <p className="font-body text-sm text-on-surface-variant text-center">Sin reservas este día</p>
@@ -519,7 +537,9 @@ export function ReservasCalendar({
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
           style={{ background: 'rgba(0,0,0,0.32)', backdropFilter: 'blur(4px)' }}
+          role="presentation"
           onClick={() => setSelected(null)}
+          onKeyDown={e => { if (e.key === 'Escape') setSelected(null) }}
         >
           <div
             className="bg-surface-container-lowest rounded-2xl shadow-2xl border border-outline-variant/25 w-full max-w-sm overflow-hidden"
@@ -535,8 +555,10 @@ export function ReservasCalendar({
                   {selected.estado}
                 </span>
                 <button
+                  type="button"
                   onClick={() => setSelected(null)}
                   className="text-on-surface-variant hover:text-on-surface transition-colors ml-2"
+                  aria-label="Cerrar"
                 >
                   <span className="material-symbols-outlined text-[22px]">close</span>
                 </button>
@@ -571,6 +593,7 @@ export function ReservasCalendar({
               {selected.estado !== 'cancelada' ? (
                 <div className="flex gap-2">
                   <button
+                    type="button"
                     onClick={() => { onEditReserva(selected); setSelected(null) }}
                     className="flex-1 inline-flex items-center justify-center gap-1.5 bg-primary text-on-primary rounded-xl py-2.5 text-sm font-label font-semibold hover:brightness-110 transition-all"
                   >
@@ -578,6 +601,7 @@ export function ReservasCalendar({
                     Editar
                   </button>
                   <button
+                    type="button"
                     onClick={() => { onCancelReserva(selected.id); setSelected(null) }}
                     disabled={cancelingId === selected.id}
                     className="flex-1 inline-flex items-center justify-center gap-1.5 border border-error/40 text-error rounded-xl py-2.5 text-sm font-label font-semibold hover:bg-error/5 transition-all disabled:opacity-50"
@@ -588,6 +612,7 @@ export function ReservasCalendar({
                 </div>
               ) : (
                 <button
+                  type="button"
                   onClick={() => { onDeleteReserva(selected.id); setSelected(null) }}
                   disabled={deletingId === selected.id}
                   className="w-full inline-flex items-center justify-center gap-1.5 border border-outline-variant rounded-xl py-2.5 text-sm font-label font-semibold text-on-surface-variant hover:bg-surface-container transition-all disabled:opacity-50"

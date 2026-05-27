@@ -1,6 +1,8 @@
 'use client'
 
-// ── Types ────────────────────────────────────────────────────────────────────
+import { hasOverlap } from '@/lib/availability-utils'
+
+// ── Types ────────────────────────────────────────────────────────────────────────────
 export interface FranjaOcupada {
   hora_inicio: string  // 'HH:MM'
   hora_fin: string     // 'HH:MM'
@@ -48,7 +50,7 @@ function durLabel(inicio: string, fin: string): string {
 function calcFreeWindows(
   franjas: FranjaOcupada[],
 ): { inicio: string; fin: string }[] {
-  const sorted = [...franjas].sort((a, b) => a.hora_inicio.localeCompare(b.hora_inicio))
+  const sorted = franjas.toSorted((a, b) => a.hora_inicio.localeCompare(b.hora_inicio))
   const windows: { inicio: string; fin: string }[] = []
   let cursor = APERTURA
 
@@ -60,14 +62,6 @@ function calcFreeWindows(
 
   // Only show windows with at least 30 minutes
   return windows.filter(w => parseMin(w.fin) - parseMin(w.inicio) >= 30)
-}
-
-function hasOverlap(
-  inicio: string,
-  fin: string,
-  franjas: FranjaOcupada[],
-): boolean {
-  return franjas.some(f => inicio < f.hora_fin && fin > f.hora_inicio)
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -90,7 +84,7 @@ export function AvailabilityTimeline({
     return (
       <div className="rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-4 space-y-3 animate-pulse">
         <div className="flex items-center gap-2">
-          <div className="w-4 h-4 rounded bg-surface-container-high" />
+          <div className="size-4 rounded bg-surface-container-high" />
           <div className="h-3 w-32 rounded bg-surface-container-high" />
         </div>
         <div className="h-5 rounded-full bg-surface-container-high" />
@@ -176,16 +170,16 @@ export function AvailabilityTimeline({
         {/* Legend */}
         <div className="flex items-center gap-3 mt-1.5 flex-wrap">
           <div className="flex items-center gap-1">
-            <div className="w-2.5 h-2.5 rounded-sm bg-emerald-300/80" />
+            <div className="size-2.5 rounded-sm bg-emerald-300/80" />
             <span className="text-[9px] font-label text-on-surface-variant">Libre</span>
           </div>
           <div className="flex items-center gap-1">
-            <div className="w-2.5 h-2.5 rounded-sm bg-red-300/80" />
+            <div className="size-2.5 rounded-sm bg-red-300/80" />
             <span className="text-[9px] font-label text-on-surface-variant">Ocupado</span>
           </div>
           {selValid && (
             <div className="flex items-center gap-1">
-              <div className={`w-2.5 h-2.5 rounded-sm ${isConflict ? 'bg-red-500/50' : 'bg-primary/40'}`} />
+              <div className={`size-2.5 rounded-sm ${isConflict ? 'bg-red-500/50' : 'bg-primary/40'}`} />
               <span className={`text-[9px] font-label ${isConflict ? 'text-red-600' : 'text-primary'}`}>
                 Tu selección
               </span>
@@ -211,9 +205,9 @@ export function AvailabilityTimeline({
             Haz clic para usar un horario disponible:
           </p>
           <div className="flex flex-wrap gap-1.5">
-            {freeWindows.map((w, i) => (
+            {freeWindows.map((w) => (
               <button
-                key={i}
+                key={`${w.inicio}-${w.fin}`}
                 type="button"
                 onClick={() => onSelectWindow(w.inicio, w.fin)}
                 className="group flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-label font-semibold border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 hover:border-emerald-400 active:scale-[0.97] transition-all"
@@ -241,6 +235,3 @@ export function AvailabilityTimeline({
     </div>
   )
 }
-
-// Re-export helper so the page can use it without duplicating logic
-export { hasOverlap }

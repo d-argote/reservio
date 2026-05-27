@@ -1,8 +1,13 @@
 'use server'
 
+import { after } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getSupabaseAdmin } from '@/lib/supabase/admin'
+import { ADMIN_ROLES } from '@/features/admin/types'
 import nodemailer from 'nodemailer'
+import { enqueueEmail, flushEmailQueue } from '@/lib/email-queue'
+
+export { flushEmailQueue }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TIPOS
@@ -68,13 +73,6 @@ export interface ReportData {
     porMes: { mes: string; total: number }[]
     lista: { id: string; titulo: string; fecha: string; hora_inicio: string; hora_fin: string; estado: string; sala_nombre: string | null; usuario_nombre: string | null }[]
   }
-}
-
-// ─── helper interno ────────────────────────────────────────────────
-async function getAuthUser() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  return { user, supabase }
 }
 
 /**
@@ -153,8 +151,7 @@ async function recalcularEstadoEquipo(equipoId: string): Promise<void> {
     .select('id', { count: 'exact', head: true })
     .eq('equipo_id', equipoId)
     .eq('estado', 'activo')
-    .lte('fecha_inicio', ahora)
-    .gt('fecha_fin_esperada', ahora)
+    .gt('fecha_fin_esperada', ahora)  // incluye préstamos futuros programados
 
   const nuevoEstado = (count ?? 0) > 0 ? 'reservado' : 'disponible'
   await adminClient.from('equipos').update({ estado: nuevoEstado }).eq('id', equipoId)
@@ -169,6 +166,16 @@ async function recalcularEstadoEquipo(equipoId: string): Promise<void> {
 //   SMTP_PASS        contraseña del correo
 //   SMTP_FROM_NAME   (opcional) nombre visible, ej: ITAM Reservio
 // ═══════════════════════════════════════════════════════════════════════════════
+
+/** Escapa caracteres HTML especiales para prevenir inyección en plantillas de correo. */
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
 
 function createTransporter() {
   const host = process.env.SMTP_HOST
@@ -208,7 +215,7 @@ async function sendReservaEmail(opts: {
   })
 
   const salaRow = opts.sala
-    ? `<tr><td style="padding:12px 0;border-bottom:1px solid #f0f4f8;vertical-align:top;width:36px;"><span style="font-size:18px;">🏛️</span></td><td style="padding:12px 0 12px 14px;border-bottom:1px solid #f0f4f8;"><p style="margin:0;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#74777f;">Sala</p><p style="margin:3px 0 0;font-size:14px;font-weight:600;color:#171c1f;">${opts.sala}</p></td></tr>`
+    ? `<tr><td style="padding:12px 0;border-bottom:1px solid #f0f4f8;vertical-align:top;width:36px;"><span style="font-size:18px;">🏛️</span></td><td style="padding:12px 0 12px 14px;border-bottom:1px solid #f0f4f8;"><p style="margin:0;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#74777f;">Sala</p><p style="margin:3px 0 0;font-size:14px;font-weight:600;color:#171c1f;">${escapeHtml(opts.sala)}</p></td></tr>`
     : ''
 
   const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -221,7 +228,7 @@ async function sendReservaEmail(opts: {
   <div style="padding:32px 40px;">
     <div style="background:${cfg.bg};border-radius:12px;padding:20px 24px;margin-bottom:28px;border-left:4px solid ${cfg.accent};">
       <p style="margin:0 0 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:${cfg.accent};">Reserva</p>
-      <p style="margin:0;font-size:20px;font-weight:800;color:${cfg.accent};line-height:1.3;">${opts.titulo}</p>
+      <p style="margin:0;font-size:20px;font-weight:800;color:${cfg.accent};line-height:1.3;">${escapeHtml(opts.titulo)}</p>
     </div>
     <table style="width:100%;border-collapse:collapse;">
       <tr><td style="padding:12px 0;border-bottom:1px solid #f0f4f8;vertical-align:top;width:36px;"><span style="font-size:18px;">📅</span></td><td style="padding:12px 0 12px 14px;border-bottom:1px solid #f0f4f8;"><p style="margin:0;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#74777f;">Fecha</p><p style="margin:3px 0 0;font-size:14px;font-weight:600;color:#171c1f;text-transform:capitalize;">${dateFormatted}</p></td></tr>
@@ -238,36 +245,21 @@ async function sendReservaEmail(opts: {
   const fromName = process.env.SMTP_FROM_NAME ?? 'ITAM Reservio'
   const fromAddr = process.env.SMTP_USER ?? ''
 
+  const subject = `${cfg.label}: ${opts.titulo} \u2014 ITAM Reservio`
   try {
     const info = await transporter.sendMail({
       from: `"${fromName}" <${fromAddr}>`,
       to: opts.to,
-      subject: `${cfg.label}: ${opts.titulo} — ITAM Reservio`,
+      subject,
       html,
     })
-    console.log('[Email] Enviado OK →', info.messageId)
+    after(() => console.log('[Email] Enviado OK →', info.messageId))
   } catch (err) {
-    console.error('[Email] Error al enviar correo SMTP:', err)
+    console.error('[Email] Sin conexión SMTP, encolando para reintento:', err)
+    await enqueueEmail({ recipient: opts.to, subject, html_body: html }).catch(e =>
+      console.error('[Email] No se pudo encolar el correo:', e)
+    )
   }
-}
-
-// ── Labels de condición para emails ───────────────────────────────────────────
-const CONDICION_LABEL: Record<string, string> = {
-  nuevo:       'Nuevo',
-  excelente:   'Excelente',
-  bueno:       'Bueno',
-  regular:     'Regular',
-  dano_leve:   'Daño leve',
-  dano_grave:  'Daño grave',
-  perdido:     'Perdido / extraviado',
-}
-const NOVEDAD_LABEL: Record<string, string> = {
-  dano_fisico:         'Daño físico',
-  dano_software:       'Daño de software',
-  perdida:             'Pérdida del equipo',
-  faltante_accesorio:  'Faltante de accesorio',
-  entrega_tardia:      'Entrega tardía',
-  otro:                'Otra novedad',
 }
 
 async function sendPrestamoEmail(opts: {
@@ -288,6 +280,25 @@ async function sendPrestamoEmail(opts: {
   const fromName = process.env.SMTP_FROM_NAME ?? 'ITAM Reservio'
   const fromAddr = process.env.SMTP_USER ?? ''
 
+  // Labels used only inside this email builder
+  const CONDICION_LABEL: Record<string, string> = {
+    nuevo:       'Nuevo',
+    excelente:   'Excelente',
+    bueno:       'Bueno',
+    regular:     'Regular',
+    dano_leve:   'Daño leve',
+    dano_grave:  'Daño grave',
+    perdido:     'Perdido / extraviado',
+  }
+  const NOVEDAD_LABEL: Record<string, string> = {
+    dano_fisico:         'Daño físico',
+    dano_software:       'Daño de software',
+    perdida:             'Pérdida del equipo',
+    faltante_accesorio:  'Faltante de accesorio',
+    entrega_tardia:      'Entrega tardía',
+    otro:                'Otra novedad',
+  }
+
   const cfg = {
     confirmado:       { accent: '#002045', bg: '#d6e3ff', label: '✅ Préstamo Confirmado',       subject: 'Préstamo confirmado' },
     devuelto:         { accent: '#1a6b3c', bg: '#d6f5e3', label: '📦 Devolución Registrada',     subject: 'Devolución registrada' },
@@ -307,7 +318,7 @@ async function sendPrestamoEmail(opts: {
     ? `<tr><td style="padding:10px 0;border-bottom:1px solid #f0f4f8;vertical-align:top;width:36px;"><span style="font-size:16px;">📅</span></td><td style="padding:10px 0 10px 14px;border-bottom:1px solid #f0f4f8;"><p style="margin:0;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#74777f;">Devolución esperada</p><p style="margin:3px 0 0;font-size:14px;font-weight:600;color:#171c1f;">${new Date(opts.fechaFin + '-05:00').toLocaleString('es-ES', { dateStyle: 'long', timeStyle: 'short', timeZone: 'America/Bogota' })}</p></td></tr>`
     : ''
   const salaRow = opts.salaNombre
-    ? `<tr><td style="padding:10px 0;border-bottom:1px solid #f0f4f8;vertical-align:top;width:36px;"><span style="font-size:16px;">🏛️</span></td><td style="padding:10px 0 10px 14px;border-bottom:1px solid #f0f4f8;"><p style="margin:0;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#74777f;">Sala de uso</p><p style="margin:3px 0 0;font-size:14px;font-weight:600;color:#171c1f;">${opts.salaNombre}</p></td></tr>`
+    ? `<tr><td style="padding:10px 0;border-bottom:1px solid #f0f4f8;vertical-align:top;width:36px;"><span style="font-size:16px;">🏛️</span></td><td style="padding:10px 0 10px 14px;border-bottom:1px solid #f0f4f8;"><p style="margin:0;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#74777f;">Sala de uso</p><p style="margin:3px 0 0;font-size:14px;font-weight:600;color:#171c1f;">${escapeHtml(opts.salaNombre)}</p></td></tr>`
     : ''
 
   const footerMsg = opts.action === 'devuelto_novedad'
@@ -324,11 +335,11 @@ async function sendPrestamoEmail(opts: {
     <h1 style="margin:10px 0 0;font-size:22px;font-weight:800;color:#ffffff;line-height:1.3;">${cfg.label}</h1>
   </div>
   <div style="padding:32px 40px;">
-    <p style="margin:0 0 20px;font-size:15px;color:#3b4752;">Hola <strong>${opts.userName}</strong>,</p>
+    <p style="margin:0 0 20px;font-size:15px;color:#3b4752;">Hola <strong>${escapeHtml(opts.userName)}</strong>,</p>
     <div style="background:${cfg.bg};border-radius:12px;padding:20px 24px;margin-bottom:24px;border-left:4px solid ${cfg.accent};">
       <p style="margin:0 0 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:${cfg.accent};">Equipo</p>
-      <p style="margin:0;font-size:20px;font-weight:800;color:${cfg.accent};line-height:1.3;">${opts.equipoNombre}</p>
-      ${opts.numActa ? `<p style="margin:6px 0 0;font-size:11px;color:#74777f;letter-spacing:0.5px;">Acta: <strong>${opts.numActa}</strong></p>` : ''}
+      <p style="margin:0;font-size:20px;font-weight:800;color:${cfg.accent};line-height:1.3;">${escapeHtml(opts.equipoNombre)}</p>
+      ${opts.numActa ? `<p style="margin:6px 0 0;font-size:11px;color:#74777f;letter-spacing:0.5px;">Acta: <strong>${escapeHtml(opts.numActa)}</strong></p>` : ''}
     </div>
     <table style="width:100%;border-collapse:collapse;">
       ${condRow}${devCondRow}${novedadRow}${fechaRow}${salaRow}
@@ -369,6 +380,14 @@ async function sendNovedadEmailAdmin(opts: {
   const fromName = process.env.SMTP_FROM_NAME ?? 'ITAM Reservio'
   const fromAddr = process.env.SMTP_USER ?? ''
 
+  const CONDICION_LABEL: Record<string, string> = {
+    excelente: 'Excelente', bueno: 'Bueno', regular: 'Regular', dañado: 'Dañado',
+  }
+  const NOVEDAD_LABEL: Record<string, string> = {
+    danio_fisico: 'Daño físico', falta_accesorio: 'Falta accesorio',
+    mal_funcionamiento: 'Mal funcionamiento', otro: 'Otro',
+  }
+
   const fotoHtml = opts.fotoUrl
     ? `<p style="margin:16px 0 0;"><a href="${opts.fotoUrl}" style="display:inline-block;padding:10px 20px;background:#ba1a1a;color:#fff;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none;">📷 Ver foto de devolución</a></p>`
     : ''
@@ -382,14 +401,14 @@ async function sendNovedadEmailAdmin(opts: {
   </div>
   <div style="padding:28px 40px;">
     <div style="background:#ffdad6;border-radius:10px;padding:16px 20px;margin-bottom:20px;border-left:4px solid #ba1a1a;">
-      <p style="margin:0 0 2px;font-size:10px;font-weight:700;letter-spacing:2px;color:#ba1a1a;">EQUIPO · ACTA ${opts.numActa}</p>
-      <p style="margin:0;font-size:18px;font-weight:800;color:#ba1a1a;">${opts.equipoNombre}</p>
+      <p style="margin:0 0 2px;font-size:10px;font-weight:700;letter-spacing:2px;color:#ba1a1a;">EQUIPO · ACTA ${escapeHtml(opts.numActa)}</p>
+      <p style="margin:0;font-size:18px;font-weight:800;color:#ba1a1a;">${escapeHtml(opts.equipoNombre)}</p>
     </div>
     <table style="width:100%;border-collapse:collapse;">
-      <tr><td style="padding:10px 0;border-bottom:1px solid #fde;width:36px;"><span style="font-size:16px;">👤</span></td><td style="padding:10px 0 10px 14px;border-bottom:1px solid #fde;"><p style="margin:0;font-size:10px;font-weight:700;letter-spacing:1.5px;color:#74777f;">Usuario</p><p style="margin:2px 0 0;font-size:14px;font-weight:600;color:#171c1f;">${opts.userName} · <a href="mailto:${opts.userEmail}" style="color:#ba1a1a;">${opts.userEmail}</a></p></td></tr>
+      <tr><td style="padding:10px 0;border-bottom:1px solid #fde;width:36px;"><span style="font-size:16px;">👤</span></td><td style="padding:10px 0 10px 14px;border-bottom:1px solid #fde;"><p style="margin:0;font-size:10px;font-weight:700;letter-spacing:1.5px;color:#74777f;">Usuario</p><p style="margin:2px 0 0;font-size:14px;font-weight:600;color:#171c1f;">${escapeHtml(opts.userName)} · <a href="mailto:${escapeHtml(opts.userEmail)}" style="color:#ba1a1a;">${escapeHtml(opts.userEmail)}</a></p></td></tr>
       <tr><td style="padding:10px 0;border-bottom:1px solid #fde;width:36px;"><span style="font-size:16px;">📋</span></td><td style="padding:10px 0 10px 14px;border-bottom:1px solid #fde;"><p style="margin:0;font-size:10px;font-weight:700;letter-spacing:1.5px;color:#74777f;">Condición al devolver</p><p style="margin:2px 0 0;font-size:14px;font-weight:600;color:#171c1f;">${CONDICION_LABEL[opts.condicionDevolucion] ?? opts.condicionDevolucion}</p></td></tr>
       <tr><td style="padding:10px 0;border-bottom:1px solid #fde;width:36px;"><span style="font-size:16px;">⚠️</span></td><td style="padding:10px 0 10px 14px;border-bottom:1px solid #fde;"><p style="margin:0;font-size:10px;font-weight:700;letter-spacing:1.5px;color:#74777f;">Tipo de novedad</p><p style="margin:2px 0 0;font-size:14px;font-weight:600;color:#ba1a1a;">${NOVEDAD_LABEL[opts.tipoNovedad] ?? opts.tipoNovedad}</p></td></tr>
-      ${opts.descripcion ? `<tr><td style="padding:10px 0;width:36px;"><span style="font-size:16px;">📝</span></td><td style="padding:10px 0 10px 14px;"><p style="margin:0;font-size:10px;font-weight:700;letter-spacing:1.5px;color:#74777f;">Descripción</p><p style="margin:2px 0 0;font-size:14px;color:#171c1f;">${opts.descripcion}</p></td></tr>` : ''}
+      ${opts.descripcion ? `<tr><td style="padding:10px 0;width:36px;"><span style="font-size:16px;">📝</span></td><td style="padding:10px 0 10px 14px;"><p style="margin:0;font-size:10px;font-weight:700;letter-spacing:1.5px;color:#74777f;">Descripción</p><p style="margin:2px 0 0;font-size:14px;color:#171c1f;">${escapeHtml(opts.descripcion)}</p></td></tr>` : ''}
     </table>
     ${fotoHtml}
   </div>
@@ -417,8 +436,9 @@ async function sendNovedadEmailAdmin(opts: {
 export async function createReserva(
   data: ReservaInput,
   equiposIds: string[] = [],
-): Promise<{ data?: { id: string }; error?: string; prestamosError?: string }> {
-  const { user, supabase } = await getAuthUser()
+): Promise<{ data?: { id: string }; error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
 
   const adminClient = getSupabaseAdmin()
@@ -528,22 +548,26 @@ export async function createReserva(
       estado:             'activo',
     }))
 
-    const [pivotRes, prestamosRes] = await Promise.all([
-      writeClient.from('reserva_equipos').insert(pivotRows),
-      writeClient.from('prestamos_equipo').insert(prestamoRows),
-    ])
-
+    // ── Paso 1: Pivot (secuencial — rollback si falla) ─────────────────────────
+    // Si el pivot falla, borramos la reserva recién creada (ON DELETE CASCADE
+    // limpia automáticamente reserva_equipos y prestamos_equipo).
+    const pivotRes = await writeClient.from('reserva_equipos').insert(pivotRows)
     if (pivotRes.error) {
+      await (adminClient ?? supabase).from('reservas').delete().eq('id', reserva.id).catch(console.error)
       console.error('[createReserva] Error inserting reserva_equipos:', pivotRes.error)
-      return { data: { id: reserva.id }, prestamosError: pivotRes.error.message }
+      return { error: 'Error al asignar equipos a la reserva. Por favor intenta de nuevo.' }
     }
+
+    // ── Paso 2: Préstamos (rollback completo si el trigger 23P01 se dispara) ─────
+    const prestamosRes = await writeClient.from('prestamos_equipo').insert(prestamoRows)
     if (prestamosRes.error) {
+      // Rollback: CASCADE elimina pivot + cualquier préstamo parcialmente insertado
+      await (adminClient ?? supabase).from('reservas').delete().eq('id', reserva.id).catch(console.error)
       console.error('[createReserva] Error inserting prestamos_equipo:', prestamosRes.error)
-      // 23P01 = exclusion_violation — equipment already booked at this time by another user
       if (prestamosRes.error.code === '23P01') {
-        return { data: { id: reserva.id }, prestamosError: 'Uno de los equipos ya fue reservado por otro usuario en ese horario. Elige equipos diferentes.' }
+        return { error: 'Uno de los equipos ya fue reservado por otro usuario en ese horario. Elige equipos diferentes.' }
       }
-      return { data: { id: reserva.id }, prestamosError: prestamosRes.error.message }
+      return { error: prestamosRes.error.message }
     }
 
     // Marcar equipos 'reservado' si la reserva está activa AHORA (fire-and-forget)
@@ -553,12 +577,13 @@ export async function createReserva(
     }
   }
 
-  // ── 4. Email (awaited — confiable) + recalcular sala (fire-and-forget) ───
-  // recalcularEstadoSala es estado de fondo; el email es crítico para el usuario.
+  // ── 4. Recalcular sala + Email — ambos fire-and-forget ─────────────────────
+  // El usuario recibe la confirmación INMEDIATAMENTE; el email y el recálculo
+  // de estado ocurren en paralelo en segundo plano sin bloquear la respuesta.
   recalcularEstadoSala(data.sala_id).catch(console.error)
 
   if (user.email) {
-    await sendReservaEmail({
+    sendReservaEmail({
       to: user.email,
       action: 'confirmada',
       titulo: data.titulo.trim(),
@@ -566,7 +591,7 @@ export async function createReserva(
       horaInicio: data.hora_inicio,
       horaFin: data.hora_fin,
       sala: salaInfoResult.data?.nombre,
-    })
+    }).catch(err => console.error('[createReserva] Email error (non-blocking):', err))
   }
 
   return { data: { id: reserva.id } }
@@ -580,7 +605,8 @@ export async function updateReserva(
   id: string,
   data: Partial<ReservaInput>,
 ): Promise<{ success?: boolean; error?: string }> {
-  const { user, supabase } = await getAuthUser()
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
 
   const { data: existing } = await supabase
@@ -628,27 +654,32 @@ export async function updateReserva(
 
   if (error) return { error: error.message }
 
-  // Email notification (best-effort)
+  // Email fire-and-forget — no bloquea la respuesta al cliente
   if (user.email) {
     const finalSalaId    = data.sala_id    ?? existing.sala_id
     const finalTitulo    = data.titulo     ?? existing.titulo
     const finalFecha     = data.fecha      ?? existing.fecha
     const finalInicio    = data.hora_inicio ?? existing.hora_inicio
     const finalFin       = data.hora_fin   ?? existing.hora_fin
-    const { data: salaInfo } = await supabase
-      .from('salas')
-      .select('nombre')
-      .eq('id', finalSalaId)
-      .single()
-    await sendReservaEmail({
-      to: user.email,
-      action: 'actualizada',
-      titulo: finalTitulo ?? 'Reserva',
-      fecha: finalFecha,
-      horaInicio: finalInicio,
-      horaFin: finalFin,
-      sala: salaInfo?.nombre,
-    })
+    // Wrapping en Promise.resolve() porque el builder de Supabase devuelve
+    // PromiseLike<T> que no expone .catch() directamente (solo .then()).
+    void Promise.resolve(
+      supabase
+        .from('salas')
+        .select('nombre')
+        .eq('id', finalSalaId)
+        .single()
+    ).then(({ data: salaInfo }) =>
+      sendReservaEmail({
+        to: user.email!,
+        action: 'actualizada',
+        titulo: finalTitulo ?? 'Reserva',
+        fecha: finalFecha,
+        horaInicio: finalInicio,
+        horaFin: finalFin,
+        sala: salaInfo?.nombre,
+      })
+    ).catch(err => console.error('[updateReserva] Email/sala error (non-blocking):', err))
   }
 
   return { success: true }
@@ -659,7 +690,8 @@ export async function updateReserva(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export async function cancelarReserva(id: string): Promise<{ success?: boolean; error?: string }> {
-  const { user, supabase } = await getAuthUser()
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
 
   // Fetch reserva details for notification (before cancelling)
@@ -690,27 +722,26 @@ export async function cancelarReserva(id: string): Promise<{ success?: boolean; 
     const writeClient = adminClient ?? supabase
     const equipoIds = (pivotRows as { equipo_id: string }[]).map(r => r.equipo_id)
 
-    // Cerrar prestamos activos vinculados a esta reserva
+    // Cerrar todos los préstamos no finalizados vinculados a esta reserva
+    // (incluye pendiente_revision y vencido, no solo activo)
     await writeClient
       .from('prestamos_equipo')
       .update({ estado: 'devuelto', fecha_devolucion: new Date().toISOString() })
       .eq('reserva_id', id)
-      .eq('estado', 'activo')
+      .in('estado', ['activo', 'pendiente_revision', 'vencido'])
 
-    // Recalcular estado de cada equipo individualmente
-    for (const equipoId of equipoIds) {
-      await recalcularEstadoEquipo(equipoId)
-    }
+    // Recalcular estado de equipos en paralelo (batch, no N+1)
+    await Promise.all(equipoIds.map(equipoId => recalcularEstadoEquipo(equipoId)))
   }
 
-  // Email notification (best-effort)
+  // Email fire-and-forget — no bloquea el response al cliente
   if (user.email && details) {
     const d = details as unknown as {
       titulo: string; fecha: string; hora_inicio: string; hora_fin: string
       salas: { nombre: string } | { nombre: string }[] | null
     }
     const salaNombre = Array.isArray(d.salas) ? d.salas[0]?.nombre : d.salas?.nombre
-    await sendReservaEmail({
+    sendReservaEmail({
       to: user.email,
       action: 'cancelada',
       titulo: d.titulo,
@@ -718,16 +749,16 @@ export async function cancelarReserva(id: string): Promise<{ success?: boolean; 
       horaInicio: d.hora_inicio,
       horaFin: d.hora_fin,
       sala: salaNombre,
-    })
+    }).catch(err => console.error('[cancelarReserva] Email error (non-blocking):', err))
   }
 
-  // Actualizar estado de la sala (re-evaluar si sigue ocupada)
+  // Recalcular estado de la sala fire-and-forget
   const reservaDetails = details as unknown as { sala_id?: string; salas?: { id?: string } | null } | null
   const salaId = reservaDetails?.sala_id
     ?? (Array.isArray(reservaDetails?.salas)
       ? (reservaDetails?.salas as { id?: string }[])[0]?.id
       : (reservaDetails?.salas as { id?: string } | null)?.id)
-  if (salaId) await recalcularEstadoSala(salaId)
+  if (salaId) recalcularEstadoSala(salaId).catch(console.error)
 
   return { success: true }
 }
@@ -739,7 +770,8 @@ export async function cancelarReserva(id: string): Promise<{ success?: boolean; 
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export async function deleteReserva(id: string): Promise<{ success?: boolean; error?: string }> {
-  const { user, supabase } = await getAuthUser()
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
 
   // Obtener sala_id y equipos ANTES de eliminar la reserva
@@ -759,16 +791,14 @@ export async function deleteReserva(id: string): Promise<{ success?: boolean; er
 
   if (error) return { error: error.message }
 
-  // Recalcular estado de cada equipo que estaba vinculado
+  // Recalcular estado de equipos en paralelo (batch, no N+1)
   if (pivotRows && pivotRows.length > 0) {
     const equipoIds = (pivotRows as { equipo_id: string }[]).map(r => r.equipo_id)
-    for (const equipoId of equipoIds) {
-      await recalcularEstadoEquipo(equipoId)
-    }
+    await Promise.all(equipoIds.map(equipoId => recalcularEstadoEquipo(equipoId)))
   }
 
-  // Recalcular estado de la sala ahora que la reserva fue eliminada
-  if (salaId) await recalcularEstadoSala(salaId)
+  // Recalcular estado de la sala fire-and-forget
+  if (salaId) recalcularEstadoSala(salaId).catch(console.error)
 
   return { success: true }
 }
@@ -778,7 +808,8 @@ export async function deleteReserva(id: string): Promise<{ success?: boolean; er
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export async function getReportData(): Promise<{ data?: ReportData; error?: string }> {
-  const { user, supabase } = await getAuthUser()
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
 
   const { data: userRecord } = await supabase
@@ -787,7 +818,7 @@ export async function getReportData(): Promise<{ data?: ReportData; error?: stri
     .eq('id', user.id)
     .single()
 
-  if (!userRecord || !['admin', 'administrador', 'administrator'].includes(userRecord.rol)) {
+  if (!userRecord || !ADMIN_ROLES.includes(userRecord.rol as typeof ADMIN_ROLES[number])) {
     return { error: 'FORBIDDEN' }
   }
 
@@ -933,7 +964,8 @@ export interface ReservaHistorial {
  * (incluyendo pasadas y canceladas), ordenadas de más reciente a más antigua.
  */
 export async function getMisReservasHistorial(): Promise<{ data?: ReservaHistorial[]; error?: string }> {
-  const { user, supabase } = await getAuthUser()
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
 
   const { data, error } = await supabase
@@ -1012,7 +1044,8 @@ export async function createPrestamoEquipo(
   notas: string | null,
   condicionEntrega: CondicionEquipo = 'bueno',
 ): Promise<{ data?: { id: string; num_acta?: string }; error?: string }> {
-  const { user, supabase } = await getAuthUser()
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
 
   if (!reservaId) return { error: 'Debes vincular el préstamo a una reserva activa.' }
@@ -1021,6 +1054,20 @@ export async function createPrestamoEquipo(
   const fechaFinDate = new Date(fechaFinEsperada + '-05:00')
   if (isNaN(fechaFinDate.getTime()) || fechaFinDate <= new Date()) {
     return { error: 'La fecha y hora de devolución debe ser posterior al momento actual.' }
+  }
+
+  // Límite de 3 préstamos activos simultáneos por usuario (no aplica a administradores)
+  const { data: perfil } = await supabase
+    .from('usuarios').select('rol').eq('id', user.id).single()
+  if (!ADMIN_ROLES.includes(perfil?.rol as typeof ADMIN_ROLES[number])) {
+    const { count: activosCuenta } = await supabase
+      .from('prestamos_equipo')
+      .select('id', { count: 'exact', head: true })
+      .eq('usuario_id', user.id)
+      .in('estado', ['activo', 'pendiente_revision'])
+    if ((activosCuenta ?? 0) >= 3) {
+      return { error: 'Has alcanzado el límite de 3 préstamos activos simultáneos. Devuelve un equipo antes de solicitar otro.' }
+    }
   }
 
   // Verificar que la reserva pertenece al usuario
@@ -1142,7 +1189,8 @@ export async function createPrestamoEquipo(
 }
 
 export async function getMisPrestamos(): Promise<{ data?: PrestamoEquipo[]; error?: string }> {
-  const { user, supabase } = await getAuthUser()
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { data: [] }
 
   const { data, error } = await supabase
@@ -1175,7 +1223,8 @@ export async function getEquiposRetornos(): Promise<{
   data?: { equipo_id: string; fecha_fin_esperada: string }[]
   error?: string
 }> {
-  const { user, supabase } = await getAuthUser()
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { data: [] }
 
   const ahora = new Date().toISOString()
@@ -1214,7 +1263,8 @@ export async function devolverEquipo(
   tipoNovedad?: TipoNovedad | null,
   descripcionNovedad?: string | null,
 ): Promise<{ success?: boolean; equipoId?: string; numActa?: string; error?: string }> {
-  const { user, supabase } = await getAuthUser()
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
 
   const { data: prestamo, error: selectError } = await supabase
@@ -1301,7 +1351,8 @@ export async function updatePrestamoReserva(
   prestamoId: string,
   reservaId: string,
 ): Promise<{ success?: boolean; error?: string }> {
-  const { user, supabase } = await getAuthUser()
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
 
   // Verificar que la reserva pertenece al usuario
@@ -1353,7 +1404,7 @@ function calcularDisponibilidadSala(
   }
 
   // Verificar si toda la jornada operativa está cubierta
-  const sorted = [...reservas].sort((a, b) => a.hora_inicio.localeCompare(b.hora_inicio))
+  const sorted = reservas.toSorted((a, b) => a.hora_inicio.localeCompare(b.hora_inicio))
 
   let covered = HORA_APERTURA
   for (const r of sorted) {
@@ -1384,6 +1435,8 @@ function calcularDisponibilidadSala(
 export async function getSalasConDisponibilidadFecha(
   fecha: string,  // 'YYYY-MM-DD'
 ): Promise<{ data?: SalaDisponibilidad[]; error?: string }> {
+  const _sc2 = await createClient(); const { data: { user: _u3 } } = await _sc2.auth.getUser()
+  if (!_u3) return { error: 'No autenticado' }
   // Use admin client so RLS does not hide reservations made by other users.
   // Availability data is read-only and must reflect all reservations.
   const admin = getSupabaseAdmin()
@@ -1452,6 +1505,8 @@ export async function getDisponibilidadSala(
   fecha: string,
   excludeReservaId?: string,
 ): Promise<{ franjas?: FranjaOcupada[]; error?: string }> {
+  const _sc3 = await createClient(); const { data: { user: _u4 } } = await _sc3.auth.getUser()
+  if (!_u4) return { error: 'No autenticado' }
   // Use admin client so RLS does not hide reservations made by other users.
   // The timeline must show ALL booked slots regardless of who made them.
   const admin = getSupabaseAdmin()
@@ -1489,6 +1544,8 @@ export async function getDisponibilidadSala(
  * Acción pensada para admins o para llamar al cargar el tab de equipos.
  */
 export async function recalcularEstadosEquiposDB(): Promise<{ updated: number; error?: string }> {
+  const _sc4 = await createClient(); const { data: { user: _u5 } } = await _sc4.auth.getUser()
+  if (!_u5) return { updated: 0, error: 'No autenticado' }
   const adminClient = getSupabaseAdmin()
   if (!adminClient) return { updated: 0, error: 'Admin client no disponible' }
 
@@ -1499,8 +1556,7 @@ export async function recalcularEstadosEquiposDB(): Promise<{ updated: number; e
     .from('prestamos_equipo')
     .select('equipo_id')
     .eq('estado', 'activo')
-    .lte('fecha_inicio', ahora)
-    .gt('fecha_fin_esperada', ahora)
+    .gt('fecha_fin_esperada', ahora)  // incluye préstamos futuros programados
 
   const enUsoIds = new Set((enUso ?? []).map(p => p.equipo_id))
 
@@ -1512,8 +1568,12 @@ export async function recalcularEstadosEquiposDB(): Promise<{ updated: number; e
 
   if (!todos) return { updated: 0 }
 
-  const aReservar   = todos.filter(e => enUsoIds.has(e.id)  && e.estado !== 'reservado').map(e => e.id)
-  const aLiberar    = todos.filter(e => !enUsoIds.has(e.id) && e.estado !== 'disponible').map(e => e.id)
+  const aReservar: string[] = []
+  const aLiberar: string[] = []
+  for (const e of todos) {
+    if (enUsoIds.has(e.id)  && e.estado !== 'reservado')   aReservar.push(e.id)
+    if (!enUsoIds.has(e.id) && e.estado !== 'disponible')  aLiberar.push(e.id)
+  }
 
   let updated = 0
   if (aReservar.length > 0) {

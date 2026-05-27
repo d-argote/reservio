@@ -1,0 +1,119 @@
+[1mreact-doctor[22m [2mv0.2.3[22m
+
+[32mÔ£ö[39m Select projects to scan [2mÔÇ║[22m reservio
+[2mScanning C:\Users\Diego Argote\Desktop\reservio...[22m
+
+Ô£ö Detecting framework. Found Next.js.
+Ô£ö Detecting React version. Found React 19.2.4.
+Ô£ö Detecting Tailwind. Found Tailwind ^4.
+Ô£ö Detecting language. Found TypeScript.
+Ô£ö Detecting React Compiler. Not found.
+Ô£ö Found 33 source files.
+
+Ô£ö Running lint checks.
+Ô£ö Analyzing dead code.
+
+[1mState & Effects[22m [2m11 issues[22m
+  [31mÔ£ù[39m Effect needs cleanup [90m├ù4[39m
+[90m    useEffect subscribes via `on(...)` but never returns a cleanup ÔÇö leaks the
+    registration on every re-run and on unmount. Return a cleanup function that calls
+    the matching remove/unsubscribe call[39m
+[90m    Return a cleanup function that releases the subscription / timer: `return () =>
+    target.removeEventListener(name, handler)` for listeners, `return () =>
+    clearInterval(id)` / `clearTimeout(id)` for timers, or `return unsubscribe` if the
+    subscribe call already returned one[39m
+[90m    components/ui/charts/D3AreaChart.tsx:38[39m
+  [33mÔÜá[39m UseReducer [90m├ù4[39m
+[90m    Component "LoginPage" has 6 useState calls ÔÇö consider useReducer for related state[39m
+[90m    Group related state: `const [state, dispatch] = useReducer(reducer, { field1,
+    field2, ... })`[39m
+[90m    app/login/page.tsx:14[39m
+  [33mÔÜá[39m Initialize state [90m├ù2[39m
+[90m    Avoid initializing state in an effect. Instead, initialize "renderedWidth"'s
+    `useState()` with "el". For SSR hydration, prefer `useSyncExternalStore()`.[39m
+[90m    Pass the initial value directly to useState() instead of setting it from a
+    mount-only useEffect. For SSR hydration, prefer useSyncExternalStore().[39m
+[90m    components/ui/charts/D3HorizontalBars.tsx:47[39m
+
+[1mServer[22m [2m9 issues[22m
+  [31mÔ£ù[39m Server auth actions [90m├ù5[39m
+[90m    Server action "signUpUser" ÔÇö add auth check (auth(), getSession(), etc.) at the top[39m
+[90m    Add `const session = await auth()` at the top and throw/redirect if unauthorized
+    before any data access[39m
+[90m    features/auth/actions.ts:7[39m
+  [33mÔÜá[39m Server after nonblocking [90m├ù4[39m
+[90m    console.warn() in server action ÔÇö wrap in `after(() => console.warn(...))` so it
+    doesn't delay the user-visible response[39m
+[90m    `import { after } from 'next/server'` then wrap: `after(() =>
+    analytics.track(...))` ÔÇö response isn't blocked[39m
+[90m    features/auth/actions.ts:56[39m
+
+[1mAccessibility[22m [2m120 issues[22m
+  [33mÔÜá[39m Control has associated label [90m├ù56[39m
+[90m    A control must be associated with a text label ÔÇö add visible text, `aria-label`, or
+    `aria-labelledby`.[39m
+[90m    Every interactive control must have an accessible label.[39m
+[90m    app/login/page.tsx:248[39m
+  [33mÔÜá[39m Label has associated control [90m├ù43[39m
+[90m    A form label must be associated with a control ÔÇö use `htmlFor` or nest the input.[39m
+[90m    Associate every label with a control via `htmlFor` or by nesting the input.[39m
+[90m    app/main-menu/page.tsx:3069[39m
+  [33mÔÜá[39m Click events have key events [90m├ù9[39m
+[90m    Visible non-interactive elements with click handlers must have a corresponding
+    keyboard listener (`onKeyUp`, `onKeyDown`, or `onKeyPress`).[39m
+[90m    Pair `onClick` with `onKeyUp` / `onKeyDown` / `onKeyPress` for keyboard users.[39m
+[90m    components/ui/AnimatedModal.tsx:68[39m
+
+[1mArchitecture[22m [2m56 issues[22m
+  [33mÔÜá[39m JSX max depth [90m├ù40[39m
+[90m    JSX nesting depth 15 exceeds maximum 14.[39m
+[90m    Extract deeply nested JSX into smaller components to keep render trees readable.[39m
+[90m    app/main-menu/page.tsx:3175[39m
+  [33mÔÜá[39m Design no redundant size axes [90m├ù8[39m
+[90m    w-4 h-4 ÔåÆ use the shorthand size-4 (Tailwind v3.4+)[39m
+[90m    Collapse `w-N h-N` to `size-N` (Tailwind v3.4+) when both axes match[39m
+[90m    app/login/page.tsx:320[39m
+  [33mÔÜá[39m Giant component [90m├ù4[39m
+[90m    Component "LoginPage" is 340 lines ÔÇö consider breaking it into smaller focused
+    components[39m
+[90m    Extract logical sections into focused components: `<UserHeader />`, `<UserActions
+    />`, etc.[39m
+[90m    app/login/page.tsx:14[39m
+
+[1mCorrectness[22m [2m24 issues[22m
+  [33mÔÜá[39m Exhaustive deps [90m├ù17[39m
+[90m    The `formatLabel` value makes the dependencies of `useEffect` change on every
+    render. Move it inside the hook callback or wrap it in its own memoization hook.[39m
+[90m    List every value the hook callback captures in its dependency array.[39m
+[90m    components/ui/charts/D3AreaChart.tsx:238[39m
+  [33mÔÜá[39m Array index as key [90m├ù4[39m
+[90m    Array index "index" used as key ÔÇö causes bugs when list is reordered or filtered[39m
+[90m    Use a stable unique identifier: `key={item.id}` or `key={item.slug}` ÔÇö index keys
+    break on reorder/filter[39m
+[90m    app/register/page.tsx:252[39m
+  [33mÔÜá[39m Rendering hydration mismatch time [90m├ù2[39m
+[90m    new Date() reachable from JSX renders differently on server vs client ÔÇö wrap in
+    useEffect+useState (client-only) or add suppressHydrationWarning to the parent if
+    intentional[39m
+[90m    Wrap dynamic time/random values in useEffect+useState (client-only) or add
+    suppressHydrationWarning to the parent if intentional[39m
+[90m    app/main-menu/page.tsx:4032[39m
+
+  [33mÔÜá[39m [2m75 more warnings[22m
+[90m    Run `npx react-doctor@latest . --verbose` to get all details[39m
+
+  [32mÔöîÔöÇÔöÇÔöÇÔöÇÔöÇÔöÉ[39m  [32m78[39m [2m/ 100[22m [32mGreat[39m
+  [32mÔöé Ôùá Ôùá Ôöé[39m  [32mÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûêÔûê[39m[2mÔûæÔûæÔûæÔûæÔûæÔûæÔûæÔûæÔûæÔûæÔûæ[22m
+  [32mÔöé  Ôû¢  Ôöé[39m  React Doctor [2m(www.react.doctor)[22m
+  [32mÔööÔöÇÔöÇÔöÇÔöÇÔöÇÔöÿ[39m
+
+  [31m277 issues[39m [2macross 29/33 files  in 6.3s[22m
+[90m  Full diagnostics written to C:\Users\DIEGOA~1\AppData\Local\Temp\react-doctor-c171fe97-bc65-4a59-84d9-5a5d8266595a[39m
+
+  [1mÔåÆ Share your results:[22m [36mhttps://www.react.doctor/share?p=reservio&s=78&e=9&w=268&f=29[39m
+
+  [1mÔåÆ Catch these issues on every PR:[22m [36mhttps://react.review[39m
+  [2mReact Review is a GitHub App built on React Doctor, and it runs on each pull request,[22m
+  [2mposts new issues as inline review comments, and tracks your team's score over time.[22m
+
+

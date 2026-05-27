@@ -1,16 +1,18 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { loginUser } from '@/features/auth/actions'
 import { animate, spring, stagger } from 'animejs'
+import { useRef } from 'react'
 
 const SimpleParallax = dynamic(() => import('simple-parallax-js'), { ssr: false })
 
 export default function LoginPage() {
-  const router = useRouter()
+  const { push } = useRouter()
   const [correo, setCorreo] = useState('')
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -26,6 +28,13 @@ export default function LoginPage() {
   const logoCardRef = useRef<HTMLDivElement>(null)
   const submitRef   = useRef<HTMLButtonElement>(null)
 
+  // Redirect to dashboard after successful login
+  useEffect(() => {
+    if (!isSuccess) return
+    const timer = setTimeout(() => push('/main-menu'), 2000)
+    return () => clearTimeout(timer)
+  }, [isSuccess, push])
+
   // ── Entrance animation on mount ──────────────────────────────────
   useEffect(() => {
     // Set initial invisible state in JS (not JSX) so elements are
@@ -36,11 +45,11 @@ export default function LoginPage() {
     const card      = cardRef.current
     const fields    = mainRef.current ? Array.from(mainRef.current.querySelectorAll<HTMLElement>('[data-field]')) : []
 
-    if (aside)    { aside.style.opacity = '0' }
-    if (logoCard) { logoCard.style.opacity = '0'; logoCard.style.transform = 'scale(0.9)' }
-    if (tagline)  { tagline.style.opacity = '0'; tagline.style.transform = 'translateY(20px)' }
-    if (card)     { card.style.opacity = '0'; card.style.transform = 'translateY(24px)' }
-    fields.forEach(f => { f.style.opacity = '0'; f.style.transform = 'translateY(10px)' })
+    if (aside)    Object.assign(aside.style, { opacity: '0' })
+    if (logoCard) Object.assign(logoCard.style, { opacity: '0', transform: 'scale(0.9)' })
+    if (tagline)  Object.assign(tagline.style, { opacity: '0', transform: 'translateY(20px)' })
+    if (card)     Object.assign(card.style, { opacity: '0', transform: 'translateY(24px)' })
+    fields.forEach(f => Object.assign(f.style, { opacity: '0', transform: 'translateY(10px)' }))
 
     // Fire animations
     if (aside) animate(aside, { opacity: [0, 1], duration: 500, ease: 'out(2)', delay: 0 })
@@ -115,9 +124,6 @@ export default function LoginPage() {
     }
 
     setIsSuccess(true)
-    setTimeout(() => {
-      router.push('/main-menu')
-    }, 2000)
   }
 
   return (
@@ -130,11 +136,13 @@ export default function LoginPage() {
       <aside ref={asideRef} className="hidden lg:flex lg:w-1/2 flex-col h-screen sticky top-0 relative bg-[#001529] overflow-hidden">
 
         {/* ── Background image ── */}
-        <img
+        <Image
           src="/fondo1.avif"
           alt=""
           aria-hidden="true"
-          className="absolute inset-0 w-full h-full object-cover"
+          fill
+          className="object-cover"
+          priority
         />
 
         {/* ── Layered overlays ── */}
@@ -149,9 +157,11 @@ export default function LoginPage() {
           <div className="flex-1 flex items-center justify-center">
             <div ref={logoCardRef} className="bg-white/[0.18] backdrop-blur-md rounded-2xl px-8 py-6 border border-white/[0.28] shadow-2xl shadow-black/40">
               <SimpleParallax scale={1.08} delay={0.4} orientation="up" overflow={false}>
-                <img
-                  src="/Reservi1.png?v=3"
+                <Image
+                  src="/Reservi1.png"
                   alt="Reservio"
+                  width={370}
+                  height={200}
                   className="w-auto h-auto max-w-[320px] xl:max-w-[370px] object-contain drop-shadow-[0_2px_20px_rgba(255,255,255,0.18)]"
                 />
               </SimpleParallax>
@@ -160,7 +170,7 @@ export default function LoginPage() {
 
           {/* Tagline */}
           <div ref={taglineRef} className="max-w-sm">
-            <h2 className="font-headline text-4xl xl:text-5xl font-black text-white mb-3 leading-[1.15] tracking-tight">
+            <h2 className="font-headline text-4xl xl:text-5xl font-semibold text-white mb-3 leading-[1.15] tracking-tight">
               Excelencia en la<br />Gestión de Recursos.
             </h2>
             <p className="font-body text-base xl:text-lg text-white/65 leading-relaxed">
@@ -178,8 +188,8 @@ export default function LoginPage() {
 
           {/* Mobile logo */}
           <div className="flex justify-center lg:hidden mb-8" data-field>
-            <div className="w-14 h-14 rounded-2xl bg-primary flex items-center justify-center shadow-lg shadow-primary/25">
-              <img src="/logo.png" alt="Reservio" className="w-8 h-8 object-contain" />
+            <div className="size-14 rounded-2xl bg-primary flex items-center justify-center shadow-lg shadow-primary/25">
+              <Image src="/logo.png" alt="Reservio" width={32} height={32} className="object-contain" />
             </div>
           </div>
 
@@ -200,7 +210,7 @@ export default function LoginPage() {
             {isSuccess && (
               <div className="mb-6 p-4 rounded-xl bg-green-50 border border-green-200 animate-fadeIn">
                 <div className="flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-full bg-green-100 flex items-center justify-center shrink-0">
+                  <div className="size-9 rounded-full bg-green-100 flex items-center justify-center shrink-0">
                     <span className="material-symbols-outlined text-green-600 text-lg">check_circle</span>
                   </div>
                   <div>
@@ -219,7 +229,7 @@ export default function LoginPage() {
             {globalError && !isSuccess && (
               <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-200 animate-fadeIn">
                 <div className="flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                  <div className="size-9 rounded-full bg-red-100 flex items-center justify-center shrink-0">
                     <span className="material-symbols-outlined text-red-600 text-lg">error</span>
                   </div>
                   <p className="font-label text-sm text-red-700 pt-1.5">{globalError}</p>
@@ -238,6 +248,7 @@ export default function LoginPage() {
                 <input
                   id="email"
                   type="email"
+                  aria-label="Correo electrónico"
                   placeholder="nombre@empresa.com"
                   value={correo}
                   onChange={(e) => setCorreo(e.target.value)}
@@ -256,6 +267,7 @@ export default function LoginPage() {
                   <input
                     id="password"
                     type={showPassword ? 'text' : 'password'}
+                    aria-label="Contraseña"
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -307,7 +319,7 @@ export default function LoginPage() {
                 >
                   {isLoading ? (
                     <>
-                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                      <svg className="animate-spin size-4" viewBox="0 0 24 24" fill="none">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                       </svg>

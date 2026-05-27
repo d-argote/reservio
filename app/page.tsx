@@ -3,7 +3,7 @@
 export default function Home() {
   return (
     <div className="bg-surface flex h-screen items-center justify-center">
-      <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      <div className="size-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
     </div>
   )
 }
