@@ -200,12 +200,24 @@ export function ReservationsTab({
   const salasCount = salas.length
 
   // ── Handlers ─────────────────────────────────────────────────────
-  const openModal = async (salaId?: string, fecha?: string, _equipoId?: string) => {
+  const openModal = async (salaId?: string, fecha?: string, _equipoId?: string, hora?: string) => {
     const { dateStr: todayStr } = getBogotaNow()
-    setForm({ ...EMPTY_FORM, fecha: fecha ?? todayStr, sala_id: salaId ?? '' })
+    
+    // Calcular hora_fin como inicio + 1 hora si se provee hora
+    const horaInicio = hora ?? ''
+    const horaFin = hora ? addHoras(hora, 1) : ''
+    
+    setForm({ 
+      ...EMPTY_FORM, 
+      fecha: fecha ?? todayStr, 
+      sala_id: salaId ?? '',
+      hora_inicio: horaInicio,
+      hora_fin: horaFin,
+    })
     setModalError(null)
     setModalSuccess(false)
-    setDuracionPreset('libre')
+    // Si tenemos hora, el preset es 1h
+    setDuracionPreset(hora ? 1 : 'libre')
     setModalFranjas([])
     setModalOpen(true)
   }
@@ -386,7 +398,10 @@ export function ReservationsTab({
           {reservaView === 'calendar' && (
             <ReservasCalendar
               reservas={calendarReservas} loading={loadingCalendar}
-              onNewReserva={(fecha) => { if (!FEATURES.reservations) { onShowComingSoon(); return }; openModal(undefined, fecha) }}
+              onNewReserva={(fecha, hora) => { 
+                if (!FEATURES.reservations) { onShowComingSoon(); return }
+                openModal(undefined, fecha, undefined, hora) 
+              }}
               onEditReserva={handleEditReserva} onCancelReserva={handleCancelReserva} onDeleteReserva={handleDeleteReserva}
               cancelingId={cancelingReservaId} deletingId={deletingReservaId}
             />
@@ -637,7 +652,8 @@ export function ReservationsTab({
               {form.fecha && (
                 form.sala_id ? (
                   <AvailabilityTimeline
-                    franjas={modalFranjas} horaInicio={form.hora_inicio || undefined} horaFin={form.hora_fin || undefined} loading={loadingFranjas}
+                    franjas={modalFranjas} horaInicio={form.hora_inicio || undefined} horaFin={form.hora_fin || undefined} loading={loadingFranjas} duracionPreset={duracionPreset}
+
                     onSelectWindow={(inicio, fin) => {
                       setForm(f => {
                         const next = { ...f, hora_inicio: inicio }
