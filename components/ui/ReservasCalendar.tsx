@@ -16,7 +16,7 @@ export interface CalReserva {
 interface Props {
   reservas: CalReserva[]
   loading?: boolean
-  onNewReserva: (fecha?: string) => void
+  onNewReserva: (fecha?: string, hora?: string) => void
   onEditReserva: (reserva: CalReserva) => void
   onCancelReserva: (id: string) => void
   onDeleteReserva: (id: string) => void
@@ -46,6 +46,16 @@ function toLocal(d: Date): string {
 function parseMin(hms: string): number {
   const [h, m] = hms.split(':').map(Number)
   return h * 60 + (m || 0)
+}
+
+function getHoraFromY(e: React.MouseEvent, containerEl: HTMLElement): string {
+  const rect = containerEl.getBoundingClientRect()
+  const relY = e.clientY - rect.top
+  const horaDecimal = (relY / SLOT_H) + HOUR_START
+  const horaRedondeada = Math.floor(horaDecimal)
+  const minutos = horaDecimal % 1 >= 0.5 ? 30 : 0  // snap a :00 o :30
+  const h = Math.max(HOUR_START, Math.min(HOUR_END - 1, horaRedondeada))
+  return `${String(h).padStart(2, '0')}:${String(minutos).padStart(2, '0')}`
 }
 
 // ── Event style by status ─────────────────────────────────────────────────────
@@ -267,7 +277,7 @@ export function ReservasCalendar({
       </div>
 
       {/* ════════════════════════════════════════════════════════════ */}
-      {/* MONTH VIEW                                                  */}
+      {/* MONTH VIEW                                                   */}
       {/* ════════════════════════════════════════════════════════════ */}
       {view === 'month' && (
         <div>
@@ -369,7 +379,7 @@ export function ReservasCalendar({
       )}
 
       {/* ════════════════════════════════════════════════════════════ */}
-      {/* WEEK VIEW                                                   */}
+      {/* WEEK VIEW                                                    */}
       {/* ════════════════════════════════════════════════════════════ */}
       {view === 'week' && (
         <div className="overflow-auto" style={{ maxHeight: 660 }}>
@@ -423,8 +433,16 @@ export function ReservasCalendar({
                   aria-label={`Ver reservas del ${ds}`}
                   className={`relative border-r border-outline-variant/10 cursor-pointer ${isTd ? 'bg-primary/[0.03]' : ''}`}
                   style={{ height: (HOUR_END - HOUR_START) * SLOT_H }}
-                  onClick={() => onNewReserva(ds)}
-                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNewReserva(ds) } }}
+                  onClick={(e) => {
+                    const hora = getHoraFromY(e, e.currentTarget)
+                    onNewReserva(ds, hora)
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      onNewReserva(ds)
+                    }
+                  }}
                 >
                   {/* Hour lines */}
                   {HOURS.map(h => (
@@ -459,7 +477,7 @@ export function ReservasCalendar({
       )}
 
       {/* ════════════════════════════════════════════════════════════ */}
-      {/* DAY VIEW                                                    */}
+      {/* DAY VIEW                                                     */}
       {/* ════════════════════════════════════════════════════════════ */}
       {view === 'day' && (
         <div className="overflow-auto" style={{ maxHeight: 660 }}>
@@ -497,8 +515,16 @@ export function ReservasCalendar({
               aria-label={`Nueva reserva el ${toLocal(current)}`}
               className="relative border-l border-outline-variant/10 cursor-pointer hover:bg-surface-container/10"
               style={{ height: HOURS.length * SLOT_H }}
-              onClick={() => onNewReserva(toLocal(current))}
-              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNewReserva(toLocal(current)) } }}
+              onClick={(e) => {
+                const hora = getHoraFromY(e, e.currentTarget)
+                onNewReserva(toLocal(current), hora)
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  onNewReserva(toLocal(current))
+                }
+              }}
             >
               {HOURS.map(h => (
                 <div key={h} className="absolute left-0 right-0 border-t border-outline-variant/10" style={{ top: (h - HOUR_START) * SLOT_H }} />
@@ -514,6 +540,7 @@ export function ReservasCalendar({
                 const height = Math.max(((Math.min(endM, (HOUR_END - HOUR_START) * 60) - Math.max(0, startM)) / 60) * SLOT_H, 30)
                 return <EventBlock key={r.id} r={r} style={{ top, height }} onSelect={setSelected} />
               })}
+              
 
               {/* Empty state for day */}
               {(byDate.get(toLocal(current)) ?? []).length === 0 && (
@@ -531,7 +558,7 @@ export function ReservasCalendar({
       )}
 
       {/* ════════════════════════════════════════════════════════════ */}
-      {/* EVENT DETAIL MODAL                                         */}
+      {/* EVENT DETAIL MODAL                                           */}
       {/* ════════════════════════════════════════════════════════════ */}
       {selected && (
         <div

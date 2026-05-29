@@ -63,7 +63,7 @@
   --radius-xl:      0.75rem;
   --radius-full:    9999px;
 
-/* Typography */
+  /* Typography */
   --font-headline: "Plus Jakarta Sans", sans-serif;
   --font-body:     "DM Sans", sans-serif;
   --font-label:    "Manrope", sans-serif;
@@ -177,3 +177,14 @@
   50%       { opacity: 0.5; }
 }
 .animate-status-pulse { animation: statusPulse 2s ease-in-out infinite; }
+
+/* ── Sidebar collapse transition ────────────────────── */
+.sidebar-collapsed .sidebar-label {
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
+}
+.sidebar-expanded .sidebar-label {
+  opacity: 1;
+  width: auto;
+}

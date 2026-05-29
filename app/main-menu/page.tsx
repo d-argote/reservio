@@ -47,6 +47,21 @@ export default function MainMenuPage() {
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('reservations')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  
+  // Sidebar state with localStorage persistence
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    if (typeof window === 'undefined') return true
+    const saved = localStorage.getItem('reservio_sidebar_open')
+    return saved !== null ? saved === 'true' : true
+  })
+
+  const toggleSidebar = () => {
+    setSidebarOpen(prev => {
+      const next = !prev
+      localStorage.setItem('reservio_sidebar_open', String(next))
+      return next
+    })
+  }
 
   const [comingSoon, setComingSoon] = useState(false)
   const showComingSoon = useCallback(() => {
@@ -142,15 +157,29 @@ export default function MainMenuPage() {
   return (
     <div className="flex h-screen bg-surface overflow-hidden relative selection:bg-primary/20 selection:text-primary">
       {/* ── Sidebar (desktop) ──────────────────────────────────── */}
-      <aside className="hidden md:flex flex-col w-72 h-full bg-surface text-primary font-body border-r border-outline-variant/20 flex-shrink-0 z-20">
+      <aside className={`hidden md:flex flex-col h-full bg-surface text-primary font-body border-r border-outline-variant/20 flex-shrink-0 z-20 transition-all duration-300 ease-in-out overflow-hidden ${sidebarOpen ? 'w-72' : 'w-16'}`}>
         {/* Brand */}
-        <div className="p-8 flex items-center gap-3 border-b border-outline-variant/20 mb-2">
-          <img src="/logo.png" alt="Reservio Logo" className="size-10 object-contain drop-shadow-sm" />
-          <div>
-            <h1 className="font-headline text-2xl font-black text-primary mb-0 leading-none">Reservio</h1>
-            <p className="font-body text-secondary text-[11px] font-semibold tracking-wider uppercase mt-1">Workspace</p>
-          </div>
+        <div className={`p-8 flex items-center gap-3 border-b border-outline-variant/20 mb-2 overflow-hidden ${!sidebarOpen ? 'justify-center px-4 py-5' : ''}`}>
+          <img src="/logo.png" alt="Reservio Logo" className="size-10 object-contain drop-shadow-sm shrink-0" />
+          {sidebarOpen && (
+            <div className="transition-opacity duration-200">
+              <h1 className="font-headline text-2xl font-black text-primary mb-0 leading-none">Reservio</h1>
+              <p className="font-body text-secondary text-[11px] font-semibold tracking-wider uppercase mt-1">Workspace</p>
+            </div>
+          )}
         </div>
+        
+        {/* Toggle Button */}
+        <button
+          type="button"
+          onClick={toggleSidebar}
+          className="mx-auto mb-2 p-2 rounded-lg hover:bg-surface-container-low transition-colors text-on-surface-variant"
+          title={sidebarOpen ? 'Colapsar menú' : 'Expandir menú'}
+        >
+          <span className="material-symbols-outlined text-[22px]">
+            {sidebarOpen ? 'menu_open' : 'menu'}
+          </span>
+        </button>
 
         {/* Nav items */}
         <div className="flex flex-col gap-y-1 flex-grow overflow-y-auto pb-4 px-2">
@@ -158,34 +187,48 @@ export default function MainMenuPage() {
             if (item.id === 'admin' && profile?.rol !== 'admin') return null
             const isActive = activeTab === item.id
             return (
-              <button type="button"
+              <button
                 key={item.id}
-                onClick={() => {
-                  setActiveTab(item.id as ActiveTab)
-                }}
-                className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left transition-all duration-200
+                type="button"
+                onClick={() => setActiveTab(item.id as ActiveTab)}
+                title={!sidebarOpen ? item.label : undefined}
+                className={`
+                  flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium w-full text-left 
+                  transition-all duration-200
+                  ${!sidebarOpen ? 'justify-center px-2' : ''}
                   ${isActive
                     ? 'border-l-[3px] border-primary bg-surface-container-lowest text-primary font-semibold'
                     : 'text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface'
-                  }`}
+                  }
+                `}
               >
-                <span className="material-symbols-outlined"
+                <span
+                  className="material-symbols-outlined shrink-0"
                   style={isActive ? { fontVariationSettings: "'FILL' 1" } : undefined}>
                   {item.icon}
                 </span>
-                <span>{item.label}</span>
+                {sidebarOpen && (
+                  <span className="truncate transition-opacity duration-200">{item.label}</span>
+                )}
               </button>
             )
           })}
         </div>
 
         {/* Sign out */}
-        <div className="p-6 mt-auto">
-          <button type="button" onClick={handleSignOut}
-            className="w-full flex items-center justify-center gap-2 border border-outline-variant/30 text-on-surface-variant py-3 rounded-lg hover:border-error/40 hover:text-error hover:bg-error/5 transition-colors text-sm font-medium font-label"
+        <div className={`p-6 mt-auto ${!sidebarOpen ? 'px-2' : ''}`}>
+          <button
+            type="button"
+            onClick={handleSignOut}
+            title={!sidebarOpen ? 'Cerrar Sesión' : undefined}
+            className={`
+              w-full flex items-center justify-center gap-2 border border-outline-variant/30 
+              text-on-surface-variant py-3 rounded-lg hover:border-error/40 hover:text-error 
+              hover:bg-error/5 transition-colors text-sm font-medium font-label
+            `}
           >
-            <span className="material-symbols-outlined text-lg">logout</span>
-            Cerrar Sesión
+            <span className="material-symbols-outlined text-lg shrink-0">logout</span>
+            {sidebarOpen && 'Cerrar Sesión'}
           </button>
         </div>
       </aside>

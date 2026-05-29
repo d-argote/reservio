@@ -98,6 +98,13 @@ export async function uploadFotoDevolucion(file: File): Promise<string | null> {
   return data.publicUrl
 }
 
+export function getSafeImageUrl(url: string | null | undefined, fallback: string): string {
+  if (!url) return fallback
+  // Si es URL relativa o del mismo origen, retornar directamente
+  if (!url.startsWith('http')) return url
+  return url
+}
+
 // ── Room Images ────────────────────────────────────────────────────
 
 export const ROOM_IMAGES = [

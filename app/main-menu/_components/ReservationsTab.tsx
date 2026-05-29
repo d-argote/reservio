@@ -200,12 +200,24 @@ export function ReservationsTab({
   const salasCount = salas.length
 
   // ── Handlers ─────────────────────────────────────────────────────
-  const openModal = async (salaId?: string, fecha?: string, _equipoId?: string) => {
+  const openModal = async (salaId?: string, fecha?: string, _equipoId?: string, hora?: string) => {
     const { dateStr: todayStr } = getBogotaNow()
-    setForm({ ...EMPTY_FORM, fecha: fecha ?? todayStr, sala_id: salaId ?? '' })
+    
+    // Calcular hora_fin como inicio + 1 hora si se provee hora
+    const horaInicio = hora ?? ''
+    const horaFin = hora ? addHoras(hora, 1) : ''
+    
+    setForm({ 
+      ...EMPTY_FORM, 
+      fecha: fecha ?? todayStr, 
+      sala_id: salaId ?? '',
+      hora_inicio: horaInicio,
+      hora_fin: horaFin,
+    })
     setModalError(null)
     setModalSuccess(false)
-    setDuracionPreset('libre')
+    // Si tenemos hora, el preset es 1h
+    setDuracionPreset(hora ? 1 : 'libre')
     setModalFranjas([])
     setModalOpen(true)
   }
@@ -224,10 +236,9 @@ export function ReservationsTab({
     if (!form.sala_id) { setModalError('Selecciona una sala.'); return }
     if (!form.fecha) { setModalError('Selecciona una fecha.'); return }
     const { dateStr: _localToday } = getBogotaNow()
-    if (form.fecha < _localToday) { setModalError('No puedes reservar en una fecha pasada.'); return }
     if (!form.hora_inicio) { setModalError('Indica la hora de inicio.'); return }
     if (!form.hora_fin) { setModalError('Indica la hora de fin.'); return }
-    if (form.hora_fin <= form.hora_inicio) { setModalError('La hora de fin debe ser posterior a la hora de inicio.'); return }
+    if (form.hora_fin <= form.hora_inicio) { return }
     const durMin = diffHoras(form.hora_inicio, form.hora_fin) * 60
     if (durMin < 30) { setModalError('La reserva debe durar al menos 30 minutos.'); return }
     if (durMin > 24 * 60) { setModalError('La reserva no puede durar más de 24 horas.'); return }
@@ -237,7 +248,6 @@ export function ReservationsTab({
       const selectedMinutes = h * 60 + m
       const { totalMinutes: currentTotalMinutes } = getBogotaNow()
       if (selectedMinutes < currentTotalMinutes) {
-        setModalError('La hora de inicio ya pasó. Por favor, selecciona una hora válida.')
         return
       }
     }
@@ -386,7 +396,10 @@ export function ReservationsTab({
           {reservaView === 'calendar' && (
             <ReservasCalendar
               reservas={calendarReservas} loading={loadingCalendar}
-              onNewReserva={(fecha) => { if (!FEATURES.reservations) { onShowComingSoon(); return }; openModal(undefined, fecha) }}
+              onNewReserva={(fecha, hora) => { 
+                if (!FEATURES.reservations) { onShowComingSoon(); return }
+                openModal(undefined, fecha, undefined, hora) 
+              }}
               onEditReserva={handleEditReserva} onCancelReserva={handleCancelReserva} onDeleteReserva={handleDeleteReserva}
               cancelingId={cancelingReservaId} deletingId={deletingReservaId}
             />
@@ -593,7 +606,7 @@ export function ReservationsTab({
       {modalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={() => { if (!submitting) { setModalOpen(false); setEditingReservaId(null) } }} />
-          <div className="relative w-full max-w-xl bg-surface rounded-2xl shadow-2xl border border-outline-variant/20 flex flex-col max-h-[90vh]">
+          <div className="relative w-full max-w-4xl bg-surface rounded-2xl shadow-2xl border border-outline-variant/20 flex flex-col max-h-[90vh]">
             <div className="flex items-center justify-between px-6 py-5 border-b border-outline-variant/15">
               <div className="flex items-center gap-3">
                 <div className="bg-primary-container text-on-primary size-9 rounded-lg flex items-center justify-center">
@@ -605,7 +618,10 @@ export function ReservationsTab({
                 <span className="material-symbols-outlined text-[20px]">close</span>
               </button>
             </div>
-            <form onSubmit={handleSubmitReserva} className="px-6 py-5 space-y-4 overflow-y-auto flex-1">
+            
+            {/* 1. Añadimos noValidate aquí */}
+            <form onSubmit={handleSubmitReserva} noValidate className="px-6 py-5 space-y-4 overflow-y-auto flex-1">
+              
               <div>
                 <label htmlFor="res-titulo" className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Título *</label>
                 <input id="res-titulo" aria-label="Título de la reserva" type="text" value={form.titulo} onChange={e => setForm({ ...form, titulo: e.target.value })} placeholder="Ej: Reunión de equipo Q3" className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition" disabled={submitting} />
@@ -621,9 +637,16 @@ export function ReservationsTab({
                   ))}
                 </select>
               </div>
+              
+              {/* 2. Actualizamos el bloque de Fecha aquí */}
               <div>
                 <label htmlFor="res-fecha" className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Fecha *</label>
-                <input id="res-fecha" aria-label="Fecha de la reserva" type="date" value={form.fecha} min={getBogotaNow().dateStr}
+                <input 
+                  id="res-fecha" 
+                  aria-label="Fecha de la reserva" 
+                  type="date" 
+                  value={form.fecha} 
+                  min={getBogotaNow().dateStr} /* <- Esto pone los días pasados en gris */
                   onChange={e => {
                     const newFecha = e.target.value
                     const { dateStr: localToday } = getBogotaNow()
@@ -631,13 +654,30 @@ export function ReservationsTab({
                     else setForm(f => ({ ...f, fecha: newFecha }))
                     setDuracionPreset('libre')
                   }}
-                  className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition" disabled={submitting}
+                  className={`w-full rounded-lg border bg-surface-container-lowest px-3 py-2.5 text-sm font-body text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition ${
+                    form.fecha && form.fecha < getBogotaNow().dateStr 
+                      ? 'border-red-400 bg-red-50/40' 
+                      : 'border-outline-variant/40'
+                  }`} 
+                  disabled={submitting}
                 />
+                
+                {/* Alerta personalizada sin la viñeta blanca nativa */}
+                {form.fecha && form.fecha < getBogotaNow().dateStr && (
+                  <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-2">
+                    <span className="material-symbols-outlined text-[16px] text-red-500 shrink-0 mt-0.5">error</span>
+                    <span className="text-xs font-label text-red-700 leading-snug">
+                      La fecha no puede ser en el pasado. El valor debe ser igual o posterior a hoy.
+                    </span>
+                  </div>
+                )}
               </div>
+
               {form.fecha && (
                 form.sala_id ? (
                   <AvailabilityTimeline
-                    franjas={modalFranjas} horaInicio={form.hora_inicio || undefined} horaFin={form.hora_fin || undefined} loading={loadingFranjas}
+                    franjas={modalFranjas} horaInicio={form.hora_inicio || undefined} horaFin={form.hora_fin || undefined} loading={loadingFranjas} duracionPreset={duracionPreset}
+
                     onSelectWindow={(inicio, fin) => {
                       setForm(f => {
                         const next = { ...f, hora_inicio: inicio }
@@ -674,7 +714,6 @@ export function ReservationsTab({
                 <div>
                   <label htmlFor="res-hora-inicio" className="font-label text-xs uppercase tracking-widest text-on-surface-variant block mb-1.5">Hora inicio *</label>
                   <input id="res-hora-inicio" aria-label="Hora de inicio" type="time" value={form.hora_inicio}
-                    min={(() => { const { dateStr: localToday, timeStr } = getBogotaNow(); return form.fecha === localToday ? timeStr : undefined })()}
                     onChange={e => {
                       const inicio = e.target.value
                       setForm(f => {
@@ -707,52 +746,55 @@ export function ReservationsTab({
                     disabled={submitting}
                   />
                 </div>
-              </div>
-              {form.hora_inicio && form.hora_fin && form.hora_fin > form.hora_inicio && (
-                <div className="flex items-center gap-2 text-xs font-body text-on-surface-variant bg-surface-container rounded-lg px-3 py-2">
-                  <span className="material-symbols-outlined text-[15px] text-primary">schedule</span>
-                  <span>Duración: <strong className="text-on-surface">{formatDuracion(diffHoras(form.hora_inicio, form.hora_fin))}</strong></span>
-                  <span className="mx-1 text-outline-variant">·</span>
-                  <span>{form.hora_inicio} → {form.hora_fin}</span>
                 </div>
-              )}
-              {form.hora_fin && form.hora_inicio && form.hora_fin <= form.hora_inicio && (
-                <p className="text-xs text-red-500 font-body flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">error</span>La hora de fin debe ser posterior a la de inicio.</p>
-              )}
-              {(() => { const { dateStr: lt, totalMinutes: cm } = getBogotaNow(); if (!form.hora_inicio || form.fecha !== lt) return null; const [hh, mm] = form.hora_inicio.split(':').map(Number); return (hh * 60 + mm) < cm ? (
-                <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                  <span className="material-symbols-outlined text-[16px] text-red-500 shrink-0 mt-0.5">schedule</span>
-                  <span className="text-xs font-label text-red-700 leading-snug">La hora de inicio ya pasó. Por favor, selecciona una hora válida para hoy.</span>
-                </div>
-              ) : null })()}
-              {modalError && (
-                <div className="flex items-start gap-2 bg-error-container text-on-error-container rounded-lg px-4 py-3 text-sm font-body">
-                  <span className="material-symbols-outlined text-[18px] shrink-0 mt-0.5">error</span>{modalError}
-                </div>
-              )}
-              {modalSuccess && (
-                <div className="flex items-start gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
-                  <span className="material-symbols-outlined text-[22px] text-green-500 shrink-0 mt-0.5" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
-                  <div>
-                    <p className="font-label text-sm font-semibold text-green-800">¡Reserva {editingReservaId ? 'actualizada' : 'creada'} con éxito!</p>
-                    <p className="font-body text-xs text-green-700 mt-0.5">Tu reserva ha sido confirmada correctamente.</p>
+                {form.hora_inicio && form.hora_fin && form.hora_fin > form.hora_inicio && (
+                  <div className="flex items-center gap-2 text-xs font-body text-on-surface-variant bg-surface-container rounded-lg px-3 py-2">
+                    <span className="material-symbols-outlined text-[15px] text-primary">schedule</span>
+                    <span>Duración: <strong className="text-on-surface">{formatDuracion(diffHoras(form.hora_inicio, form.hora_fin))}</strong></span>
+                    <span className="mx-1 text-outline-variant">·</span>
+                    <span>{form.hora_inicio} → {form.hora_fin}</span>
                   </div>
+                )}
+                 {form.hora_fin && form.hora_inicio && form.hora_fin <= form.hora_inicio && (
+                <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  <span className="material-symbols-outlined text-[16px] text-red-500 shrink-0 mt-0.5">error</span>
+                  <span className="text-xs font-label text-red-700 leading-snug">La hora de fin debe ser posterior a la de inicio.</span>
                 </div>
-              )}
-              <div className="flex gap-3 pt-1">
-                <button type="button" onClick={() => { if (!submitting) { setModalOpen(false); setEditingReservaId(null) } }} disabled={submitting} className="flex-1 py-2.5 rounded-lg border border-outline-variant/40 text-on-surface font-label text-sm font-medium hover:bg-surface-container transition-colors disabled:opacity-50">Cancelar</button>
-                <button type="submit" disabled={submitting || modalSuccess} className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-primary text-on-primary font-label text-sm font-medium hover:brightness-105 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-                  {submitting ? (
-                    <><span className="size-4 animate-spin rounded-full border-2 border-on-primary border-t-transparent" />Guardando…</>
-                  ) : (
-                    <><span className="material-symbols-outlined text-[18px]">{editingReservaId ? 'save' : 'add'}</span>{editingReservaId ? 'Guardar Cambios' : 'Confirmar'}</>
-                  )}
-                </button>
-              </div>
-            </form>
+                )}
+                {(() => { const { dateStr: lt, totalMinutes: cm } = getBogotaNow(); if (!form.hora_inicio || form.fecha !== lt) return null; const [hh, mm] = form.hora_inicio.split(':').map(Number); return (hh * 60 + mm) < cm ? (
+                  <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                    <span className="material-symbols-outlined text-[16px] text-red-500 shrink-0 mt-0.5">schedule</span>
+                    <span className="text-xs font-label text-red-700 leading-snug">La hora de inicio ya pasó. Por favor, selecciona una hora válida para hoy.</span>
+                  </div>
+                ) : null })()}
+                {modalError && (
+                  <div className="flex items-start gap-2 bg-error-container text-on-error-container rounded-lg px-4 py-3 text-sm font-body">
+                    <span className="material-symbols-outlined text-[18px] shrink-0 mt-0.5">error</span>{modalError}
+                  </div>
+                )}
+                {modalSuccess && (
+                  <div className="flex items-start gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
+                    <span className="material-symbols-outlined text-[22px] text-green-500 shrink-0 mt-0.5" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
+                    <div>
+                      <p className="font-label text-sm font-semibold text-green-800">¡Reserva {editingReservaId ? 'actualizada' : 'creada'} con éxito!</p>
+                      <p className="font-body text-xs text-green-700 mt-0.5">Tu reserva ha sido confirmada correctamente.</p>
+                    </div>
+                  </div>
+                )}
+                <div className="flex gap-3 pt-1">
+                  <button type="button" onClick={() => { if (!submitting) { setModalOpen(false); setEditingReservaId(null) } }} disabled={submitting} className="flex-1 py-2.5 rounded-lg border border-outline-variant/40 text-on-surface font-label text-sm font-medium hover:bg-surface-container transition-colors disabled:opacity-50">Cancelar</button>
+                  <button type="submit" disabled={submitting || modalSuccess} className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-primary text-on-primary font-label text-sm font-medium hover:brightness-105 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                    {submitting ? (
+                      <><span className="size-4 animate-spin rounded-full border-2 border-on-primary border-t-transparent" />Guardando…</>
+                    ) : (
+                      <><span className="material-symbols-outlined text-[18px]">{editingReservaId ? 'save' : 'add'}</span>{editingReservaId ? 'Guardar Cambios' : 'Confirmar'}</>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
-    </>
-  )
-}
+        )}
+      </>
+    )
+  }
