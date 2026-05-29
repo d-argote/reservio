@@ -547,7 +547,7 @@ export function TechTab({ userId, onOpenReservationWithEquipo, refreshRef }: Tec
       {loanModalOpen && loanEquipo && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={() => { if (!loanSubmitting) { setLoanModalOpen(false); setLoanEquipo(null) } }} />
-          <div className="relative w-full max-w-md bg-surface rounded-2xl shadow-2xl border border-outline-variant/20 flex flex-col max-h-[90vh]">
+          <div className="relative w-full max-w-4xl bg-surface rounded-2xl shadow-2xl border border-outline-variant/20 flex flex-col max-h-[90vh]">
             <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant/15">
               <div className="flex items-center gap-3">
                 <div className="bg-primary-container text-on-primary size-9 rounded-lg flex items-center justify-center shrink-0">
