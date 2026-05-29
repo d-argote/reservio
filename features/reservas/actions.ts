@@ -1166,24 +1166,30 @@ export async function createPrestamoEquipo(
     await writeClient.from('equipos').update({ estado: 'reservado' }).eq('id', equipoId)
   }
 
-  // Send confirmation email best-effort
+// Correo fire-and-forget: se envía DESPUÉS de devolver la respuesta al cliente
+after(async () => {
   try {
-    const { data: userProfile } = await supabase.from('usuarios').select('correo, nombre').eq('id', user.id).single()
-    if (userProfile?.correo) {
-      const equipoNombre = (await supabase.from('equipos').select('nombre').eq('id', equipoId).single()).data?.nombre ?? 'Equipo'
-      const salaNombre = reserva.sala_id ? (await supabase.from('salas').select('nombre').eq('id', reserva.sala_id).single()).data?.nombre : null
+    const [userResult, equipoResult, salaResult] = await Promise.all([
+      supabase.from('usuarios').select('correo, nombre').eq('id', user.id).single(),
+      supabase.from('equipos').select('nombre').eq('id', equipoId).single(),
+      reserva.sala_id
+        ? supabase.from('salas').select('nombre').eq('id', reserva.sala_id).single()
+        : Promise.resolve({ data: null }),
+    ])
+    if (userResult.data?.correo) {
       await sendPrestamoEmail({
-        to: userProfile.correo,
-        userName: userProfile.nombre,
+        to: userResult.data.correo,
+        userName: userResult.data.nombre,
         action: 'confirmado',
-        equipoNombre,
+        equipoNombre: equipoResult.data?.nombre ?? 'Equipo',
         numActa: prestamo.num_acta ?? '',
         condicionEntrega,
         fechaFin: fechaFinEsperada,
-        salaNombre,
+        salaNombre: salaResult.data?.nombre ?? null,
       })
     }
   } catch { /* best-effort */ }
+})
 
   return { data: { id: prestamo.id, num_acta: prestamo.num_acta } }
 }
